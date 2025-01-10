@@ -1,21 +1,20 @@
 [workspace]
-members = []
 resolver = "2"
-
-[profile.release]
-debug = false
-lto = true
-strip = true
-opt-level = 's'
+members = ["anda_core"]
 
 [workspace.package]
 name = "anda"
 description = "Anda is a framework for AI agent development, designed to build a highly composable, autonomous, and perpetually memorizing network of AI agents."
-version = "0.1.0"
-edition = "2021"
 repository = "https://github.com/ldclabs/anda"
+homepage = "https://github.com/ldclabs/anda"
 keywords = ["ai-agent", "icp", "tee"]
-categories = ["web-programming"]
+categories = [
+  "accessibility",
+  "web-programming",
+  "development-tools",
+  "text-processing",
+]
+edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
@@ -35,13 +34,17 @@ base64 = "0.22"
 candid = "0.10"
 ciborium = "0.2"
 const-hex = "1"
+futures = "0.3"
 lazy_static = "1.5"
-serde = "1"
+http = "1.2"
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_bytes = "0.11"
 ic_cose_types = "0.6"
 ic_cose = "0.6"
+object_store = { version = "0.11" }
 tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
 log = "0.4"
 structured-logger = "1"
 reqwest = { version = "0.12", features = [
@@ -54,3 +57,9 @@ reqwest = { version = "0.12", features = [
   # "hickory-dns",
 ], default-features = true }
 thiserror = "2"
+
+[profile.release]
+debug = false
+lto = true
+strip = true
+opt-level = 's'
