@@ -1,25 +1,35 @@
 [package]
-name = "anda_core"
-description = "Core types and traits for Anda -- a framework for AI agent development."
-repository = "https://github.com/ldclabs/anda/tree/main/anda_core"
+name = "anda_engine"
+description = "Agents engine for Anda -- a framework for AI agent development."
+repository = "https://github.com/ldclabs/anda/tree/main/anda_engine"
 publish = true
-version = "0.2.0"
+version = "0.1.0"
 edition.workspace = true
 keywords.workspace = true
 categories.workspace = true
 license.workspace = true
 
 [dependencies]
+anda_core = { path = "../anda_core", version = "0.2" }
 candid = { workspace = true }
 bytes = { workspace = true }
 ciborium = { workspace = true }
 futures = { workspace = true }
+futures-util = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_bytes = { workspace = true }
 http = { workspace = true }
 thiserror = { workspace = true }
 object_store = { workspace = true }
+ic_cose = { workspace = true }
 ic_cose_types = { workspace = true }
+ic_object_store = { workspace = true }
+ic_tee_agent = { workspace = true }
 tokio-util = { workspace = true }
+structured-logger = { workspace = true }
 reqwest = { workspace = true }
+moka = { workspace = true }
+
+[dev-dependencies]
+const-hex = { workspace = true }

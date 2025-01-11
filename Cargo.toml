@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["anda_core"]
+members = ["anda_core", "anda_engine"]
 
 [workspace.package]
 name = "anda"
@@ -35,6 +35,7 @@ candid = "0.10"
 ciborium = "0.2"
 const-hex = "1"
 futures = "0.3"
+futures-util = "0.3"
 lazy_static = "1.5"
 http = "1.2"
 serde = { version = "1", features = ["derive"] }
@@ -42,6 +43,8 @@ serde_json = "1"
 serde_bytes = "0.11"
 ic_cose_types = "0.6"
 ic_cose = "0.6"
+ic_object_store = { version = "0.6" }
+ic_tee_agent = "0.2"
 object_store = { version = "0.11" }
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"
@@ -57,6 +60,7 @@ reqwest = { version = "0.12", features = [
   # "hickory-dns",
 ], default-features = true }
 thiserror = "2"
+moka = { version = "0.12", features = ["future"] }
 
 [profile.release]
 debug = false
