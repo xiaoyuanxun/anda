@@ -56,6 +56,7 @@ pub trait AgentContext:
 
 /// BaseContext is the core context interface available when calling Agent or Tool.
 /// It provides access to various feature sets including:
+/// - StateFeatures: User, caller, time, and cancellation token
 /// - KeysFeatures: Cryptographic key operations
 /// - StoreFeatures: Persistent storage
 /// - CacheFeatures: In-memory caching
@@ -63,6 +64,7 @@ pub trait AgentContext:
 /// - HttpFeatures: HTTP request capabilities
 pub trait BaseContext:
     Sized
+    + StateFeatures<Self::Error>
     + KeysFeatures<Self::Error>
     + StoreFeatures<Self::Error>
     + CacheFeatures<Self::Error>
@@ -71,7 +73,10 @@ pub trait BaseContext:
 {
     /// Error type for all context operations
     type Error: Into<BoxError>;
+}
 
+/// StateFeatures is one of the context feature sets available when calling Agent or Tool.
+pub trait StateFeatures<Err>: Sized {
     /// Gets the username from request context.
     /// Note: This is not verified and should not be used as a trusted identifier.
     /// For example, if triggered by a bot of X platform, this might be the username
@@ -111,22 +116,42 @@ pub struct AgentOutput {
     /// Should be None when finish_reason is "stop" or "tool_calls"
     pub failed_reason: Option<String>,
 
-    /// The function name to call when using Function Calling
-    pub function: Option<String>,
+    /// Tool call that this message is responding to. If this message is a response to a tool call, this field should be set to the tool call ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<ToolCall>>,
 
-    /// Extracted valid JSON when using Function Calling or JSON output mode
-    /// If no valid JSON is extracted, the raw content remains in `content`
+    /// Extracted valid JSON when using JSON response_format
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub extracted_json: Option<Value>,
+}
+
+/// Represents a tool call response with it's ID, function name, and arguments
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct ToolCall {
+    pub id: String,
+    pub name: String,
+    pub args: String,
+
+    /// The result of the tool call, processed by agents engine, if available
+    pub result: Option<Value>,
 }
 
 /// Represents a message in the agent's conversation history
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct Message {
-    /// Message role: "system", "user", or "assistant"
+pub struct MessageInput {
+    /// Message role: "developer", "system", "user", "assistant", "tool"
     pub role: String,
 
     /// The content of the message
     pub content: String,
+
+    /// An optional name for the participant. Provides the model information to differentiate between participants of the same role.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    /// Tool call that this message is responding to. If this message is a response to a tool call, this field should be set to the tool call ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
 }
 
 /// Defines a callable function with its metadata and schema
@@ -140,6 +165,42 @@ pub struct FunctionDefinition {
 
     /// JSON schema defining the function's parameters
     pub parameters: serde_json::Value,
+
+    /// Whether to enable strict schema adherence when generating the function call. If set to true, the model will follow the exact schema defined in the parameters field. Only a subset of JSON Schema is supported when strict is true.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub strict: Option<bool>,
+}
+
+/// Struct representing a general completion request that can be sent to a completion model provider.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct CompletionRequest {
+    /// The prompt to be sent to the completion model provider as "developer" or "system" role
+    pub prompt: String,
+
+    /// The preamble to be sent to the completion model provider
+    pub preamble: Option<String>,
+
+    /// The chat history to be sent to the completion model provider
+    pub chat_history: Vec<MessageInput>,
+
+    /// The tools to be sent to the completion model provider
+    pub tools: Vec<FunctionDefinition>,
+
+    /// The temperature to be sent to the completion model provider
+    pub temperature: Option<f64>,
+
+    /// The max tokens to be sent to the completion model provider
+    pub max_tokens: Option<u64>,
+
+    /// An object specifying the JSON format that the model must output.
+    /// https://platform.openai.com/docs/guides/structured-outputs
+    /// The format can be one of the following:
+    /// `{ "type": "json_object" }`
+    /// `{ "type": "json_schema", "json_schema": {...} }`
+    pub response_format: Option<Value>,
+
+    /// The stop sequence to be sent to the completion model provider
+    pub stop: Option<Vec<String>>,
 }
 
 /// Provides LLM completion capabilities for agents
@@ -153,10 +214,7 @@ pub trait CompletionFeatures<Err>: Sized {
     /// * `tools` - Available functions the model can call
     fn completion(
         &self,
-        prompt: &str,
-        json_output: bool,
-        chat_history: &[Message],
-        tools: &[FunctionDefinition],
+        req: CompletionRequest,
     ) -> impl Future<Output = Result<AgentOutput, Err>> + Send;
 }
 
@@ -172,6 +230,9 @@ pub struct Embedding {
 
 /// Provides text embedding capabilities for agents
 pub trait EmbeddingFeatures<Err>: Sized {
+    /// The number of dimensions in the embedding vector.
+    fn ndims(&self) -> usize;
+
     /// Generates embeddings for multiple texts in a batch
     /// Returns a vector of Embedding structs in the same order as input texts
     fn embed(

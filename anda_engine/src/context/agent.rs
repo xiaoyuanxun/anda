@@ -1,17 +1,24 @@
 use anda_core::{
     AgentContext, AgentOutput, AgentSet, BaseContext, BoxError, CacheExpiry, CacheFeatures,
-    CancellationToken, CanisterFeatures, CompletionFeatures, Embedding, EmbeddingFeatures,
-    FunctionDefinition, HttpFeatures, KeysFeatures, Message, ObjectMeta, Path, PutMode, PutResult,
-    StoreFeatures, ToolSet, Value, VectorSearchFeatures,
+    CancellationToken, CanisterFeatures, CompletionFeatures, CompletionRequest, Embedding,
+    EmbeddingFeatures, HttpFeatures, KeysFeatures, ObjectMeta, Path, PutMode, PutResult,
+    StateFeatures, StoreFeatures, ToolSet, Value, VectorSearchFeatures,
 };
 use candid::{utils::ArgumentEncoder, CandidType, Principal};
+use ciborium::from_reader;
 use serde::{de::DeserializeOwned, Serialize};
 use std::{future::Future, sync::Arc, time::Duration};
 
 use super::base::BaseCtx;
+use crate::{
+    database::{VectorSearchFeaturesDyn, VectorStore},
+    model::Model,
+};
 
 pub struct AgentCtx {
     pub(crate) base: BaseCtx,
+    pub(crate) model: Model,
+    pub(crate) store: VectorStore,
     pub(crate) tools: Arc<ToolSet<BaseCtx>>,
     pub(crate) agents: Arc<AgentSet<AgentCtx>>,
 }
@@ -19,11 +26,15 @@ pub struct AgentCtx {
 impl AgentCtx {
     pub fn new(
         base: BaseCtx,
+        model: Model,
+        store: VectorStore,
         tools: Arc<ToolSet<BaseCtx>>,
         agents: Arc<AgentSet<AgentCtx>>,
     ) -> Self {
         Self {
             base,
+            model,
+            store,
             tools,
             agents,
         }
@@ -32,6 +43,8 @@ impl AgentCtx {
     pub fn child(&self, agent_name: &str) -> Result<Self, BoxError> {
         Ok(Self {
             base: self.base.child(format!("A:{}", agent_name))?,
+            model: self.model.clone(),
+            store: self.store.clone(),
             tools: self.tools.clone(),
             agents: self.agents.clone(),
         })
@@ -51,6 +64,8 @@ impl AgentCtx {
             base: self
                 .base
                 .child_with(format!("A:{}", agent_name), user, caller)?,
+            model: self.model.clone(),
+            store: self.store.clone(),
             tools: self.tools.clone(),
             agents: self.agents.clone(),
         })
@@ -114,46 +129,70 @@ impl AgentContext for AgentCtx {
 }
 
 impl CompletionFeatures<BoxError> for AgentCtx {
-    async fn completion(
-        &self,
-        prompt: &str,
-        json_output: bool,
-        chat_history: &[Message],
-        tools: &[FunctionDefinition],
-    ) -> Result<AgentOutput, BoxError> {
-        Err("Not implemented".into())
+    async fn completion(&self, req: CompletionRequest) -> Result<AgentOutput, BoxError> {
+        let mut res = self.model.completion(req).await?;
+        // auto call tools
+        if let Some(tools) = &mut res.tool_calls {
+            for tool in tools {
+                if let Ok(args) = serde_json::from_str(&tool.args) {
+                    if let Ok(val) = self.tool_call(&tool.id, &args).await {
+                        tool.result = Some(val);
+                    }
+                }
+            }
+        }
+
+        Ok(res)
     }
 }
 
 impl EmbeddingFeatures<BoxError> for AgentCtx {
+    fn ndims(&self) -> usize {
+        self.model.ndims()
+    }
+
     async fn embed(
         &self,
         texts: impl IntoIterator<Item = String> + Send,
     ) -> Result<Vec<Embedding>, BoxError> {
-        Err("Not implemented".into())
+        self.model.embed(texts).await
     }
 
     async fn embed_query(&self, text: &str) -> Result<Embedding, BoxError> {
-        Err("Not implemented".into())
+        self.model.embed_query(text).await
     }
 }
 
 impl VectorSearchFeatures<BoxError> for AgentCtx {
     /// Get the top n documents based on the distance to the given query.
     /// The result is a list of tuples of the form (score, id, document)
-    async fn top_n<T>(&self, query: &str, n: usize) -> Result<Vec<(String, T)>, BoxError> {
-        Err("Not implemented".into())
+    async fn top_n<T>(&self, query: &str, n: usize) -> Result<Vec<(String, T)>, BoxError>
+    where
+        T: DeserializeOwned,
+    {
+        let res = self
+            .store
+            .top_n(self.base.path.clone(), query.to_string(), n)
+            .await?;
+        Ok(res
+            .into_iter()
+            .filter_map(|(id, doc)| from_reader(doc.as_ref()).ok().map(|doc| (id, doc)))
+            .collect())
     }
 
     /// Same as `top_n` but returns the document ids only.
     async fn top_n_ids(&self, query: &str, n: usize) -> Result<Vec<String>, BoxError> {
-        Err("Not implemented".into())
+        self.store
+            .top_n_ids(self.base.path.clone(), query.to_string(), n)
+            .await
     }
 }
 
 impl BaseContext for AgentCtx {
     type Error = BoxError;
+}
 
+impl StateFeatures<BoxError> for AgentCtx {
     fn user(&self) -> String {
         self.base.user()
     }

@@ -1,14 +1,12 @@
 use anda_core::{
     canister_rpc, cbor_rpc, http_rpc, BaseContext, BoxError, CacheExpiry, CacheFeatures,
     CancellationToken, CanisterFeatures, HttpFeatures, HttpRPCError, KeysFeatures, ObjectMeta,
-    Path, PutMode, PutResult, RPCRequest, StoreFeatures,
+    Path, PutMode, PutResult, RPCRequest, StateFeatures, StoreFeatures,
 };
 use candid::{utils::ArgumentEncoder, CandidType, Principal};
 use ciborium::from_reader;
-use futures::TryStreamExt;
 use ic_cose::rand_bytes;
 use ic_cose_types::{cose::sha3_256, to_cbor_bytes};
-use object_store::{ObjectStore, PutOptions};
 use reqwest::Client;
 use serde::{de::DeserializeOwned, Serialize};
 use std::{
@@ -19,53 +17,46 @@ use std::{
 };
 use structured_logger::unix_ms;
 
-const CACHE_MAX_CAPACITY: u64 = 1000000;
 const CONTEXT_MAX_DEPTH: u8 = 42;
-
-static TEE_LOCAL_SERVER: &str = "http://127.0.0.1:8080";
+const CACHE_MAX_CAPACITY: u64 = 1000000;
 
 use super::{cache::CacheService, keys::KeysService};
+use crate::database::Store;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct BaseCtx {
-    user: String,
-    caller: Option<Principal>,
-    path: Path,
-    cancellation_token: CancellationToken,
-    start_at: Instant,
+    pub(crate) user: String,
+    pub(crate) caller: Option<Principal>,
+    pub(crate) path: Path,
+    pub(crate) cancellation_token: CancellationToken,
+    pub(crate) start_at: Instant,
+    pub(crate) depth: u8,
+
     http: Client,
-    store: Arc<dyn ObjectStore>,
     cache: Arc<CacheService>,
     keys: Arc<KeysService>,
-    depth: u8,
+    store: Store,
     endpoint_identity: String,
     endpoint_canister_query: String,
     endpoint_canister_update: String,
 }
 
 impl BaseCtx {
-    pub fn new(user: String, caller: Option<Principal>, store: Arc<dyn ObjectStore>) -> Self {
-        let http = Client::new();
-        let keys = Arc::new(KeysService::new(
-            format!("{}/keys", TEE_LOCAL_SERVER),
-            http.clone(),
-        ));
-        let cache = Arc::new(CacheService::new(CACHE_MAX_CAPACITY));
-
+    pub fn new(tee_host: &str, http: Client, store: Store) -> Self {
         Self {
-            user,
-            caller,
+            user: "system".to_string(),
+            caller: None,
             path: Path::default(),
             cancellation_token: CancellationToken::new(),
             start_at: Instant::now(),
-            http,
-            cache,
+            http: http.clone(),
+            cache: Arc::new(CacheService::new(CACHE_MAX_CAPACITY)),
             store,
-            keys,
+            keys: Arc::new(KeysService::new(format!("{}/keys", tee_host), http)),
+            endpoint_identity: format!("{}/identity", tee_host),
+            endpoint_canister_query: format!("{}/canister/query", tee_host),
+            endpoint_canister_update: format!("{}/canister/update", tee_host),
             depth: 0,
-            endpoint_identity: format!("{}/identity", TEE_LOCAL_SERVER),
-            endpoint_canister_query: format!("{}/canister/query", TEE_LOCAL_SERVER),
-            endpoint_canister_update: format!("{}/canister/update", TEE_LOCAL_SERVER),
         }
     }
 
@@ -95,6 +86,7 @@ impl BaseCtx {
             path,
             user,
             caller,
+            start_at: Instant::now(),
             cancellation_token: self.cancellation_token.child_token(),
             depth: self.depth + 1,
             ..self.clone()
@@ -109,7 +101,9 @@ impl BaseCtx {
 
 impl BaseContext for BaseCtx {
     type Error = BoxError;
+}
 
+impl StateFeatures<BoxError> for BaseCtx {
     fn user(&self) -> String {
         self.user.clone()
     }
@@ -229,18 +223,7 @@ impl KeysFeatures<BoxError> for BaseCtx {
 impl StoreFeatures<BoxError> for BaseCtx {
     /// Retrieves data from storage at the specified path
     async fn store_get(&self, path: &Path) -> Result<(bytes::Bytes, ObjectMeta), BoxError> {
-        let res = self.store.get_opts(path, Default::default()).await?;
-        let data = match res.payload {
-            object_store::GetResultPayload::Stream(mut stream) => {
-                let mut buf = bytes::BytesMut::new();
-                while let Some(data) = stream.try_next().await? {
-                    buf.extend_from_slice(&data);
-                }
-                buf.freeze() // Convert to immutable Bytes
-            }
-            _ => return Err("StoreFeatures: unexpected payload from get_opts".into()),
-        };
-        Ok((data, res.meta))
+        self.store.store_get(&self.path, path).await
     }
 
     /// Lists objects in storage with optional prefix and offset filters
@@ -253,13 +236,7 @@ impl StoreFeatures<BoxError> for BaseCtx {
         prefix: Option<&Path>,
         offset: &Path,
     ) -> Result<Vec<ObjectMeta>, BoxError> {
-        let mut res = self.store.list_with_offset(prefix, offset);
-        let mut metas = Vec::new();
-        while let Some(meta) = res.try_next().await? {
-            metas.push(meta)
-        }
-
-        Ok(metas)
+        self.store.store_list(&self.path, prefix, offset).await
     }
 
     /// Stores data at the specified path with a given write mode
@@ -274,18 +251,7 @@ impl StoreFeatures<BoxError> for BaseCtx {
         mode: PutMode,
         val: bytes::Bytes,
     ) -> Result<PutResult, BoxError> {
-        let res = self
-            .store
-            .put_opts(
-                path,
-                val.into(),
-                PutOptions {
-                    mode,
-                    ..Default::default()
-                },
-            )
-            .await?;
-        Ok(res)
+        self.store.store_put(&self.path, path, mode, val).await
     }
 
     /// Renames a storage object if the target path doesn't exist
@@ -294,8 +260,9 @@ impl StoreFeatures<BoxError> for BaseCtx {
     /// * `from` - Source path
     /// * `to` - Destination path
     async fn store_rename_if_not_exists(&self, from: &Path, to: &Path) -> Result<(), BoxError> {
-        self.store.rename_if_not_exists(from, to).await?;
-        Ok(())
+        self.store
+            .store_rename_if_not_exists(&self.path, from, to)
+            .await
     }
 
     /// Deletes data at the specified path
@@ -303,8 +270,7 @@ impl StoreFeatures<BoxError> for BaseCtx {
     /// # Arguments
     /// * `path` - Path of the object to delete
     async fn store_delete(&self, path: &Path) -> Result<(), BoxError> {
-        self.store.delete(path).await?;
-        Ok(())
+        self.store.store_delete(&self.path, path).await
     }
 }
 

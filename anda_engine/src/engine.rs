@@ -1,17 +1,20 @@
 use anda_core::{AgentOutput, AgentSet, BoxError, ToolSet};
 use candid::Principal;
 use ic_cose_types::validate_str;
-use object_store::ObjectStore;
+use object_store::memory::InMemory;
 use serde_json::Value;
 use std::sync::Arc;
 
-use crate::context::{AgentCtx, BaseCtx};
+use crate::{
+    context::{AgentCtx, BaseCtx},
+    database::{Store, VectorStore},
+    model::Model,
+};
+
+static TEE_LOCAL_SERVER: &str = "http://127.0.0.1:8080";
 
 pub struct Engine {
     ctx: AgentCtx,
-    tools: ToolSet<BaseCtx>,
-    agents: AgentSet<AgentCtx>,
-    store: Arc<dyn ObjectStore>,
     default_agent: String,
 }
 
@@ -25,7 +28,7 @@ impl Engine {
         agent_name: Option<String>,
     ) -> Result<AgentOutput, BoxError> {
         let name = agent_name.unwrap_or(self.default_agent.clone());
-        if !self.agents.contains(&name) {
+        if !self.ctx.agents.contains(&name) {
             return Err(format!("agent {} not found", name).into());
         }
 
@@ -40,7 +43,7 @@ impl Engine {
         name: String,
         args: Value,
     ) -> Result<Value, BoxError> {
-        if !self.tools.contains(&name) {
+        if !self.ctx.tools.contains(&name) {
             return Err(format!("tool {} not found", name).into());
         }
 
@@ -52,8 +55,10 @@ impl Engine {
 pub struct EngineBuilder {
     tools: ToolSet<BaseCtx>,
     agents: AgentSet<AgentCtx>,
-    store: Option<Box<dyn ObjectStore>>,
-    default_agent: String,
+    model: Model,
+    store: Store,
+    vector_store: VectorStore,
+    tee_host: String,
 }
 
 impl Default for EngineBuilder {
@@ -64,21 +69,29 @@ impl Default for EngineBuilder {
 
 impl EngineBuilder {
     pub fn new() -> Self {
+        let ms = Arc::new(InMemory::new());
         EngineBuilder {
             tools: ToolSet::new(),
             agents: AgentSet::new(),
-            store: None,
-            default_agent: "default".to_string(),
+            model: Model::not_implemented(),
+            store: Store::new(ms.clone()),
+            vector_store: VectorStore::new(ms),
+            tee_host: TEE_LOCAL_SERVER.to_string(),
         }
     }
 
-    pub fn with_default_agent(mut self, name: String) -> Self {
-        self.default_agent = name;
+    pub fn with_store(mut self, store: Store) -> Self {
+        self.store = store;
         self
     }
 
-    pub fn with_store(mut self, store: Box<dyn ObjectStore>) -> Self {
-        self.store = Some(store);
+    pub fn with_vector_store(mut self, vector_store: VectorStore) -> Self {
+        self.vector_store = vector_store;
+        self
+    }
+
+    pub fn with_model(mut self, model: Model) -> Self {
+        self.model = model;
         self
     }
 
@@ -106,13 +119,21 @@ impl EngineBuilder {
         Ok(())
     }
 
-    // pub fn build(self) -> Engine {
-    //     Engine {
-    //         ctx: AgentCtx::new(),
-    //         tools: self.tools,
-    //         agents: self.agents,
-    //         store: self.store,
-    //         default_agent: self.default_agent,
-    //     }
-    // }
+    pub fn build(self, default_agent: String) -> Engine {
+        let http = reqwest::Client::new();
+        let ctx = BaseCtx::new(&self.tee_host, http, self.store);
+        let ctx = AgentCtx::new(
+            ctx,
+            self.model,
+            self.vector_store,
+            Arc::new(self.tools),
+            Arc::new(self.agents),
+        );
+
+        if !ctx.agents.contains(&default_agent) {
+            panic!("default agent {} not found", default_agent);
+        }
+
+        Engine { ctx, default_agent }
+    }
 }

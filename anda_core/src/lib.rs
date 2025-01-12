@@ -1,4 +1,8 @@
-use std::ops::{Deref, DerefMut};
+use std::{
+    future::Future,
+    ops::{Deref, DerefMut},
+    pin::Pin,
+};
 
 pub mod agent;
 pub mod context;
@@ -13,6 +17,9 @@ pub use tool::*;
 /// A type alias for a boxed error that is thread-safe and sendable across threads.
 /// This is commonly used as a return type for functions that can return various error types.
 pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
+
+/// A type alias for a boxed future that is thread-safe and sendable across threads.
+pub type BoxPinFut<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 
 /// A global state manager for Agent or Tool
 ///
@@ -35,4 +42,9 @@ impl<S> DerefMut for State<S> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
+}
+
+/// Joins two paths together
+pub fn join_path(a: &Path, b: &Path) -> Path {
+    Path::from(format!("{}/{}", a, b))
 }
