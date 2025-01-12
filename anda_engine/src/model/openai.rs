@@ -1,8 +1,8 @@
 //! OpenAI API client and Anda integration
 //!
 use anda_core::{
-    AgentOutput, BoxError, CompletionRequest, Embedding, FunctionDefinition, MessageInput,
-    ToolCall, CONTENT_TYPE_JSON,
+    AgentOutput, BoxError, BoxPinFut, CompletionRequest, Embedding, FunctionDefinition,
+    MessageInput, ToolCall, CONTENT_TYPE_JSON,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -291,10 +291,7 @@ impl EmbeddingFeaturesDyn for EmbeddingModel {
 
     /// Generates embeddings for multiple texts in a batch
     /// Returns a vector of Embedding structs in the same order as input texts
-    fn embed(
-        &self,
-        texts: Vec<String>,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<Embedding>, BoxError>> + Send>> {
+    fn embed(&self, texts: Vec<String>) -> BoxPinFut<Result<Vec<Embedding>, BoxError>> {
         let model = self.model.clone();
         let client = self.client.clone();
         Box::pin(async move {
@@ -325,10 +322,7 @@ impl EmbeddingFeaturesDyn for EmbeddingModel {
 
     /// Generates a single embedding for a query text
     /// Optimized for single text embedding generation
-    fn embed_query(
-        &self,
-        text: String,
-    ) -> Pin<Box<dyn Future<Output = Result<Embedding, BoxError>> + Send>> {
+    fn embed_query(&self, text: String) -> BoxPinFut<Result<Embedding, BoxError>> {
         let model = self.model.clone();
         let client = self.client.clone();
         Box::pin(async move {
@@ -390,10 +384,7 @@ impl CompletionModel {
 }
 
 impl CompletionFeaturesDyn for CompletionModel {
-    fn completion(
-        &self,
-        mut req: CompletionRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<AgentOutput, BoxError>> + Send>> {
+    fn completion(&self, mut req: CompletionRequest) -> BoxPinFut<Result<AgentOutput, BoxError>> {
         let is_new = self.is_new_model();
         let json_object = req.response_format.is_some() || !req.tools.is_empty();
         let model = self.model.clone();

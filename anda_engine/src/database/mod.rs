@@ -9,7 +9,7 @@ pub trait VectorSearchFeaturesDyn: Send + Sync + 'static {
         namespace: Path,
         query: String,
         n: usize,
-    ) -> BoxPinFut<Result<Vec<(String, bytes::Bytes)>, BoxError>>;
+    ) -> BoxPinFut<Result<Vec<u8>, BoxError>>;
 
     fn top_n_ids(
         &self,
@@ -36,7 +36,7 @@ impl VectorSearchFeaturesDyn for VectorStore {
         namespace: Path,
         query: String,
         n: usize,
-    ) -> BoxPinFut<Result<Vec<(String, bytes::Bytes)>, BoxError>> {
+    ) -> BoxPinFut<Result<Vec<u8>, BoxError>> {
         Box::pin(futures::future::ready(Err("not implemented".into())))
     }
 

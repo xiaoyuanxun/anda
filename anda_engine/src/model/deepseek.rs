@@ -1,8 +1,8 @@
 //! OpenAI API client and Anda integration
 //!
 use anda_core::{
-    AgentOutput, BoxError, CompletionRequest, FunctionDefinition, MessageInput, ToolCall,
-    CONTENT_TYPE_JSON,
+    AgentOutput, BoxError, BoxPinFut, CompletionRequest, FunctionDefinition, MessageInput,
+    ToolCall, CONTENT_TYPE_JSON,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -187,10 +187,7 @@ impl CompletionModel {
 }
 
 impl CompletionFeaturesDyn for CompletionModel {
-    fn completion(
-        &self,
-        mut req: CompletionRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<AgentOutput, BoxError>> + Send>> {
+    fn completion(&self, mut req: CompletionRequest) -> BoxPinFut<Result<AgentOutput, BoxError>> {
         let json_object = req.response_format.is_some() || !req.tools.is_empty();
         let model = self.model.clone();
         let client = self.client.clone();

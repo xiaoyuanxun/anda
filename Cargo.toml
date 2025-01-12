@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["anda_core", "anda_engine"]
+members = ["anda_core", "anda_engine", "anda_lancedb"]
 
 [workspace.package]
 name = "anda"

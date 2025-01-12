@@ -1,6 +1,6 @@
 //! Cohere API client and Anda integration
 //!
-use anda_core::{BoxError, Embedding, CONTENT_TYPE_JSON};
+use anda_core::{BoxError, BoxPinFut, Embedding, CONTENT_TYPE_JSON};
 use serde::Deserialize;
 use serde_json::json;
 use std::{future::Future, pin::Pin, time::Duration};
@@ -185,10 +185,7 @@ impl EmbeddingFeaturesDyn for EmbeddingModel {
         self.ndims
     }
 
-    fn embed(
-        &self,
-        texts: Vec<String>,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<Embedding>, BoxError>> + Send>> {
+    fn embed(&self, texts: Vec<String>) -> BoxPinFut<Result<Vec<Embedding>, BoxError>> {
         let model = self.model.clone();
         let client = self.client.clone();
         Box::pin(async move {
@@ -219,10 +216,7 @@ impl EmbeddingFeaturesDyn for EmbeddingModel {
         })
     }
 
-    fn embed_query(
-        &self,
-        text: String,
-    ) -> Pin<Box<dyn Future<Output = Result<Embedding, BoxError>> + Send>> {
+    fn embed_query(&self, text: String) -> BoxPinFut<Result<Embedding, BoxError>> {
         let model = self.model.clone();
         let client = self.client.clone();
         Box::pin(async move {

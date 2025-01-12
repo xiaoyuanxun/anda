@@ -165,8 +165,8 @@ impl EmbeddingFeatures<BoxError> for AgentCtx {
 
 impl VectorSearchFeatures<BoxError> for AgentCtx {
     /// Get the top n documents based on the distance to the given query.
-    /// The result is a list of tuples of the form (score, id, document)
-    async fn top_n<T>(&self, query: &str, n: usize) -> Result<Vec<(String, T)>, BoxError>
+    /// The result is a list of json document
+    async fn top_n<T>(&self, query: &str, n: usize) -> Result<Vec<T>, BoxError>
     where
         T: DeserializeOwned,
     {
@@ -174,10 +174,8 @@ impl VectorSearchFeatures<BoxError> for AgentCtx {
             .store
             .top_n(self.base.path.clone(), query.to_string(), n)
             .await?;
-        Ok(res
-            .into_iter()
-            .filter_map(|(id, doc)| from_reader(doc.as_ref()).ok().map(|doc| (id, doc)))
-            .collect())
+        let val = serde_json::from_slice(res.as_ref())?;
+        Ok(val)
     }
 
     /// Same as `top_n` but returns the document ids only.

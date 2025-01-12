@@ -248,12 +248,8 @@ pub trait EmbeddingFeatures<Err>: Sized {
 /// Provides vector search capabilities for semantic similarity search
 pub trait VectorSearchFeatures<Err>: Sized {
     /// Performs a semantic search to find top n most similar documents
-    /// Returns a list of tuples containing (document_id, deserialized_document)
-    fn top_n<T>(
-        &self,
-        query: &str,
-        n: usize,
-    ) -> impl Future<Output = Result<Vec<(String, T)>, Err>> + Send
+    /// Returns a list of deserialized json document
+    fn top_n<T>(&self, query: &str, n: usize) -> impl Future<Output = Result<Vec<T>, Err>> + Send
     where
         T: DeserializeOwned;
 

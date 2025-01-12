@@ -1,0 +1,37 @@
+[package]
+name = "anda_lancedb"
+description = "Anda vector store index integration for LanceDB"
+repository = "https://github.com/ldclabs/anda/tree/main/anda_lancedb"
+publish = true
+version = "0.1.0"
+edition.workspace = true
+keywords.workspace = true
+categories.workspace = true
+license.workspace = true
+
+[dependencies]
+anda_core = { path = "../anda_core", version = "0.2" }
+anda_engine = { path = "../anda_engine", version = "0.1" }
+candid = { workspace = true }
+bytes = { workspace = true }
+ciborium = { workspace = true }
+futures = { workspace = true }
+futures-util = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_bytes = { workspace = true }
+http = { workspace = true }
+thiserror = { workspace = true }
+object_store = { workspace = true }
+ic_cose = { workspace = true }
+ic_cose_types = { workspace = true }
+ic_object_store = { workspace = true }
+ic_tee_agent = { workspace = true }
+tokio-util = { workspace = true }
+structured-logger = { workspace = true }
+reqwest = { workspace = true }
+moka = { workspace = true }
+lancedb = { git = "https://github.com/ldclabs/lancedb", rev = "34291d12a70e7ebedae11dafba4996a971a500e8" }
+lance-index = { version = "=0.21.1", git = "https://github.com/lancedb/lance.git", tag = "v0.21.1-beta.2" }
+arrow-array = "53.2"
+arrow-json = "53.2"
