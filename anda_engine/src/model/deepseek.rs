@@ -6,7 +6,7 @@ use anda_core::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::{future::Future, pin::Pin, time::Duration};
+use std::time::Duration;
 
 use super::CompletionFeaturesDyn;
 use crate::APP_USER_AGENT;
@@ -183,7 +183,6 @@ impl CompletionModel {
 
 impl CompletionFeaturesDyn for CompletionModel {
     fn completion(&self, mut req: CompletionRequest) -> BoxPinFut<Result<AgentOutput, BoxError>> {
-        let json_object = req.response_format.is_some() || !req.tools.is_empty();
         let model = self.model.clone();
         let client = self.client.clone();
 

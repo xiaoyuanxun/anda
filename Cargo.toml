@@ -18,38 +18,22 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
-anyhow = "1"
-axum = { version = "0.7", features = [
-  "http1",
-  "http2",
-  "json",
-  "macros",
-  "matched-path",
-  "tokio",
-  "query",
-], default-features = true }
-axum-server = { version = "0.7", features = ["tls-rustls"] }
 bytes = "1"
-base64 = "0.22"
 candid = "0.10"
 ciborium = "0.2"
-const-hex = "1"
 futures = "0.3"
 futures-util = "0.3"
-lazy_static = "1.5"
 http = "1.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_bytes = "0.11"
 ic_cose_types = "0.6"
 ic_cose = "0.6"
-ic_object_store = { version = "0.6" }
 ic_tee_agent = "0.2"
 object_store = { version = "0.11" }
-tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"
-log = "0.4"
 structured-logger = "1"
+rand = "0.8"
 reqwest = { version = "0.12", features = [
   "rustls-tls",
   "rustls-tls-native-roots",

@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{collections::BTreeMap, fmt::Write, future::Future};
 
+use crate::BoxError;
+
 /// Represents the output of an agent execution
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct AgentOutput {
@@ -89,10 +91,7 @@ impl std::fmt::Display for Document {
 /// Struct representing a general completion request that can be sent to a completion model provider.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct CompletionRequest {
-    /// The prompt to be sent to the completion model provider as "developer" or "system" role
-    pub prompt: String,
-
-    /// The preamble to be sent to the completion model provider
+    /// The preamble to be sent to the completion model provider, as the "system" role
     pub preamble: Option<String>,
 
     /// The chat history to be sent to the completion model provider
@@ -100,6 +99,9 @@ pub struct CompletionRequest {
 
     /// The documents to embed into the prompt
     pub documents: Vec<Document>,
+
+    /// The prompt to be sent to the completion model provider as "developer" or "system" role
+    pub prompt: String,
 
     /// The tools to be sent to the completion model provider
     pub tools: Vec<FunctionDefinition>,
@@ -151,7 +153,7 @@ pub struct Embedding {
 }
 
 /// Provides LLM completion capabilities for agents
-pub trait CompletionFeatures<Err>: Sized {
+pub trait CompletionFeatures: Sized {
     /// Generates a completion based on the given prompt and context
     ///
     /// # Arguments
@@ -162,11 +164,11 @@ pub trait CompletionFeatures<Err>: Sized {
     fn completion(
         &self,
         req: CompletionRequest,
-    ) -> impl Future<Output = Result<AgentOutput, Err>> + Send;
+    ) -> impl Future<Output = Result<AgentOutput, BoxError>> + Send;
 }
 
 /// Provides text embedding capabilities for agents
-pub trait EmbeddingFeatures<Err>: Sized {
+pub trait EmbeddingFeatures: Sized {
     /// The number of dimensions in the embedding vector.
     fn ndims(&self) -> usize;
 
@@ -175,11 +177,11 @@ pub trait EmbeddingFeatures<Err>: Sized {
     fn embed(
         &self,
         texts: impl IntoIterator<Item = String> + Send,
-    ) -> impl Future<Output = Result<Vec<Embedding>, Err>> + Send;
+    ) -> impl Future<Output = Result<Vec<Embedding>, BoxError>> + Send;
 
     /// Generates a single embedding for a query text
     /// Optimized for single text embedding generation
-    fn embed_query(&self, text: &str) -> impl Future<Output = Result<Embedding, Err>> + Send;
+    fn embed_query(&self, text: &str) -> impl Future<Output = Result<Embedding, BoxError>> + Send;
 }
 
 #[cfg(test)]

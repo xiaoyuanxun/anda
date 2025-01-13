@@ -3,7 +3,7 @@
 use anda_core::{BoxError, BoxPinFut, Embedding, CONTENT_TYPE_JSON};
 use serde::Deserialize;
 use serde_json::json;
-use std::{future::Future, pin::Pin, time::Duration};
+use std::time::Duration;
 
 use super::EmbeddingFeaturesDyn;
 use crate::APP_USER_AGENT;

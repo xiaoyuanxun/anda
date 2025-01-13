@@ -1,6 +1,7 @@
 pub mod context;
 pub mod engine;
 pub mod model;
+pub mod plugin;
 pub mod store;
 
 pub static APP_USER_AGENT: &str = concat!(

@@ -92,6 +92,7 @@ dependencies = [
  "http 1.2.0",
  "ic_cose_types",
  "object_store 0.11.2",
+ "rand",
  "reqwest",
  "serde",
  "serde_bytes",
@@ -102,28 +103,27 @@ dependencies = [
 
 [[package]]
 name = "anda_engine"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anda_core",
  "bytes",
  "candid",
  "ciborium",
- "const-hex",
  "futures",
  "futures-util",
  "http 1.2.0",
  "ic_cose",
  "ic_cose_types",
- "ic_object_store",
  "ic_tee_agent",
  "moka 0.12.10",
  "object_store 0.11.2",
+ "rand",
  "reqwest",
+ "schemars",
  "serde",
  "serde_bytes",
  "serde_json",
  "structured-logger",
- "thiserror 2.0.11",
  "tokio-util",
 ]
 
@@ -135,27 +135,9 @@ dependencies = [
  "anda_engine",
  "arrow-array",
  "arrow-json",
- "bytes",
- "candid",
- "ciborium",
  "futures",
- "futures-util",
- "http 1.2.0",
- "ic_cose",
- "ic_cose_types",
- "ic_object_store",
- "ic_tee_agent",
  "lance-index",
  "lancedb",
- "moka 0.12.10",
- "object_store 0.11.2",
- "reqwest",
- "serde",
- "serde_bytes",
- "serde_json",
- "structured-logger",
- "thiserror 2.0.11",
- "tokio-util",
 ]
 
 [[package]]
@@ -2059,6 +2041,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "75b325c5dbd37f80359721ad39aca5a29fb04c89279657cffdda8736d0c0b9d2"
 
 [[package]]
+name = "dyn-clone"
+version = "1.0.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d6ef0072f8a535281e4876be788938b528e9a1d43900b82c2569af7da799125"
+
+[[package]]
 name = "ecdsa"
 version = "0.16.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3117,25 +3105,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ic_object_store"
-version = "0.6.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f92238d87caedd5f9fe083c63a571642f83d9b6e448b0ea116b8a428eeab2fe4"
-dependencies = [
- "aes-gcm",
- "async-trait",
- "bytes",
- "candid",
- "chrono",
- "futures",
- "ic-agent",
- "ic_cose_types",
- "object_store 0.11.2",
- "rand",
- "serde_bytes",
-]
-
-[[package]]
 name = "ic_principal"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4145,9 +4114,9 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "miniz_oxide"
-version = "0.8.2"
+version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ffbe83022cedc1d264172192511ae958937694cd57ce297164951b8b3568394"
+checksum = "b8402cab7aefae129c6977bb0ff1b8fd9a04eb5b51efc50a70bea51cda0c7924"
 dependencies = [
  "adler2",
 ]
@@ -5427,6 +5396,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "schemars"
+version = "0.8.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09c024468a378b7e36765cd36702b7a90cc3cba11654f6685c8f233408e89e92"
+dependencies = [
+ "dyn-clone",
+ "schemars_derive",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "schemars_derive"
+version = "0.8.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1eee588578aff73f856ab961cd2f79e36bc45d7ded33a7562adba4667aecc0e"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "serde_derive_internals",
+ "syn 2.0.96",
+]
+
+[[package]]
 name = "scoped-tls"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5546,6 +5539,17 @@ name = "serde_derive"
 version = "1.0.217"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a9bf7cf98d04a2b28aead066b7496853d4779c9cc183c440dbac457641e19a0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.96",
+]
+
+[[package]]
+name = "serde_derive_internals"
+version = "0.29.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "18d26a20a969b9e3fdf2fc2d9f21eda6c40e2de84c9408bb5d3b05d499aae711"
 dependencies = [
  "proc-macro2",
  "quote",

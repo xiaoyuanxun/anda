@@ -3,7 +3,7 @@ name = "anda_engine"
 description = "Agents engine for Anda -- a framework for AI agent development."
 repository = "https://github.com/ldclabs/anda/tree/main/anda_engine"
 publish = true
-version = "0.1.0"
+version = "0.2.0"
 edition.workspace = true
 keywords.workspace = true
 categories.workspace = true
@@ -20,16 +20,15 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_bytes = { workspace = true }
 http = { workspace = true }
-thiserror = { workspace = true }
 object_store = { workspace = true }
 ic_cose = { workspace = true }
 ic_cose_types = { workspace = true }
-ic_object_store = { workspace = true }
 ic_tee_agent = { workspace = true }
 tokio-util = { workspace = true }
 structured-logger = { workspace = true }
 reqwest = { workspace = true }
+rand = { workspace = true }
 moka = { workspace = true }
+schemars = { version = "0.8" }
 
 [dev-dependencies]
-const-hex = { workspace = true }

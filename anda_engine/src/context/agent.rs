@@ -2,9 +2,10 @@ use anda_core::{
     AgentContext, AgentOutput, AgentSet, BaseContext, BoxError, CacheExpiry, CacheFeatures,
     CancellationToken, CanisterFeatures, CompletionFeatures, CompletionRequest, Embedding,
     EmbeddingFeatures, HttpFeatures, KeysFeatures, ObjectMeta, Path, PutMode, PutResult,
-    StateFeatures, StoreFeatures, ToolSet, Value, VectorSearchFeatures,
+    StateFeatures, StoreFeatures, ToolSet, VectorSearchFeatures,
 };
 use candid::{utils::ArgumentEncoder, CandidType, Principal};
+use rand::Rng;
 use serde::{de::DeserializeOwned, Serialize};
 use std::{future::Future, sync::Arc, time::Duration};
 
@@ -14,6 +15,7 @@ use crate::{
     store::{VectorSearchFeaturesDyn, VectorStore},
 };
 
+#[derive(Clone)]
 pub struct AgentCtx {
     pub(crate) base: BaseCtx,
     pub(crate) model: Model,
@@ -23,7 +25,7 @@ pub struct AgentCtx {
 }
 
 impl AgentCtx {
-    pub fn new(
+    pub(crate) fn new(
         base: BaseCtx,
         model: Model,
         store: VectorStore,
@@ -39,7 +41,7 @@ impl AgentCtx {
         }
     }
 
-    pub fn child(&self, agent_name: &str) -> Result<Self, BoxError> {
+    pub(crate) fn child(&self, agent_name: &str) -> Result<Self, BoxError> {
         Ok(Self {
             base: self.base.child(format!("A:{}", agent_name))?,
             model: self.model.clone(),
@@ -49,11 +51,11 @@ impl AgentCtx {
         })
     }
 
-    pub fn child_base(&self, tool_name: &str) -> Result<BaseCtx, BoxError> {
+    pub(crate) fn child_base(&self, tool_name: &str) -> Result<BaseCtx, BoxError> {
         self.base.child(format!("T:{}", tool_name))
     }
 
-    pub fn child_with(
+    pub(crate) fn child_with(
         &self,
         agent_name: &str,
         user: String,
@@ -70,7 +72,7 @@ impl AgentCtx {
         })
     }
 
-    pub fn child_base_with(
+    pub(crate) fn child_base_with(
         &self,
         tool_name: &str,
         user: String,
@@ -127,7 +129,7 @@ impl AgentContext for AgentCtx {
     }
 }
 
-impl CompletionFeatures<BoxError> for AgentCtx {
+impl CompletionFeatures for AgentCtx {
     async fn completion(&self, req: CompletionRequest) -> Result<AgentOutput, BoxError> {
         let mut res = self.model.completion(req).await?;
         // auto call tools
@@ -143,7 +145,7 @@ impl CompletionFeatures<BoxError> for AgentCtx {
     }
 }
 
-impl EmbeddingFeatures<BoxError> for AgentCtx {
+impl EmbeddingFeatures for AgentCtx {
     fn ndims(&self) -> usize {
         self.model.ndims()
     }
@@ -160,7 +162,7 @@ impl EmbeddingFeatures<BoxError> for AgentCtx {
     }
 }
 
-impl VectorSearchFeatures<BoxError> for AgentCtx {
+impl VectorSearchFeatures for AgentCtx {
     /// Get the top n documents based on the distance to the given query.
     /// The result is a list of json document
     async fn top_n<T>(&self, query: &str, n: usize) -> Result<Vec<T>, BoxError>
@@ -183,11 +185,9 @@ impl VectorSearchFeatures<BoxError> for AgentCtx {
     }
 }
 
-impl BaseContext for AgentCtx {
-    type Error = BoxError;
-}
+impl BaseContext for AgentCtx {}
 
-impl StateFeatures<BoxError> for AgentCtx {
+impl StateFeatures for AgentCtx {
     fn user(&self) -> String {
         self.base.user()
     }
@@ -211,9 +211,18 @@ impl StateFeatures<BoxError> for AgentCtx {
     fn rand_bytes<const N: usize>() -> [u8; N] {
         BaseCtx::rand_bytes()
     }
+
+    fn rand_number<T, R>(range: R) -> T
+    where
+        T: rand::distributions::uniform::SampleUniform,
+        R: rand::distributions::uniform::SampleRange<T>,
+    {
+        let mut rng = rand::thread_rng();
+        rng.gen_range(range)
+    }
 }
 
-impl KeysFeatures<BoxError> for AgentCtx {
+impl KeysFeatures for AgentCtx {
     /// Derives a 256-bit AES-GCM key from the given derivation path
     async fn a256gcm_key(&self, derivation_path: &[&[u8]]) -> Result<[u8; 32], BoxError> {
         self.base.a256gcm_key(derivation_path).await
@@ -299,7 +308,7 @@ impl KeysFeatures<BoxError> for AgentCtx {
     }
 }
 
-impl StoreFeatures<BoxError> for AgentCtx {
+impl StoreFeatures for AgentCtx {
     /// Retrieves data from storage at the specified path
     async fn store_get(&self, path: &Path) -> Result<(bytes::Bytes, ObjectMeta), BoxError> {
         self.base.store_get(path).await
@@ -351,7 +360,7 @@ impl StoreFeatures<BoxError> for AgentCtx {
     }
 }
 
-impl CacheFeatures<BoxError> for AgentCtx {
+impl CacheFeatures for AgentCtx {
     /// Checks if a key exists in the cache
     fn cache_contains(&self, key: &str) -> bool {
         self.base.cache_contains(key)
@@ -391,7 +400,7 @@ impl CacheFeatures<BoxError> for AgentCtx {
     }
 }
 
-impl CanisterFeatures<BoxError> for AgentCtx {
+impl CanisterFeatures for AgentCtx {
     /// Performs a query call to a canister (read-only, no state changes)
     ///
     /// # Arguments
@@ -429,7 +438,7 @@ impl CanisterFeatures<BoxError> for AgentCtx {
     }
 }
 
-impl HttpFeatures<BoxError> for AgentCtx {
+impl HttpFeatures for AgentCtx {
     /// Makes an HTTPs request
     ///
     /// # Arguments

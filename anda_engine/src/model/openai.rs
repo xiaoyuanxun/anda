@@ -6,7 +6,7 @@ use anda_core::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::{future::Future, pin::Pin, time::Duration};
+use std::time::Duration;
 
 use super::{CompletionFeaturesDyn, EmbeddingFeaturesDyn};
 use crate::APP_USER_AGENT;

@@ -80,6 +80,29 @@ impl VectorSearchFeaturesDyn for NotImplemented {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct MockImplemented;
+
+impl VectorSearchFeaturesDyn for MockImplemented {
+    fn top_n(
+        &self,
+        _namespace: Path,
+        _query: String,
+        _n: usize,
+    ) -> BoxPinFut<Result<Vec<u8>, BoxError>> {
+        Box::pin(futures::future::ready(Ok(vec![])))
+    }
+
+    fn top_n_ids(
+        &self,
+        _namespace: Path,
+        _query: String,
+        _n: usize,
+    ) -> BoxPinFut<Result<Vec<String>, BoxError>> {
+        Box::pin(futures::future::ready(Ok(vec![])))
+    }
+}
+
 #[derive(Clone)]
 pub struct Store {
     store: Arc<dyn ObjectStore>,

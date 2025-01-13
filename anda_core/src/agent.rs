@@ -45,9 +45,9 @@ where
     fn run(
         &self,
         ctx: C,
-        prompt: &str,
+        prompt: String,
         attachment: Option<Vec<u8>>,
-    ) -> impl Future<Output = Result<AgentOutput, BoxError>> + Send + Sync;
+    ) -> impl Future<Output = Result<AgentOutput, BoxError>> + Send;
 }
 
 /// Dynamic dispatch version of Agent trait for runtime flexibility
@@ -96,7 +96,7 @@ where
         attachment: Option<Vec<u8>>,
     ) -> BoxPinFut<Result<AgentOutput, BoxError>> {
         let agent = self.0.clone();
-        Box::pin(async move { agent.run(ctx, &prompt, attachment).await })
+        Box::pin(async move { agent.run(ctx, prompt, attachment).await })
     }
 }
 

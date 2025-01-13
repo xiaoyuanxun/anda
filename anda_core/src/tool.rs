@@ -20,7 +20,7 @@ where
     const NAME: &'static str;
 
     /// The arguments type of the tool.
-    type Args: DeserializeOwned + Send + Sync;
+    type Args: DeserializeOwned + Send;
     /// The output type of the tool.
     type Output: Serialize;
 
@@ -48,7 +48,7 @@ where
         &self,
         ctx: C,
         args: Self::Args,
-    ) -> impl Future<Output = Result<Self::Output, BoxError>> + Send + Sync;
+    ) -> impl Future<Output = Result<Self::Output, BoxError>> + Send;
 }
 
 /// Dynamic dispatch version of the Tool trait

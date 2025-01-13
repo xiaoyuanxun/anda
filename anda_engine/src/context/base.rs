@@ -7,6 +7,7 @@ use candid::{utils::ArgumentEncoder, CandidType, Principal};
 use ciborium::from_reader;
 use ic_cose::rand_bytes;
 use ic_cose_types::{cose::sha3_256, to_cbor_bytes};
+use rand::Rng;
 use reqwest::Client;
 use serde::{de::DeserializeOwned, Serialize};
 use std::{
@@ -21,7 +22,7 @@ const CONTEXT_MAX_DEPTH: u8 = 42;
 const CACHE_MAX_CAPACITY: u64 = 1000000;
 
 use super::{cache::CacheService, keys::KeysService};
-use crate::store::Store;
+use crate::{store::Store, APP_USER_AGENT};
 
 #[derive(Clone)]
 pub struct BaseCtx {
@@ -32,7 +33,8 @@ pub struct BaseCtx {
     pub(crate) start_at: Instant,
     pub(crate) depth: u8,
 
-    http: Client,
+    local_http: Client,
+    outer_http: Client,
     cache: Arc<CacheService>,
     keys: Arc<KeysService>,
     store: Store,
@@ -42,17 +44,35 @@ pub struct BaseCtx {
 }
 
 impl BaseCtx {
-    pub fn new(tee_host: &str, http: Client, store: Store) -> Self {
+    pub(crate) fn new(
+        tee_host: &str,
+        cancellation_token: CancellationToken,
+        local_http: Client,
+        store: Store,
+    ) -> Self {
+        let outer_http = reqwest::Client::builder()
+            .use_rustls_tls()
+            .https_only(true)
+            .http2_keep_alive_interval(Some(Duration::from_secs(25)))
+            .http2_keep_alive_timeout(Duration::from_secs(15))
+            .http2_keep_alive_while_idle(true)
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(30))
+            .user_agent(APP_USER_AGENT)
+            .build()
+            .expect("Anda reqwest client should build");
+
         Self {
             user: "system".to_string(),
             caller: None,
             path: Path::default(),
-            cancellation_token: CancellationToken::new(),
+            cancellation_token,
             start_at: Instant::now(),
-            http: http.clone(),
+            local_http: local_http.clone(),
+            outer_http,
             cache: Arc::new(CacheService::new(CACHE_MAX_CAPACITY)),
             store,
-            keys: Arc::new(KeysService::new(format!("{}/keys", tee_host), http)),
+            keys: Arc::new(KeysService::new(format!("{}/keys", tee_host), local_http)),
             endpoint_identity: format!("{}/identity", tee_host),
             endpoint_canister_query: format!("{}/canister/query", tee_host),
             endpoint_canister_update: format!("{}/canister/update", tee_host),
@@ -99,11 +119,9 @@ impl BaseCtx {
     }
 }
 
-impl BaseContext for BaseCtx {
-    type Error = BoxError;
-}
+impl BaseContext for BaseCtx {}
 
-impl StateFeatures<BoxError> for BaseCtx {
+impl StateFeatures for BaseCtx {
     fn user(&self) -> String {
         self.user.clone()
     }
@@ -128,9 +146,19 @@ impl StateFeatures<BoxError> for BaseCtx {
     fn rand_bytes<const N: usize>() -> [u8; N] {
         rand_bytes()
     }
+
+    /// Generates a random number within the given range
+    fn rand_number<T, R>(range: R) -> T
+    where
+        T: rand::distributions::uniform::SampleUniform,
+        R: rand::distributions::uniform::SampleRange<T>,
+    {
+        let mut rng = rand::thread_rng();
+        rng.gen_range(range)
+    }
 }
 
-impl KeysFeatures<BoxError> for BaseCtx {
+impl KeysFeatures for BaseCtx {
     /// Derives a 256-bit AES-GCM key from the given derivation path
     async fn a256gcm_key(&self, derivation_path: &[&[u8]]) -> Result<[u8; 32], BoxError> {
         self.keys.a256gcm_key(&self.path, derivation_path).await
@@ -220,7 +248,7 @@ impl KeysFeatures<BoxError> for BaseCtx {
     }
 }
 
-impl StoreFeatures<BoxError> for BaseCtx {
+impl StoreFeatures for BaseCtx {
     /// Retrieves data from storage at the specified path
     async fn store_get(&self, path: &Path) -> Result<(bytes::Bytes, ObjectMeta), BoxError> {
         self.store.store_get(&self.path, path).await
@@ -274,7 +302,7 @@ impl StoreFeatures<BoxError> for BaseCtx {
     }
 }
 
-impl CacheFeatures<BoxError> for BaseCtx {
+impl CacheFeatures for BaseCtx {
     /// Checks if a key exists in the cache
     fn cache_contains(&self, key: &str) -> bool {
         self.cache.cache_contains(&self.path, key)
@@ -313,7 +341,7 @@ impl CacheFeatures<BoxError> for BaseCtx {
     }
 }
 
-impl CanisterFeatures<BoxError> for BaseCtx {
+impl CanisterFeatures for BaseCtx {
     /// Performs a query call to a canister (read-only, no state changes)
     ///
     /// # Arguments
@@ -330,7 +358,7 @@ impl CanisterFeatures<BoxError> for BaseCtx {
         args: In,
     ) -> Result<Out, BoxError> {
         let res = canister_rpc(
-            &self.http,
+            &self.local_http,
             &self.endpoint_canister_query,
             canister,
             method,
@@ -356,7 +384,7 @@ impl CanisterFeatures<BoxError> for BaseCtx {
         args: In,
     ) -> Result<Out, BoxError> {
         let res = canister_rpc(
-            &self.http,
+            &self.local_http,
             &self.endpoint_canister_update,
             canister,
             method,
@@ -367,7 +395,7 @@ impl CanisterFeatures<BoxError> for BaseCtx {
     }
 }
 
-impl HttpFeatures<BoxError> for BaseCtx {
+impl HttpFeatures for BaseCtx {
     /// Makes an HTTPs request
     ///
     /// # Arguments
@@ -385,7 +413,7 @@ impl HttpFeatures<BoxError> for BaseCtx {
         if !url.starts_with("https://") {
             return Err("Invalid URL, must start with https://".into());
         }
-        let mut req = self.http.request(method, url);
+        let mut req = self.outer_http.request(method, url);
         if let Some(headers) = headers {
             req = req.headers(headers);
         }
@@ -413,7 +441,7 @@ impl HttpFeatures<BoxError> for BaseCtx {
         body: Option<Vec<u8>>, // default is empty
     ) -> Result<reqwest::Response, BoxError> {
         let res: HashMap<String, String> = http_rpc(
-            &self.http,
+            &self.local_http,
             &self.endpoint_identity,
             "sign_http",
             &(message_digest,),
@@ -451,8 +479,13 @@ impl HttpFeatures<BoxError> for BaseCtx {
         };
         let body = to_cbor_bytes(&req);
         let digest: [u8; 32] = sha3_256(&body);
-        let res: HashMap<String, String> =
-            http_rpc(&self.http, &self.endpoint_identity, "sign_http", &(digest,)).await?;
+        let res: HashMap<String, String> = http_rpc(
+            &self.local_http,
+            &self.endpoint_identity,
+            "sign_http",
+            &(digest,),
+        )
+        .await?;
         let mut headers = http::HeaderMap::new();
         res.into_iter().for_each(|(k, v)| {
             headers.insert(
@@ -461,7 +494,7 @@ impl HttpFeatures<BoxError> for BaseCtx {
             );
         });
 
-        let res = cbor_rpc(&self.http, endpoint, method, Some(headers), body).await?;
+        let res = cbor_rpc(&self.outer_http, endpoint, method, Some(headers), body).await?;
         let res = from_reader(&res[..]).map_err(|e| HttpRPCError::ResultError {
             endpoint: endpoint.to_string(),
             path: method.to_string(),

@@ -23,3 +23,4 @@ object_store = { workspace = true }
 ic_cose_types = { workspace = true }
 tokio-util = { workspace = true }
 reqwest = { workspace = true }
+rand = { workspace = true }

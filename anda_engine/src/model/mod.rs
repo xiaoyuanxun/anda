@@ -1,6 +1,6 @@
 use anda_core::{
     AgentOutput, BoxError, BoxPinFut, CompletionFeatures, CompletionRequest, Embedding,
-    EmbeddingFeatures,
+    EmbeddingFeatures, ToolCall,
 };
 use std::sync::Arc;
 
@@ -44,6 +44,56 @@ impl EmbeddingFeaturesDyn for NotImplemented {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct MockImplemented;
+
+impl CompletionFeaturesDyn for MockImplemented {
+    fn completion(&self, req: CompletionRequest) -> BoxPinFut<Result<AgentOutput, BoxError>> {
+        Box::pin(futures::future::ready(Ok(AgentOutput {
+            content: req.prompt,
+            tool_calls: if req.tools.is_empty() {
+                None
+            } else {
+                Some(
+                    req.tools
+                        .iter()
+                        .map(|tool| ToolCall {
+                            id: tool.name.clone(),
+                            name: tool.name.clone(),
+                            args: serde_json::to_string(&tool.parameters).unwrap(),
+                            result: None,
+                        })
+                        .collect(),
+                )
+            },
+            ..Default::default()
+        })))
+    }
+}
+
+impl EmbeddingFeaturesDyn for MockImplemented {
+    fn ndims(&self) -> usize {
+        384 // EMBED_MULTILINGUAL_LIGHT_V3
+    }
+
+    fn embed(&self, texts: Vec<String>) -> BoxPinFut<Result<Vec<Embedding>, BoxError>> {
+        Box::pin(futures::future::ready(Ok(texts
+            .into_iter()
+            .map(|text| Embedding {
+                text,
+                vec: vec![0.0; 384],
+            })
+            .collect())))
+    }
+
+    fn embed_query(&self, _text: String) -> BoxPinFut<Result<Embedding, BoxError>> {
+        Box::pin(futures::future::ready(Ok(Embedding {
+            text: "test".to_string(),
+            vec: vec![0.0; 384],
+        })))
+    }
+}
+
 #[derive(Clone)]
 pub struct Model {
     embedder: Arc<dyn EmbeddingFeaturesDyn>,
@@ -67,15 +117,22 @@ impl Model {
             completer: Arc::new(NotImplemented),
         }
     }
+
+    pub fn mock_implemented() -> Self {
+        Self {
+            embedder: Arc::new(MockImplemented),
+            completer: Arc::new(MockImplemented),
+        }
+    }
 }
 
-impl CompletionFeatures<BoxError> for Model {
+impl CompletionFeatures for Model {
     async fn completion(&self, req: CompletionRequest) -> Result<AgentOutput, BoxError> {
         self.completer.completion(req).await
     }
 }
 
-impl EmbeddingFeatures<BoxError> for Model {
+impl EmbeddingFeatures for Model {
     fn ndims(&self) -> usize {
         self.embedder.ndims()
     }
