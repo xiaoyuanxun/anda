@@ -1,5 +1,5 @@
 use anda_core::{BoxError, BoxPinFut, Path};
-use anda_engine::{database::VectorSearchFeaturesDyn, model::EmbeddingFeaturesDyn};
+use anda_engine::{model::EmbeddingFeaturesDyn, store::VectorSearchFeaturesDyn};
 use arrow_array::StringArray;
 use futures::TryStreamExt;
 use lance_index::scalar::FullTextSearchQuery;

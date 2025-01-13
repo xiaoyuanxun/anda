@@ -1,7 +1,10 @@
-use std::{collections::BTreeMap, future::Future, marker::PhantomData, pin::Pin};
+use std::{collections::BTreeMap, future::Future, marker::PhantomData, sync::Arc};
 
-use crate::context::{AgentContext, AgentOutput, FunctionDefinition, Value};
-use crate::BoxError;
+use crate::{
+    context::AgentContext,
+    model::{AgentOutput, FunctionDefinition},
+    BoxError, BoxPinFut,
+};
 
 /// Core trait defining an AI agent's behavior
 ///
@@ -9,7 +12,7 @@ use crate::BoxError;
 /// - `C`: The context type that implements `AgentContext`, must be thread-safe and have a static lifetime
 pub trait Agent<C>: Send + Sync
 where
-    C: AgentContext + Send + Sync + 'static,
+    C: AgentContext + Send + Sync,
 {
     /// The unique name of the agent. This name should be unique within the engine.
     ///
@@ -41,9 +44,9 @@ where
     /// - A future resolving to `Result<AgentOutput, BoxError>`
     fn run(
         &self,
-        ctx: &C,
+        ctx: C,
         prompt: &str,
-        attachment: Option<Value>,
+        attachment: Option<Vec<u8>>,
     ) -> impl Future<Output = Result<AgentOutput, BoxError>> + Send + Sync;
 }
 
@@ -53,22 +56,22 @@ where
 /// and execution without knowing the concrete type at compile time.
 pub trait AgentDyn<C>: Send + Sync
 where
-    C: AgentContext + Send + Sync + 'static,
+    C: AgentContext + Send + Sync,
 {
     fn name(&self) -> String;
 
     fn definition(&self) -> FunctionDefinition;
 
-    fn run<'a>(
-        &'a self,
-        ctx: &'a C,
-        prompt: &'a str,
-        attachment: Option<Value>,
-    ) -> Pin<Box<dyn Future<Output = Result<AgentOutput, BoxError>> + Send + 'a>>;
+    fn run(
+        &self,
+        ctx: C,
+        prompt: String,
+        attachment: Option<Vec<u8>>,
+    ) -> BoxPinFut<Result<AgentOutput, BoxError>>;
 }
 
 /// Adapter for converting static Agent to dynamic dispatch
-struct AgentWrapper<T, C>(T, PhantomData<fn() -> C>)
+struct AgentWrapper<T, C>(Arc<T>, PhantomData<C>)
 where
     T: Agent<C> + 'static,
     C: AgentContext + Send + Sync + 'static;
@@ -86,13 +89,14 @@ where
         self.0.definition()
     }
 
-    fn run<'a>(
-        &'a self,
-        ctx: &'a C,
-        prompt: &'a str,
-        attachment: Option<Value>,
-    ) -> Pin<Box<dyn Future<Output = Result<AgentOutput, BoxError>> + Send + 'a>> {
-        Box::pin(self.0.run(ctx, prompt, attachment))
+    fn run(
+        &self,
+        ctx: C,
+        prompt: String,
+        attachment: Option<Vec<u8>>,
+    ) -> BoxPinFut<Result<AgentOutput, BoxError>> {
+        let agent = self.0.clone();
+        Box::pin(async move { agent.run(ctx, &prompt, attachment).await })
     }
 }
 
@@ -101,7 +105,7 @@ where
 /// # Type Parameters
 /// - `C`: The context type that implements `AgentContext`
 #[derive(Default)]
-pub struct AgentSet<C: AgentContext + 'static> {
+pub struct AgentSet<C: AgentContext> {
     pub set: BTreeMap<String, Box<dyn AgentDyn<C>>>,
 }
 
@@ -153,9 +157,9 @@ where
     /// - `agent`: The agent to register, must implement `Agent<C>`
     pub fn add<T>(&mut self, agent: T)
     where
-        T: Agent<C> + 'static,
+        T: Agent<C> + Send + Sync + 'static,
     {
-        let agent_dyn = AgentWrapper(agent, PhantomData);
+        let agent_dyn = AgentWrapper(Arc::new(agent), PhantomData);
         self.set.insert(T::NAME.to_string(), Box::new(agent_dyn));
     }
 
@@ -172,13 +176,13 @@ where
     ///
     /// # Errors
     /// - Returns an error if the agent is not found
-    pub fn run<'a>(
-        &'a self,
+    pub fn run(
+        &self,
         name: &str,
-        ctx: &'a C,
-        prompt: &'a str,
-        attachment: Option<Value>,
-    ) -> Pin<Box<dyn Future<Output = Result<AgentOutput, BoxError>> + Send + 'a>> {
+        ctx: C,
+        prompt: String,
+        attachment: Option<Vec<u8>>,
+    ) -> BoxPinFut<Result<AgentOutput, BoxError>> {
         if let Some(agent) = self.set.get(name) {
             agent.run(ctx, prompt, attachment)
         } else {

@@ -5,14 +5,13 @@ use anda_core::{
     StateFeatures, StoreFeatures, ToolSet, Value, VectorSearchFeatures,
 };
 use candid::{utils::ArgumentEncoder, CandidType, Principal};
-use ciborium::from_reader;
 use serde::{de::DeserializeOwned, Serialize};
 use std::{future::Future, sync::Arc, time::Duration};
 
 use super::base::BaseCtx;
 use crate::{
-    database::{VectorSearchFeaturesDyn, VectorStore},
     model::Model,
+    store::{VectorSearchFeaturesDyn, VectorStore},
 };
 
 pub struct AgentCtx {
@@ -83,21 +82,21 @@ impl AgentCtx {
 }
 
 impl AgentContext for AgentCtx {
-    async fn tool_call(&self, name: &str, args: &Value) -> Result<Value, BoxError> {
+    async fn tool_call(&self, name: &str, args: String) -> Result<String, BoxError> {
         if !self.tools.contains(name) {
             return Err(format!("tool {} not found", name).into());
         }
 
         let ctx = self.child_base(name)?;
-        self.tools.call(name, &ctx, args).await
+        self.tools.call(name, ctx, args).await
     }
 
     async fn remote_tool_call(
         &self,
         endpoint: &str,
         tool_name: &str,
-        args: &Value,
-    ) -> Result<Value, BoxError> {
+        args: String,
+    ) -> Result<String, BoxError> {
         self.https_signed_rpc(endpoint, "tool_call", &(tool_name, args))
             .await
     }
@@ -105,23 +104,23 @@ impl AgentContext for AgentCtx {
     async fn agent_run(
         &self,
         name: &str,
-        prompt: &str,
-        attachment: Option<Value>,
+        prompt: String,
+        attachment: Option<Vec<u8>>,
     ) -> Result<AgentOutput, BoxError> {
         if !self.agents.contains(name) {
             return Err(format!("agent {} not found", name).into());
         }
 
         let ctx = self.child(name)?;
-        self.agents.run(name, &ctx, prompt, attachment).await
+        self.agents.run(name, ctx, prompt, attachment).await
     }
 
     async fn remote_agent_run(
         &self,
         endpoint: &str,
         agent_name: &str,
-        prompt: &str,
-        attachment: Option<Value>,
+        prompt: String,
+        attachment: Option<Vec<u8>>,
     ) -> Result<AgentOutput, BoxError> {
         self.https_signed_rpc(endpoint, "agent_run", &(agent_name, prompt, attachment))
             .await
@@ -134,10 +133,8 @@ impl CompletionFeatures<BoxError> for AgentCtx {
         // auto call tools
         if let Some(tools) = &mut res.tool_calls {
             for tool in tools {
-                if let Ok(args) = serde_json::from_str(&tool.args) {
-                    if let Ok(val) = self.tool_call(&tool.id, &args).await {
-                        tool.result = Some(val);
-                    }
+                if let Ok(val) = self.tool_call(&tool.id, tool.args.clone()).await {
+                    tool.result = Some(val);
                 }
             }
         }

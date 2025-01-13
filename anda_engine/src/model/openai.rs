@@ -197,7 +197,7 @@ pub struct CompletionResponse {
 }
 
 impl CompletionResponse {
-    fn try_into(mut self, json_object: bool) -> Result<AgentOutput, BoxError> {
+    fn try_into(mut self) -> Result<AgentOutput, BoxError> {
         let choice = self.choices.pop().ok_or("No completion choice")?;
         let mut output = AgentOutput {
             content: choice.message.content,
@@ -220,11 +220,6 @@ impl CompletionResponse {
         }
         if let Some(refusal) = choice.message.refusal {
             output.failed_reason = Some(refusal);
-        }
-        if json_object && output.tool_calls.is_none() {
-            if let Ok(val) = serde_json::from_str(&output.content) {
-                output.extracted_json = Some(val);
-            }
         }
 
         Ok(output)
@@ -386,7 +381,6 @@ impl CompletionModel {
 impl CompletionFeaturesDyn for CompletionModel {
     fn completion(&self, mut req: CompletionRequest) -> BoxPinFut<Result<AgentOutput, BoxError>> {
         let is_new = self.is_new_model();
-        let json_object = req.response_format.is_some() || !req.tools.is_empty();
         let model = self.model.clone();
         let client = self.client.clone();
 
@@ -410,9 +404,10 @@ impl CompletionFeaturesDyn for CompletionModel {
             full_history.append(&mut req.chat_history);
 
             // Add context documents to chat history
+            let prompt_with_context = req.prompt_with_context();
             full_history.push(MessageInput {
                 role: "user".into(),
-                content: req.prompt,
+                content: prompt_with_context,
                 ..Default::default()
             });
 
@@ -454,7 +449,7 @@ impl CompletionFeaturesDyn for CompletionModel {
             let response = client.post("/chat/completions").json(body).send().await?;
             if response.status().is_success() {
                 match response.json::<CompletionResponse>().await {
-                    Ok(res) => res.try_into(json_object),
+                    Ok(res) => res.try_into(),
                     Err(err) => Err(format!("OpenAI completions error: {}", err).into()),
                 }
             } else {

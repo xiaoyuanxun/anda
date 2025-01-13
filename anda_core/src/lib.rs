@@ -7,11 +7,13 @@ use std::{
 pub mod agent;
 pub mod context;
 pub mod http;
+pub mod model;
 pub mod tool;
 
 pub use agent::*;
 pub use context::*;
 pub use http::*;
+pub use model::*;
 pub use tool::*;
 
 /// A type alias for a boxed error that is thread-safe and sendable across threads.

@@ -93,7 +93,7 @@ pub struct CompletionResponse {
 }
 
 impl CompletionResponse {
-    fn try_into(mut self, json_object: bool) -> Result<AgentOutput, BoxError> {
+    fn try_into(mut self) -> Result<AgentOutput, BoxError> {
         let choice = self.choices.pop().ok_or("No completion choice")?;
         let mut output = AgentOutput {
             content: choice.message.content,
@@ -116,11 +116,6 @@ impl CompletionResponse {
         }
         if let Some(refusal) = choice.message.refusal {
             output.failed_reason = Some(refusal);
-        }
-        if json_object && output.tool_calls.is_none() {
-            if let Ok(val) = serde_json::from_str(&output.content) {
-                output.extracted_json = Some(val);
-            }
         }
 
         Ok(output)
@@ -252,7 +247,7 @@ impl CompletionFeaturesDyn for CompletionModel {
             let response = client.post("/chat/completions").json(body).send().await?;
             if response.status().is_success() {
                 match response.json::<CompletionResponse>().await {
-                    Ok(res) => res.try_into(json_object),
+                    Ok(res) => res.try_into(),
                     Err(err) => Err(format!("DeepSeek completions error: {}", err).into()),
                 }
             } else {

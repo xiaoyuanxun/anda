@@ -1,5 +1,5 @@
 use candid::{utils::ArgumentEncoder, CandidType};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Serialize};
 use std::{future::Future, time::Duration};
 
 pub use candid::Principal;
@@ -7,6 +7,7 @@ pub use object_store::{path::Path, ObjectMeta, PutMode, PutResult};
 pub use serde_json::Value;
 pub use tokio_util::sync::CancellationToken;
 
+use crate::model::*;
 use crate::BoxError;
 
 /// AgentContext provides the execution environment for Agents.
@@ -25,23 +26,23 @@ pub trait AgentContext:
     fn tool_call(
         &self,
         tool_name: &str,
-        args: &Value,
-    ) -> impl Future<Output = Result<Value, Self::Error>> + Send;
+        args: String,
+    ) -> impl Future<Output = Result<String, Self::Error>> + Send;
 
     /// Executes a remote tool on another agent
     fn remote_tool_call(
         &self,
         endpoint: &str,
         tool_name: &str,
-        args: &Value,
-    ) -> impl Future<Output = Result<Value, Self::Error>> + Send;
+        args: String,
+    ) -> impl Future<Output = Result<String, Self::Error>> + Send;
 
     /// Runs a local agent with optional attachment
     fn agent_run(
         &self,
         agent_name: &str,
-        prompt: &str,
-        attachment: Option<Value>,
+        prompt: String,
+        attachment: Option<Vec<u8>>,
     ) -> impl Future<Output = Result<AgentOutput, Self::Error>> + Send;
 
     /// Runs a remote agent on another endpoint
@@ -49,8 +50,8 @@ pub trait AgentContext:
         &self,
         endpoint: &str,
         agent_name: &str,
-        prompt: &str,
-        attachment: Option<Value>,
+        prompt: String,
+        attachment: Option<Vec<u8>>,
     ) -> impl Future<Output = Result<AgentOutput, Self::Error>> + Send;
 }
 
@@ -104,145 +105,6 @@ pub trait StateFeatures<Err>: Sized {
 
     /// Generates N random bytes
     fn rand_bytes<const N: usize>() -> [u8; N];
-}
-
-/// Represents the output of an agent execution
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct AgentOutput {
-    /// The output content from the agent, may be empty
-    pub content: String,
-
-    /// Indicates failure reason if present, None means successful execution
-    /// Should be None when finish_reason is "stop" or "tool_calls"
-    pub failed_reason: Option<String>,
-
-    /// Tool call that this message is responding to. If this message is a response to a tool call, this field should be set to the tool call ID.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_calls: Option<Vec<ToolCall>>,
-
-    /// Extracted valid JSON when using JSON response_format
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub extracted_json: Option<Value>,
-}
-
-/// Represents a tool call response with it's ID, function name, and arguments
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct ToolCall {
-    pub id: String,
-    pub name: String,
-    pub args: String,
-
-    /// The result of the tool call, processed by agents engine, if available
-    pub result: Option<Value>,
-}
-
-/// Represents a message in the agent's conversation history
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct MessageInput {
-    /// Message role: "developer", "system", "user", "assistant", "tool"
-    pub role: String,
-
-    /// The content of the message
-    pub content: String,
-
-    /// An optional name for the participant. Provides the model information to differentiate between participants of the same role.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-
-    /// Tool call that this message is responding to. If this message is a response to a tool call, this field should be set to the tool call ID.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_call_id: Option<String>,
-}
-
-/// Defines a callable function with its metadata and schema
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct FunctionDefinition {
-    /// Name of the function
-    pub name: String,
-
-    /// Description of what the function does
-    pub description: String,
-
-    /// JSON schema defining the function's parameters
-    pub parameters: serde_json::Value,
-
-    /// Whether to enable strict schema adherence when generating the function call. If set to true, the model will follow the exact schema defined in the parameters field. Only a subset of JSON Schema is supported when strict is true.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub strict: Option<bool>,
-}
-
-/// Struct representing a general completion request that can be sent to a completion model provider.
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct CompletionRequest {
-    /// The prompt to be sent to the completion model provider as "developer" or "system" role
-    pub prompt: String,
-
-    /// The preamble to be sent to the completion model provider
-    pub preamble: Option<String>,
-
-    /// The chat history to be sent to the completion model provider
-    pub chat_history: Vec<MessageInput>,
-
-    /// The tools to be sent to the completion model provider
-    pub tools: Vec<FunctionDefinition>,
-
-    /// The temperature to be sent to the completion model provider
-    pub temperature: Option<f64>,
-
-    /// The max tokens to be sent to the completion model provider
-    pub max_tokens: Option<u64>,
-
-    /// An object specifying the JSON format that the model must output.
-    /// https://platform.openai.com/docs/guides/structured-outputs
-    /// The format can be one of the following:
-    /// `{ "type": "json_object" }`
-    /// `{ "type": "json_schema", "json_schema": {...} }`
-    pub response_format: Option<Value>,
-
-    /// The stop sequence to be sent to the completion model provider
-    pub stop: Option<Vec<String>>,
-}
-
-/// Provides LLM completion capabilities for agents
-pub trait CompletionFeatures<Err>: Sized {
-    /// Generates a completion based on the given prompt and context
-    ///
-    /// # Arguments
-    /// * `prompt` - The input prompt for the completion
-    /// * `json_output` - Whether to force JSON output format
-    /// * `chat_history` - Conversation history as context
-    /// * `tools` - Available functions the model can call
-    fn completion(
-        &self,
-        req: CompletionRequest,
-    ) -> impl Future<Output = Result<AgentOutput, Err>> + Send;
-}
-
-/// Represents a text embedding with its original text and vector representation
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct Embedding {
-    /// The original text that was embedded
-    pub text: String,
-
-    /// The embedding vector (typically high-dimensional float array)
-    pub vec: Vec<f32>,
-}
-
-/// Provides text embedding capabilities for agents
-pub trait EmbeddingFeatures<Err>: Sized {
-    /// The number of dimensions in the embedding vector.
-    fn ndims(&self) -> usize;
-
-    /// Generates embeddings for multiple texts in a batch
-    /// Returns a vector of Embedding structs in the same order as input texts
-    fn embed(
-        &self,
-        texts: impl IntoIterator<Item = String> + Send,
-    ) -> impl Future<Output = Result<Vec<Embedding>, Err>> + Send;
-
-    /// Generates a single embedding for a query text
-    /// Optimized for single text embedding generation
-    fn embed_query(&self, text: &str) -> impl Future<Output = Result<Embedding, Err>> + Send;
 }
 
 /// Provides vector search capabilities for semantic similarity search

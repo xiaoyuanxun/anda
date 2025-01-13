@@ -21,7 +21,7 @@ const CONTEXT_MAX_DEPTH: u8 = 42;
 const CACHE_MAX_CAPACITY: u64 = 1000000;
 
 use super::{cache::CacheService, keys::KeysService};
-use crate::database::Store;
+use crate::store::Store;
 
 #[derive(Clone)]
 pub struct BaseCtx {

@@ -21,12 +21,18 @@ pub trait VectorSearchFeaturesDyn: Send + Sync + 'static {
 
 #[derive(Clone)]
 pub struct VectorStore {
-    store: Arc<dyn ObjectStore>,
+    inner: Arc<dyn VectorSearchFeaturesDyn>,
 }
 
 impl VectorStore {
-    pub fn new(store: Arc<dyn ObjectStore>) -> Self {
-        Self { store }
+    pub fn new(inner: Arc<dyn VectorSearchFeaturesDyn>) -> Self {
+        Self { inner }
+    }
+
+    pub fn not_implemented() -> Self {
+        Self {
+            inner: Arc::new(NotImplemented),
+        }
     }
 }
 
@@ -37,7 +43,7 @@ impl VectorSearchFeaturesDyn for VectorStore {
         query: String,
         n: usize,
     ) -> BoxPinFut<Result<Vec<u8>, BoxError>> {
-        Box::pin(futures::future::ready(Err("not implemented".into())))
+        self.inner.top_n(namespace, query, n)
     }
 
     fn top_n_ids(
@@ -45,6 +51,30 @@ impl VectorSearchFeaturesDyn for VectorStore {
         namespace: Path,
         query: String,
         n: usize,
+    ) -> BoxPinFut<Result<Vec<String>, BoxError>> {
+        self.inner.top_n_ids(namespace, query, n)
+    }
+}
+
+/// A placeholder for not implemented features.
+#[derive(Clone, Debug)]
+pub struct NotImplemented;
+
+impl VectorSearchFeaturesDyn for NotImplemented {
+    fn top_n(
+        &self,
+        _namespace: Path,
+        _query: String,
+        _n: usize,
+    ) -> BoxPinFut<Result<Vec<u8>, BoxError>> {
+        Box::pin(futures::future::ready(Err("not implemented".into())))
+    }
+
+    fn top_n_ids(
+        &self,
+        _namespace: Path,
+        _query: String,
+        _n: usize,
     ) -> BoxPinFut<Result<Vec<String>, BoxError>> {
         Box::pin(futures::future::ready(Err("not implemented".into())))
     }

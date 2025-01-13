@@ -7,8 +7,8 @@ use std::sync::Arc;
 
 use crate::{
     context::{AgentCtx, BaseCtx},
-    database::{Store, VectorStore},
     model::Model,
+    store::{Store, VectorStore},
 };
 
 static TEE_LOCAL_SERVER: &str = "http://127.0.0.1:8080";
@@ -24,7 +24,7 @@ impl Engine {
         user: String,
         caller: Option<Principal>,
         prompt: String,
-        attachment: Option<Value>,
+        attachment: Option<Vec<u8>>,
         agent_name: Option<String>,
     ) -> Result<AgentOutput, BoxError> {
         let name = agent_name.unwrap_or(self.default_agent.clone());
@@ -33,7 +33,7 @@ impl Engine {
         }
 
         let ctx = self.ctx.child_with(&name, user, caller)?;
-        self.ctx.agents.run(&name, &ctx, &prompt, attachment).await
+        self.ctx.agents.run(&name, ctx, prompt, attachment).await
     }
 
     pub async fn tool_call(
@@ -41,14 +41,14 @@ impl Engine {
         user: String,
         caller: Option<Principal>,
         name: String,
-        args: Value,
-    ) -> Result<Value, BoxError> {
+        args: String,
+    ) -> Result<String, BoxError> {
         if !self.ctx.tools.contains(&name) {
             return Err(format!("tool {} not found", name).into());
         }
 
         let ctx = self.ctx.child_base_with(&name, user, caller)?;
-        self.ctx.tools.call(&name, &ctx, &args).await
+        self.ctx.tools.call(&name, ctx, args).await
     }
 }
 
@@ -69,13 +69,13 @@ impl Default for EngineBuilder {
 
 impl EngineBuilder {
     pub fn new() -> Self {
-        let ms = Arc::new(InMemory::new());
+        let mstore = Arc::new(InMemory::new());
         EngineBuilder {
             tools: ToolSet::new(),
             agents: AgentSet::new(),
             model: Model::not_implemented(),
-            store: Store::new(ms.clone()),
-            vector_store: VectorStore::new(ms),
+            store: Store::new(mstore),
+            vector_store: VectorStore::not_implemented(),
             tee_host: TEE_LOCAL_SERVER.to_string(),
         }
     }
