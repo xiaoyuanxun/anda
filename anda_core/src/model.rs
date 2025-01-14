@@ -76,13 +76,13 @@ pub struct Document {
 
 impl std::fmt::Display for Document {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "<file id={:?}>\n", self.id)?;
+        writeln!(f, "<file id={:?}>", self.id)?;
         if !self.additional_props.is_empty() {
             write!(f, "<meta ")?;
             for (k, v) in &self.additional_props {
                 write!(f, "{}={:?} ", k, v)?;
             }
-            write!(f, "/>\n")?;
+            writeln!(f, "/>")?;
         }
         write!(f, "{:?}\n</file>\n", self.text)
     }

@@ -1,7 +1,6 @@
-use anda_core::{http_rpc, AgentOutput, AgentSet, BoxError, FunctionDefinition, ToolSet};
+use anda_core::{AgentOutput, AgentSet, BoxError, FunctionDefinition, ToolSet};
 use candid::Principal;
 use ic_cose_types::validate_str;
-use ic_tee_agent::http::HEADER_IC_TEE_SESSION;
 use object_store::memory::InMemory;
 use std::{sync::Arc, time::Duration};
 use tokio_util::sync::CancellationToken;
@@ -85,6 +84,7 @@ pub struct EngineBuilder {
     store: Store,
     vector_store: VectorStore,
     tee_host: String,
+    basic_token: Option<String>,
     cancellation_token: CancellationToken,
 }
 
@@ -105,6 +105,7 @@ impl EngineBuilder {
             store: Store::new(mstore),
             vector_store: VectorStore::not_implemented(),
             tee_host: TEE_LOCAL_SERVER.to_string(),
+            basic_token: None,
             cancellation_token: CancellationToken::new(),
         }
     }
@@ -116,6 +117,11 @@ impl EngineBuilder {
 
     pub fn with_tee_host(mut self, tee_host: String) -> Self {
         self.tee_host = tee_host;
+        self
+    }
+
+    pub fn with_basic_token(mut self, basic_token: String) -> Self {
+        self.basic_token = Some(basic_token);
         self
     }
 
@@ -169,16 +175,6 @@ impl EngineBuilder {
         }
 
         let name = self.name;
-        // register engine session
-        // 注意，engine name 必须在 tee host 服务的 app 白名单中，且只能注册一次，重复注册会失败。
-        let session: String = http_rpc(
-            &reqwest::Client::new(),
-            &format!("{}/identity", self.tee_host),
-            "register_session",
-            &(&name.to_ascii_lowercase(),),
-        )
-        .await?;
-
         let local_http = reqwest::Client::builder()
             .http2_keep_alive_interval(Some(Duration::from_secs(25)))
             .http2_keep_alive_timeout(Duration::from_secs(15))
@@ -188,7 +184,9 @@ impl EngineBuilder {
             .user_agent(APP_USER_AGENT)
             .default_headers({
                 let mut headers = http::header::HeaderMap::new();
-                headers.insert(&HEADER_IC_TEE_SESSION, session.parse().unwrap());
+                if let Some(token) = self.basic_token {
+                    headers.insert(http::header::AUTHORIZATION, token.parse().unwrap());
+                }
                 headers
             })
             .build()?;

@@ -19,6 +19,15 @@ pub struct SubmitTool<T: JsonSchema + DeserializeOwned + Send + Sync> {
     _t: PhantomData<T>,
 }
 
+impl<T> Default for SubmitTool<T>
+where
+    T: JsonSchema + DeserializeOwned + Serialize + Send + Sync,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> SubmitTool<T>
 where
     T: JsonSchema + DeserializeOwned + Serialize + Send + Sync,
@@ -55,6 +64,12 @@ where
 /// Extractor for structured data from text
 pub struct Extractor<T: JsonSchema + DeserializeOwned + Serialize + Send + Sync>(pub SubmitTool<T>);
 
+impl<T: JsonSchema + DeserializeOwned + Serialize + Send + Sync> Default for Extractor<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T: JsonSchema + DeserializeOwned + Serialize + Send + Sync> Extractor<T> {
     pub fn new() -> Self {
         Self(SubmitTool { _t: PhantomData })
@@ -62,12 +77,12 @@ impl<T: JsonSchema + DeserializeOwned + Serialize + Send + Sync> Extractor<T> {
 
     pub async fn extract(&self, ctx: AgentCtx, prompt: String) -> Result<T, BoxError> {
         let req = CompletionRequest {
-            preamble: Some(format!("\
+            preamble: Some("\
                 You are an AI assistant whose purpose is to\
                 extract structured data from the provided text.\n\
                 You will have access to a `submit` function that defines the structure of the data to extract from the provided text.\n\
                 Use the `submit` function to submit the structured data.\n\
-                Be sure to fill out every field and ALWAYS CALL THE `submit` function, event with default values!!!.")),
+                Be sure to fill out every field and ALWAYS CALL THE `submit` function, event with default values!!!.".to_string()),
             prompt,
             tools: vec![self.0.definition()],
             ..Default::default()
@@ -108,12 +123,12 @@ where
         _attachment: Option<Vec<u8>>,
     ) -> Result<AgentOutput, BoxError> {
         let req = CompletionRequest {
-            preamble: Some(format!("\
+            preamble: Some("\
                 You are an AI assistant whose purpose is to\
                 extract structured data from the provided text.\n\
                 You will have access to a `submit` function that defines the structure of the data to extract from the provided text.\n\
                 Use the `submit` function to submit the structured data.\n\
-                Be sure to fill out every field and ALWAYS CALL THE `submit` function, event with default values!!!.")),
+                Be sure to fill out every field and ALWAYS CALL THE `submit` function, event with default values!!!.".to_string()),
             prompt,
             tools: vec![self.0.definition()],
             ..Default::default()
