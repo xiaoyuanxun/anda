@@ -2,7 +2,7 @@
 name = "anda_lancedb"
 description = "Anda vector store index integration for LanceDB"
 repository = "https://github.com/ldclabs/anda/tree/main/anda_lancedb"
-publish = true
+publish = false
 version = "0.1.0"
 edition.workspace = true
 keywords.workspace = true
