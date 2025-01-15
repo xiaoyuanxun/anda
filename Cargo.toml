@@ -29,6 +29,8 @@ serde_json = "1"
 serde_bytes = "0.11"
 ic_cose_types = "0.6"
 ic_cose = "0.6"
+ic_object_store = "0.6"
+ic-agent = "0.39"
 object_store = { version = "0.10.2" }
 tokio-util = "0.7"
 tokio = { version = "1", features = ["full"] }
@@ -47,6 +49,7 @@ thiserror = "2"
 moka = { version = "0.12", features = ["future"] }
 xid = "1.1"
 toml = "0.8"
+ed25519-consensus = "2.1"
 
 [profile.release]
 debug = false

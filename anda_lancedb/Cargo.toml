@@ -15,15 +15,19 @@ anda_engine = { path = "../anda_engine", version = "0.2" }
 futures = { workspace = true }
 tokio = { workspace = true }
 object_store = { workspace = true }
+candid = { workspace = true }
+ic_object_store = { workspace = true }
+ic_cose_types = { workspace = true }
+ic-agent = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 xid = { workspace = true }
+ed25519-consensus = { workspace = true }
 lancedb = { git = "https://github.com/ldclabs/lancedb", rev = "ba2454c4465932ff668b09bf555a1567518fa310" }
 lance-index = "=0.22.0"
 lance-io = "=0.22.0"
 arrow-array = "53.2"
 arrow-schema = "53.2"
 arrow-json = "53.2"
-# object_store = { version = "0.10.2" }
 
 [dev-dependencies]

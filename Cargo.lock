@@ -137,7 +137,12 @@ dependencies = [
  "arrow-array",
  "arrow-json",
  "arrow-schema",
+ "candid",
+ "ed25519-consensus",
  "futures",
+ "ic-agent",
+ "ic_cose_types",
+ "ic_object_store",
  "lance-index",
  "lance-io",
  "lancedb",
@@ -3079,6 +3084,25 @@ dependencies = [
  "sha3",
  "thiserror 2.0.11",
  "x25519-dalek",
+]
+
+[[package]]
+name = "ic_object_store"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e591f5de97933558bb8ec3f49235cc1121a4eef935e6a79bb7ec6559b96cb6f9"
+dependencies = [
+ "aes-gcm",
+ "async-trait",
+ "bytes",
+ "candid",
+ "chrono",
+ "futures",
+ "ic-agent",
+ "ic_cose_types",
+ "object_store 0.10.2",
+ "rand",
+ "serde_bytes",
 ]
 
 [[package]]
