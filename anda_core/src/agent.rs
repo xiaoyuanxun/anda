@@ -1,9 +1,10 @@
+use serde_json::json;
 use std::{collections::BTreeMap, future::Future, marker::PhantomData, sync::Arc};
 
 use crate::{
     context::AgentContext,
     model::{AgentOutput, FunctionDefinition},
-    BoxError, BoxPinFut,
+    validate_path_part, BoxError, BoxPinFut,
 };
 
 /// Core trait defining an AI agent's behavior
@@ -14,24 +15,29 @@ pub trait Agent<C>: Send + Sync
 where
     C: AgentContext + Send + Sync,
 {
-    /// The unique name of the agent. This name should be unique within the engine.
-    ///
-    /// # Rules
-    /// - Must not be empty
-    /// - Length must be ≤ 64 characters
-    /// - Can only contain: lowercase letters (a-z), digits (0-9), and underscores (_)
-    const NAME: &'static str;
-
     /// Returns the agent's name as a String
-    fn name(&self) -> String {
-        Self::NAME.to_string()
-    }
+    /// The unique name of the agent. This name should be valid Path string and unique within the engine in lowercase.
+    fn name(&self) -> String;
+
+    /// Returns the agent's capabilities description in a short string
+    fn description(&self) -> String;
 
     /// Returns the agent's function definition for API integration
     ///
     /// # Returns
     /// - `FunctionDefinition`: The structured definition of the agent's capabilities
-    fn definition(&self) -> FunctionDefinition;
+    fn definition(&self) -> FunctionDefinition {
+        FunctionDefinition {
+            name: self.name(),
+            description: self.description(),
+            parameters: json!({"type":"string"}),
+            strict: None,
+        }
+    }
+
+    fn tool_dependencies(&self) -> Vec<String> {
+        Vec::new()
+    }
 
     /// Executes the agent's main logic with given context and inputs
     ///
@@ -62,6 +68,8 @@ where
 
     fn definition(&self) -> FunctionDefinition;
 
+    fn tool_dependencies(&self) -> Vec<String>;
+
     fn run(
         &self,
         ctx: C,
@@ -87,6 +95,10 @@ where
 
     fn definition(&self) -> FunctionDefinition {
         self.0.definition()
+    }
+
+    fn tool_dependencies(&self) -> Vec<String> {
+        self.0.tool_dependencies()
     }
 
     fn run(
@@ -122,12 +134,14 @@ where
 
     /// Checks if an agent with given name exists
     pub fn contains(&self, name: &str) -> bool {
-        self.set.contains_key(name)
+        self.set.contains_key(&name.to_ascii_lowercase())
     }
 
     /// Retrieves definition for a specific agent
     pub fn definition(&self, name: &str) -> Option<FunctionDefinition> {
-        self.set.get(name).map(|tool| tool.definition())
+        self.set
+            .get(&name.to_ascii_lowercase())
+            .map(|tool| tool.definition())
     }
 
     /// Returns definitions for all or specified agents
@@ -138,15 +152,19 @@ where
     /// # Returns
     /// - `Vec<FunctionDefinition>`: Vector of agent definitions
     pub fn definitions(&self, names: Option<&[&str]>) -> Vec<FunctionDefinition> {
-        let names = names.unwrap_or_default();
+        let names: Option<Vec<String>> =
+            names.map(|names| names.iter().map(|n| n.to_ascii_lowercase()).collect());
         self.set
             .iter()
-            .filter_map(|(name, tool)| {
-                if names.is_empty() || names.contains(&name.as_str()) {
-                    Some(tool.definition())
-                } else {
-                    None
+            .filter_map(|(name, tool)| match &names {
+                Some(names) => {
+                    if names.contains(name) {
+                        Some(tool.definition())
+                    } else {
+                        None
+                    }
                 }
+                None => Some(tool.definition()),
             })
             .collect()
     }
@@ -155,12 +173,18 @@ where
     ///
     /// # Arguments
     /// - `agent`: The agent to register, must implement `Agent<C>`
-    pub fn add<T>(&mut self, agent: T)
+    pub fn add<T>(&mut self, agent: T) -> Result<(), BoxError>
     where
         T: Agent<C> + Send + Sync + 'static,
     {
+        let name = agent.name().to_ascii_lowercase();
+        if self.set.contains_key(&name) {
+            return Err(format!("agent {} already exists", name).into());
+        }
+        validate_path_part(&name)?;
         let agent_dyn = AgentWrapper(Arc::new(agent), PhantomData);
-        self.set.insert(T::NAME.to_string(), Box::new(agent_dyn));
+        self.set.insert(name, Box::new(agent_dyn));
+        Ok(())
     }
 
     /// Executes a specific agent with given parameters
@@ -183,7 +207,7 @@ where
         prompt: String,
         attachment: Option<Vec<u8>>,
     ) -> BoxPinFut<Result<AgentOutput, BoxError>> {
-        if let Some(agent) = self.set.get(name) {
+        if let Some(agent) = self.set.get(&name.to_ascii_lowercase()) {
             agent.run(ctx, prompt, attachment)
         } else {
             Box::pin(futures::future::ready(Err(format!(

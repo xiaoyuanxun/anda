@@ -3,13 +3,15 @@ use futures::TryStreamExt;
 use object_store::{ObjectStore, PutOptions};
 use std::sync::Arc;
 
+pub const MAX_STORE_OBJECT_SIZE: usize = 1024 * 1024 * 2; // 2 MB
+
 pub trait VectorSearchFeaturesDyn: Send + Sync + 'static {
     fn top_n(
         &self,
         namespace: Path,
         query: String,
         n: usize,
-    ) -> BoxPinFut<Result<Vec<u8>, BoxError>>;
+    ) -> BoxPinFut<Result<Vec<String>, BoxError>>;
 
     fn top_n_ids(
         &self,
@@ -42,7 +44,7 @@ impl VectorSearchFeaturesDyn for VectorStore {
         namespace: Path,
         query: String,
         n: usize,
-    ) -> BoxPinFut<Result<Vec<u8>, BoxError>> {
+    ) -> BoxPinFut<Result<Vec<String>, BoxError>> {
         self.inner.top_n(namespace, query, n)
     }
 
@@ -66,7 +68,7 @@ impl VectorSearchFeaturesDyn for NotImplemented {
         _namespace: Path,
         _query: String,
         _n: usize,
-    ) -> BoxPinFut<Result<Vec<u8>, BoxError>> {
+    ) -> BoxPinFut<Result<Vec<String>, BoxError>> {
         Box::pin(futures::future::ready(Err("not implemented".into())))
     }
 
@@ -89,7 +91,7 @@ impl VectorSearchFeaturesDyn for MockImplemented {
         _namespace: Path,
         _query: String,
         _n: usize,
-    ) -> BoxPinFut<Result<Vec<u8>, BoxError>> {
+    ) -> BoxPinFut<Result<Vec<String>, BoxError>> {
         Box::pin(futures::future::ready(Ok(vec![])))
     }
 

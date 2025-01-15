@@ -53,7 +53,7 @@ impl Attention {
 
     pub async fn should_reply(
         &self,
-        ctx: AgentCtx,
+        ctx: &AgentCtx,
         message: &str,
         recent_messages: Vec<String>,
     ) -> AttentionCommand {
@@ -73,7 +73,7 @@ impl Attention {
             .join("\n");
 
         let req = CompletionRequest {
-            preamble: Some(format!("\
+            system: Some(format!("\
                 You are in a room with other users. You should only respond when addressed or when the conversation is relevant to you.\n\n\
                 Response options:\n\
                 {RESPOND_COMMAND} - Message is directed at you or conversation is relevant\n\
@@ -101,9 +101,9 @@ impl Attention {
         }
     }
 
-    pub async fn should_like(&self, ctx: AgentCtx, tweet_content: &str) -> bool {
+    pub async fn should_like(&self, ctx: &AgentCtx, tweet_content: &str) -> bool {
         let req = CompletionRequest {
-            preamble: Some("You are deciding whether to like a tweet. Consider if the content is positive, interesting, or relevant.".to_string()),
+            system: Some("You are deciding whether to like a tweet. Consider if the content is positive, interesting, or relevant.".to_string()),
             prompt: format!(
                 "Tweet: {}\n\n\
                 Respond with only 'true' or 'false':",
@@ -118,9 +118,9 @@ impl Attention {
         }
     }
 
-    pub async fn should_retweet(&self, ctx: AgentCtx, tweet_content: &str) -> bool {
+    pub async fn should_retweet(&self, ctx: &AgentCtx, tweet_content: &str) -> bool {
         let req = CompletionRequest {
-            preamble: Some("You are deciding whether to retweet. Only retweet if the content is highly valuable, interesting, or aligns with your values.".to_string()),
+            system: Some("You are deciding whether to retweet. Only retweet if the content is highly valuable, interesting, or aligns with your values.".to_string()),
             prompt: format!(
                 "Tweet: {}\n\n\
                 Respond with only 'true' or 'false':",
@@ -135,9 +135,9 @@ impl Attention {
         }
     }
 
-    pub async fn should_quote(&self, ctx: AgentCtx, tweet_content: &str) -> bool {
+    pub async fn should_quote(&self, ctx: &AgentCtx, tweet_content: &str) -> bool {
         let req = CompletionRequest {
-            preamble: Some("You are deciding whether to quote tweet. Quote tweet if the content deserves commentary, \
+            system: Some("You are deciding whether to quote tweet. Quote tweet if the content deserves commentary, \
             could benefit from additional context, or warrants a thoughtful response.".to_string()),
             prompt: format!(
                 "Tweet: {}\n\n\

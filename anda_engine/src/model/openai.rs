@@ -386,14 +386,14 @@ impl CompletionFeaturesDyn for CompletionModel {
 
         Box::pin(async move {
             // Add preamble to chat history (if available)
-            let mut full_history = if let Some(preamble) = &req.preamble {
+            let mut full_history = if let Some(system) = &req.system {
                 vec![MessageInput {
                     role: if is_new {
                         "developer".into()
                     } else {
                         "system".into()
                     },
-                    content: preamble.clone(),
+                    content: system.clone(),
                     ..Default::default()
                 }]
             } else {
@@ -443,7 +443,14 @@ impl CompletionFeaturesDyn for CompletionModel {
                         .map(ToolDefinition::from)
                         .collect::<Vec<_>>()),
                 );
-                body.insert("tool_choice".to_string(), Value::from("auto")); // or "required"
+                body.insert(
+                    "tool_choice".to_string(),
+                    if req.tool_choice_required {
+                        Value::from("required")
+                    } else {
+                        Value::from("auto")
+                    },
+                );
             };
 
             let response = client.post("/chat/completions").json(body).send().await?;

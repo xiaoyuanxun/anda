@@ -3,7 +3,7 @@ name = "anda_engine"
 description = "Agents engine for Anda -- a framework for AI agent development."
 repository = "https://github.com/ldclabs/anda/tree/main/anda_engine"
 publish = true
-version = "0.2.1"
+version = "0.2.3"
 edition.workspace = true
 keywords.workspace = true
 categories.workspace = true
@@ -28,6 +28,8 @@ structured-logger = { workspace = true }
 reqwest = { workspace = true }
 rand = { workspace = true }
 moka = { workspace = true }
+toml = { workspace = true }
 schemars = { version = "0.8" }
 
 [dev-dependencies]
+tokio = { workspace = true }

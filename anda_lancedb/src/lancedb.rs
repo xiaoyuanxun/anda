@@ -32,7 +32,53 @@ pub struct LanceVectorStore {
 pub struct LanceVectorTable {
     pub table: Table,
     pub id_field: String,
-    pub columns: Vec<String>,
+    pub text_field: String,
+}
+
+pub async fn hybrid_search<const N: usize>(
+    table: &Table,
+    embedder: Option<Arc<dyn EmbeddingFeaturesDyn>>,
+    select_columns: [String; N],
+    query: String,
+    n: usize,
+) -> Result<Vec<[String; N]>, BoxError> {
+    let mut res = if let Some(embedder) = embedder {
+        let prompt_embedding = embedder.embed_query(query.clone()).await?;
+        table
+            .vector_search(prompt_embedding.vec.clone())?
+            .full_text_search(FullTextSearchQuery::new(query))
+            .select(Select::Columns(select_columns.to_vec()))
+            .limit(n)
+            .execute()
+            .await?
+    } else {
+        table
+            .query()
+            .full_text_search(FullTextSearchQuery::new(query))
+            .select(Select::Columns(select_columns.to_vec()))
+            .limit(n)
+            .execute()
+            .await?
+    };
+
+    let mut docs: Vec<[String; N]> = Vec::new();
+    while let Some(batch) = res.try_next().await? {
+        let mut rows: Vec<[String; N]> = vec![[const { String::new() }; N]; batch.num_rows()];
+        for (col_idx, col) in select_columns.iter().enumerate() {
+            let col_array = batch
+                .column_by_name(col)
+                .ok_or_else(|| format!("field {col} not found"))?
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .ok_or_else(|| format!("column {col} is not a string array"))?;
+            for (row_idx, item) in rows.iter_mut().enumerate().take(batch.num_rows()) {
+                item[col_idx] = col_array.value(row_idx).to_string();
+            }
+        }
+        docs.append(&mut rows);
+    }
+
+    Ok(docs)
 }
 
 impl LanceVectorStore {
@@ -63,32 +109,24 @@ impl LanceVectorStore {
         &mut self,
         name: Path,
         schema: SchemaRef,
-        id_field: Option<String>, // default to "id"
-        columns: Option<Vec<String>>,
+        id_field: Option<String>,   // default to "id"
+        text_field: Option<String>, // default to "text"
         index_cache_size: Option<u32>,
     ) -> Result<Table, BoxError> {
         let id_field = id_field.unwrap_or_else(|| "id".to_string());
+        let text_field = text_field.unwrap_or_else(|| "text".to_string());
         let index_cache_size = index_cache_size.unwrap_or(1024);
-        let mut columns = columns.unwrap_or_default();
         let id = schema
             .field_with_name(&id_field)
             .map_err(|err| format!("id field {} not found: {}", id_field, err))?;
         if id.data_type() != &DataType::Utf8 {
             return Err(format!("id field {} must be of type Utf8", id_field).into());
         }
-        if columns.is_empty() {
-            for f in schema.fields() {
-                match f.data_type() {
-                    DataType::FixedSizeList(_, _) => continue,
-                    _ => {
-                        columns.push(f.name().to_string());
-                    }
-                }
-            }
-        }
-
-        if !columns.contains(&id_field) {
-            columns.push(id_field.clone());
+        let text = schema
+            .field_with_name(&text_field)
+            .map_err(|err| format!("text field {} not found: {}", text_field, err))?;
+        if text.data_type() != &DataType::Utf8 {
+            return Err(format!("text field {} must be of type Utf8", text_field).into());
         }
 
         let table_name = name.as_ref().to_ascii_lowercase();
@@ -119,7 +157,7 @@ impl LanceVectorStore {
             LanceVectorTable {
                 table: table.clone(),
                 id_field,
-                columns,
+                text_field,
             },
         );
 
@@ -141,48 +179,19 @@ impl VectorSearchFeaturesDyn for LanceVectorStore {
         namespace: Path,
         query: String,
         n: usize,
-    ) -> BoxPinFut<Result<Vec<u8>, BoxError>> {
+    ) -> BoxPinFut<Result<Vec<String>, BoxError>> {
         let table = match self.table(&namespace) {
             Ok(table) => table,
             Err(err) => return Box::pin(futures::future::ready(Err(err))),
         };
+
         let embedder = self.embedder.clone();
-        let columns = table.columns.clone();
+        let text_field = table.text_field.clone();
         let table = table.table.clone();
-
         Box::pin(async move {
-            let mut res = if let Some(embedder) = embedder {
-                let prompt_embedding = embedder.embed_query(query.clone()).await?;
-                table
-                    .vector_search(prompt_embedding.vec.clone())?
-                    .full_text_search(FullTextSearchQuery::new(query))
-                    .select(Select::Columns(columns))
-                    .limit(n)
-                    .execute()
-                    .await?
-            } else {
-                table
-                    .query()
-                    .full_text_search(FullTextSearchQuery::new(query))
-                    .select(Select::Columns(columns))
-                    .limit(n)
-                    .execute()
-                    .await?
-            };
+            let docs = hybrid_search(&table, embedder, [text_field], query, n).await?;
 
-            let mut writer = arrow_json::ArrayWriter::new(Vec::new());
-            while let Some(batch) = res.try_next().await? {
-                writer.write(&batch)?;
-            }
-            let mut data = writer.into_inner();
-            if data.is_empty() {
-                data.extend_from_slice(b"[]");
-            }
-            if data.last() != Some(&b']') {
-                data.push(b']');
-            }
-
-            Ok(data)
+            Ok(docs.into_iter().flatten().collect())
         })
     }
 
@@ -201,40 +210,9 @@ impl VectorSearchFeaturesDyn for LanceVectorStore {
         let id_field = table.id_field.clone();
         let table = table.table.clone();
         Box::pin(async move {
-            let mut res = if let Some(embedder) = embedder {
-                let prompt_embedding = embedder.embed_query(query.clone()).await?;
-                table
-                    .vector_search(prompt_embedding.vec.clone())?
-                    // .column("vec")
-                    .full_text_search(FullTextSearchQuery::new(query))
-                    .select(Select::Columns(vec![id_field.clone()]))
-                    .limit(n)
-                    .execute()
-                    .await?
-            } else {
-                table
-                    .query()
-                    .full_text_search(FullTextSearchQuery::new(query))
-                    .select(Select::Columns(vec![id_field.clone()]))
-                    .limit(n)
-                    .execute()
-                    .await?
-            };
+            let ids = hybrid_search(&table, embedder, [id_field], query, n).await?;
 
-            let mut ids: Vec<String> = Vec::new();
-            while let Some(batch) = res.try_next().await? {
-                let id_array = batch
-                    .column_by_name(&id_field)
-                    .ok_or("id field not found")?
-                    .as_any()
-                    .downcast_ref::<StringArray>()
-                    .ok_or("id column is not a string array")?;
-                for s in id_array.into_iter().flatten() {
-                    ids.push(s.to_string());
-                }
-            }
-
-            Ok(ids)
+            Ok(ids.into_iter().flatten().collect())
         })
     }
 }

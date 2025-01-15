@@ -1,3 +1,4 @@
+use ic_cose_types::validate_str;
 use serde::{de::DeserializeOwned, Serialize};
 use std::{collections::BTreeMap, future::Future, marker::PhantomData, sync::Arc};
 
@@ -11,23 +12,19 @@ pub trait Tool<C>: Send + Sync
 where
     C: BaseContext + Send + Sync,
 {
-    /// The unique name of the tool. This name should be unique within the engine.
-    ///
-    /// # Rules
-    /// - Must not be empty
-    /// - Length must be ≤ 64 characters
-    /// - Can only contain: lowercase letters (a-z), digits (0-9), and underscores (_)
-    const NAME: &'static str;
-
     /// The arguments type of the tool.
     type Args: DeserializeOwned + Send;
     /// The output type of the tool.
     type Output: Serialize;
 
     /// Returns the tool's name
-    fn name(&self) -> String {
-        Self::NAME.to_string()
-    }
+    /// This name should be unique within the engine.
+    ///
+    /// # Rules
+    /// - Must not be empty
+    /// - Length must be ≤ 64 characters
+    /// - Can only contain: lowercase letters (a-z), digits (0-9), and underscores (_)
+    fn name(&self) -> String;
 
     /// Provides the tool's definition including its parameters schema.
     ///
@@ -49,6 +46,23 @@ where
         ctx: C,
         args: Self::Args,
     ) -> impl Future<Output = Result<Self::Output, BoxError>> + Send;
+
+    /// Executes the tool with given context and arguments using raw JSON strings
+    fn call_raw(
+        &self,
+        ctx: C,
+        args: String,
+    ) -> impl Future<Output = Result<String, BoxError>> + Send {
+        async move {
+            let args: Self::Args = serde_json::from_str(&args)
+                .map_err(|err| format!("tool {}, invalid args: {}", self.name(), err))?;
+            let result = self
+                .call(ctx, args)
+                .await
+                .map_err(|err| format!("tool {}, call failed: {}", self.name(), err))?;
+            Ok(serde_json::to_string(&result)?)
+        }
+    }
 }
 
 /// Dynamic dispatch version of the Tool trait
@@ -89,17 +103,8 @@ where
     }
 
     fn call(&self, ctx: C, args: String) -> BoxPinFut<Result<String, BoxError>> {
-        let name = self.0.name();
         let tool = self.0.clone();
-        Box::pin(async move {
-            let args = serde_json::from_str(&args)
-                .map_err(|err| format!("tool {}, invalid args: {}", name, err))?;
-            let result = tool
-                .call(ctx, args)
-                .await
-                .map_err(|err| format!("tool {}, call failed: {}", name, err))?;
-            Ok(serde_json::to_string(&result)?)
-        })
+        Box::pin(async move { tool.call_raw(ctx, args).await })
     }
 }
 
@@ -140,20 +145,22 @@ where
     /// Gets definitions for multiple tools, optionally filtered by names
     ///
     /// # Arguments
-    /// - `names`: Optional slice of tool names to filter by. If None or empty, returns all definitions
+    /// - `names`: Optional slice of tool names to filter by. If None, returns all definitions
     ///
     /// # Returns
     /// - Vector of `FunctionDefinition` for the requested tools
     pub fn definitions(&self, names: Option<&[&str]>) -> Vec<FunctionDefinition> {
-        let names = names.unwrap_or_default();
         self.set
             .iter()
-            .filter_map(|(name, tool)| {
-                if names.is_empty() || names.contains(&name.as_str()) {
-                    Some(tool.definition())
-                } else {
-                    None
+            .filter_map(|(name, tool)| match names {
+                Some(names) => {
+                    if names.contains(&name.as_str()) {
+                        Some(tool.definition())
+                    } else {
+                        None
+                    }
                 }
+                None => Some(tool.definition()),
             })
             .collect()
     }
@@ -162,12 +169,19 @@ where
     ///
     /// # Arguments
     /// - `tool`: The tool to add, must implement the `Tool` trait
-    pub fn add<T>(&mut self, tool: T)
+    pub fn add<T>(&mut self, tool: T) -> Result<(), BoxError>
     where
         T: Tool<C> + Send + Sync + 'static,
     {
+        let name = tool.name();
+        validate_str(&name)?;
+        if self.set.contains_key(&name) {
+            return Err(format!("tool {} already exists", name).into());
+        }
+
         let tool_dyn = ToolWrapper(Arc::new(tool), PhantomData);
-        self.set.insert(T::NAME.to_string(), Box::new(tool_dyn));
+        self.set.insert(name, Box::new(tool_dyn));
+        Ok(())
     }
 
     /// Calls a tool by name with the given context and arguments

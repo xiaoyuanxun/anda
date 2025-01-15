@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::{collections::BTreeMap, fmt::Write, future::Future};
+use std::{collections::BTreeMap, future::Future};
 
 use crate::BoxError;
 
@@ -66,7 +66,7 @@ pub struct FunctionDefinition {
 }
 
 /// Knowledge document with text and metadata
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Document {
     pub id: String,
     pub text: String,
@@ -74,9 +74,52 @@ pub struct Document {
     pub additional_props: BTreeMap<String, String>,
 }
 
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct Documents(pub Vec<Document>);
+
+impl From<Vec<String>> for Documents {
+    fn from(texts: Vec<String>) -> Self {
+        let mut docs = Vec::new();
+        for (i, text) in texts.into_iter().enumerate() {
+            docs.push(Document {
+                id: format!("doc_{}", i),
+                text,
+                additional_props: BTreeMap::new(),
+            });
+        }
+        Self(docs)
+    }
+}
+
+impl From<Vec<Document>> for Documents {
+    fn from(docs: Vec<Document>) -> Self {
+        Self(docs)
+    }
+}
+
+impl std::ops::Deref for Documents {
+    type Target = Vec<Document>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for Documents {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl AsRef<Vec<Document>> for Documents {
+    fn as_ref(&self) -> &Vec<Document> {
+        &self.0
+    }
+}
+
 impl std::fmt::Display for Document {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "<file id={:?}>", self.id)?;
+        writeln!(f, "<doc id={:?}>", self.id)?;
         if !self.additional_props.is_empty() {
             write!(f, "<meta ")?;
             for (k, v) in &self.additional_props {
@@ -84,27 +127,43 @@ impl std::fmt::Display for Document {
             }
             writeln!(f, "/>")?;
         }
-        write!(f, "{:?}\n</file>\n", self.text)
+        write!(f, "{}\n</doc>\n", self.text)
+    }
+}
+
+impl std::fmt::Display for Documents {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.0.is_empty() {
+            return Ok(());
+        }
+        writeln!(f, "<attachments>")?;
+        for doc in &self.0 {
+            write!(f, "{}", doc)?;
+        }
+        write!(f, "</attachments>")
     }
 }
 
 /// Struct representing a general completion request that can be sent to a completion model provider.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct CompletionRequest {
-    /// The preamble to be sent to the completion model provider, as the "system" role
-    pub preamble: Option<String>,
+    /// The system message to be sent to the completion model provider, as the "system" role
+    pub system: Option<String>,
 
     /// The chat history to be sent to the completion model provider
     pub chat_history: Vec<MessageInput>,
 
     /// The documents to embed into the prompt
-    pub documents: Vec<Document>,
+    pub documents: Documents,
 
-    /// The prompt to be sent to the completion model provider as "developer" or "system" role
+    /// The prompt to be sent to the completion model provider as "user" role
     pub prompt: String,
 
     /// The tools to be sent to the completion model provider
     pub tools: Vec<FunctionDefinition>,
+
+    /// Whether the tool choice is required
+    pub tool_choice_required: bool,
 
     /// The temperature to be sent to the completion model provider
     pub temperature: Option<f64>,
@@ -124,20 +183,30 @@ pub struct CompletionRequest {
 }
 
 impl CompletionRequest {
+    pub fn context(mut self, id: String, text: String) -> Self {
+        self.documents.0.push(Document {
+            id,
+            text,
+            additional_props: BTreeMap::new(),
+        });
+        self
+    }
+
+    pub fn append_documents(mut self, docs: Documents) -> Self {
+        self.documents.0.extend(docs.0);
+        self
+    }
+
+    pub fn append_tools(mut self, tools: Vec<FunctionDefinition>) -> Self {
+        self.tools.extend(tools);
+        self
+    }
+
     pub fn prompt_with_context(&self) -> String {
-        if !self.documents.is_empty() {
-            let mut w = String::new();
-            w.push_str("<attachments>\n");
-            for doc in &self.documents {
-                if w.write_fmt(format_args!("{doc}")).is_err() {
-                    return self.prompt.clone();
-                }
-            }
-            w.push_str("</attachments>\n\n");
-            w.push_str(&self.prompt);
-            w
-        } else {
+        if self.documents.is_empty() {
             self.prompt.clone()
+        } else {
+            format!("{}\n\n{}", self.documents, self.prompt)
         }
     }
 }
@@ -155,12 +224,6 @@ pub struct Embedding {
 /// Provides LLM completion capabilities for agents
 pub trait CompletionFeatures: Sized {
     /// Generates a completion based on the given prompt and context
-    ///
-    /// # Arguments
-    /// * `prompt` - The input prompt for the completion
-    /// * `json_output` - Whether to force JSON output format
-    /// * `chat_history` - Conversation history as context
-    /// * `tools` - Available functions the model can call
     fn completion(
         &self,
         req: CompletionRequest,
@@ -206,14 +269,15 @@ mod tests {
                         ("a".to_string(), "b".to_string()),
                     ]),
                 },
-            ],
+            ]
+            .into(),
             ..Default::default()
         };
         let prompt = req.prompt_with_context();
         println!("{}", prompt);
         assert_eq!(
             prompt,
-            "<attachments>\n<file id=\"1\">\n\"Test document 1.\"\n</file>\n<file id=\"2\">\n<meta a=\"b\" key=\"value\" />\n\"Test document 2.\"\n</file>\n</attachments>\n\nThis is a test prompt."
+            "<attachments>\n<doc id=\"1\">\nTest document 1.\n</doc>\n<doc id=\"2\">\n<meta a=\"b\" key=\"value\" />\nTest document 2.\n</doc>\n</attachments>\n\nThis is a test prompt."
         );
     }
 }

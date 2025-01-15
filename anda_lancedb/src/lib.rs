@@ -55,7 +55,7 @@ impl<const DIM: usize> KnowledgeStore<DIM> {
                 name.clone(),
                 Arc::new(schema),
                 Some("id".to_string()),
-                Some(columns.clone()),
+                Some("text".to_string()),
                 index_cache_size,
             )
             .await?;
@@ -183,7 +183,6 @@ mod tests {
         let lt = store.table(&namespace).unwrap();
         assert_eq!(ks.name.as_ref(), lt.table.name());
         assert_eq!(&lt.id_field, "id");
-        assert_eq!(lt.columns, ks.columns);
 
         ks.add(vec![
             KnowledgeInput {
@@ -207,16 +206,17 @@ mod tests {
             .top_n(namespace.clone(), "hello".to_string(), 10)
             .await
             .unwrap();
-        let res1: Vec<Knowledge> = serde_json::from_slice(&res1).unwrap();
-        println!("{:?}", res1);
+        assert_eq!(res1, vec!["Hello".to_string()]);
 
         let res2 = ks.top_n("hello".to_string(), 10).await.unwrap();
         println!("{:?}", res2);
-        assert_eq!(res1, res2);
+        assert_eq!(res2.len(), 1);
+        assert_eq!(res2[0].text, "Hello");
 
         let res3 = ks.top_n("anda".to_string(), 10).await.unwrap();
         println!("{:?}", res3);
-        assert_ne!(res2, res3);
+        assert_eq!(res3.len(), 1);
+        assert_eq!(res3[0].text, "Anda");
 
         let res = store
             .top_n_ids(namespace.clone(), "hello".to_string(), 10)

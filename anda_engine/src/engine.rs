@@ -1,6 +1,7 @@
-use anda_core::{AgentOutput, AgentSet, BoxError, FunctionDefinition, ToolSet};
+use anda_core::{
+    validate_path_part, Agent, AgentOutput, AgentSet, BoxError, FunctionDefinition, Tool, ToolSet,
+};
 use candid::Principal;
-use ic_cose_types::validate_str;
 use object_store::memory::InMemory;
 use std::{sync::Arc, time::Duration};
 use tokio_util::sync::CancellationToken;
@@ -35,17 +36,31 @@ impl Engine {
         self.ctx.base.cancellation_token.cancel()
     }
 
+    /// Return the agent context without user and caller.
+    pub fn agent_ctx(&self, agent_name: &str) -> Result<AgentCtx, BoxError> {
+        let name = agent_name.to_ascii_lowercase();
+        if !self.ctx.agents.contains(&name) {
+            return Err(format!("agent {} not found", name).into());
+        }
+
+        self.ctx.child(&name)
+    }
+
     pub async fn agent_run(
         &self,
-        user: String,
-        caller: Option<Principal>,
+        agent_name: Option<String>,
         prompt: String,
         attachment: Option<Vec<u8>>,
-        agent_name: Option<String>,
+        user: Option<String>,
+        caller: Option<Principal>,
     ) -> Result<AgentOutput, BoxError> {
         let name = agent_name.unwrap_or(self.default_agent.clone());
         if !self.ctx.agents.contains(&name) {
             return Err(format!("agent {} not found", name).into());
+        }
+
+        if let Some(user) = &user {
+            validate_path_part(user)?;
         }
 
         let ctx = self.ctx.child_with(&name, user, caller)?;
@@ -54,13 +69,17 @@ impl Engine {
 
     pub async fn tool_call(
         &self,
-        user: String,
-        caller: Option<Principal>,
         name: String,
         args: String,
+        user: Option<String>,
+        caller: Option<Principal>,
     ) -> Result<String, BoxError> {
         if !self.ctx.tools.contains(&name) {
             return Err(format!("tool {} not found", name).into());
+        }
+
+        if let Some(user) = &user {
+            validate_path_part(user)?;
         }
 
         let ctx = self.ctx.child_base_with(&name, user, caller)?;
@@ -145,28 +164,54 @@ impl EngineBuilder {
         self
     }
 
-    pub fn register_tools(&mut self, tools: ToolSet<BaseCtx>) -> Result<(), BoxError> {
+    pub fn register_tool<T>(mut self, tool: T) -> Result<Self, BoxError>
+    where
+        T: Tool<BaseCtx> + Send + Sync + 'static,
+    {
+        self.tools.add(tool)?;
+        Ok(self)
+    }
+
+    pub fn register_tools(mut self, tools: ToolSet<BaseCtx>) -> Result<Self, BoxError> {
         for (name, tool) in tools.set {
-            validate_str(&name)?;
-            if self.tools.contains(&name) {
+            if self.tools.set.contains_key(&name) {
                 return Err(format!("tool {} already exists", name).into());
             }
             self.tools.set.insert(name, tool);
         }
 
-        Ok(())
+        Ok(self)
     }
 
-    pub fn register_agents(&mut self, agents: AgentSet<AgentCtx>) -> Result<(), BoxError> {
+    pub fn register_agent<T>(mut self, agent: T) -> Result<Self, BoxError>
+    where
+        T: Agent<AgentCtx> + Send + Sync + 'static,
+    {
+        for tool in agent.tool_dependencies() {
+            if !self.tools.contains(&tool) {
+                return Err(format!("dependent tool {} not found", tool).into());
+            }
+        }
+
+        self.agents.add(agent)?;
+        Ok(self)
+    }
+
+    pub fn register_agents(mut self, agents: AgentSet<AgentCtx>) -> Result<Self, BoxError> {
         for (name, agent) in agents.set {
-            validate_str(&name)?;
-            if self.agents.contains(&name) {
+            if self.agents.set.contains_key(&name) {
                 return Err(format!("agent {} already exists", name).into());
+            }
+
+            for tool in agent.tool_dependencies() {
+                if !self.tools.contains(&tool) {
+                    return Err(format!("dependent tool {} not found", tool).into());
+                }
             }
             self.agents.set.insert(name, agent);
         }
 
-        Ok(())
+        Ok(self)
     }
 
     pub async fn build(self, default_agent: String) -> Result<Engine, BoxError> {
@@ -211,5 +256,22 @@ impl EngineBuilder {
             name,
             default_agent,
         })
+    }
+
+    #[cfg(test)]
+    pub fn mock_ctx(self) -> AgentCtx {
+        let ctx = BaseCtx::new(
+            &self.tee_host,
+            self.cancellation_token,
+            reqwest::Client::new(),
+            self.store,
+        );
+        AgentCtx::new(
+            ctx,
+            self.model,
+            self.vector_store,
+            Arc::new(self.tools),
+            Arc::new(self.agents),
+        )
     }
 }

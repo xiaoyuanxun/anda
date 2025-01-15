@@ -26,7 +26,7 @@ use crate::{store::Store, APP_USER_AGENT};
 
 #[derive(Clone)]
 pub struct BaseCtx {
-    pub(crate) user: String,
+    pub(crate) user: Option<String>,
     pub(crate) caller: Option<Principal>,
     pub(crate) path: Path,
     pub(crate) cancellation_token: CancellationToken,
@@ -63,7 +63,7 @@ impl BaseCtx {
             .expect("Anda reqwest client should build");
 
         Self {
-            user: "system".to_string(),
+            user: None,
             caller: None,
             path: Path::default(),
             cancellation_token,
@@ -98,7 +98,7 @@ impl BaseCtx {
     pub(crate) fn child_with(
         &self,
         path: String,
-        user: String,
+        user: Option<String>,
         caller: Option<Principal>,
     ) -> Result<Self, BoxError> {
         let path = Path::parse(path)?;
@@ -122,7 +122,7 @@ impl BaseCtx {
 impl BaseContext for BaseCtx {}
 
 impl StateFeatures for BaseCtx {
-    fn user(&self) -> String {
+    fn user(&self) -> Option<String> {
         self.user.clone()
     }
 

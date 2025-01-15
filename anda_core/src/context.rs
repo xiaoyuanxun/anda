@@ -15,10 +15,13 @@ use crate::BoxError;
 /// - BaseContext: Fundamental operations
 /// - CompletionFeatures: LLM completions and function calling
 /// - EmbeddingFeatures: Text embeddings
-/// - VectorSearchFeatures: Semantic search
-pub trait AgentContext:
-    BaseContext + CompletionFeatures + EmbeddingFeatures + VectorSearchFeatures
-{
+pub trait AgentContext: BaseContext + CompletionFeatures + EmbeddingFeatures {
+    /// Gets definitions for multiple tools, optionally filtered by names
+    fn tool_definitions(&self, names: Option<&[&str]>) -> Vec<FunctionDefinition>;
+
+    /// Gets definitions for multiple agents, optionally filtered by names
+    fn agent_definitions(&self, names: Option<&[&str]>) -> Vec<FunctionDefinition>;
+
     /// Executes a local tool with provided arguments
     fn tool_call(
         &self,
@@ -77,7 +80,7 @@ pub trait StateFeatures: Sized {
     /// Note: This is not verified and should not be used as a trusted identifier.
     /// For example, if triggered by a bot of X platform, this might be the username
     /// of the user interacting with the bot.
-    fn user(&self) -> String;
+    fn user(&self) -> Option<String>;
 
     /// Gets the verified caller principal if available.
     /// A non-None value indicates the request has been verified
@@ -112,13 +115,11 @@ pub trait StateFeatures: Sized {
 pub trait VectorSearchFeatures: Sized {
     /// Performs a semantic search to find top n most similar documents
     /// Returns a list of deserialized json document
-    fn top_n<T>(
+    fn top_n(
         &self,
         query: &str,
         n: usize,
-    ) -> impl Future<Output = Result<Vec<T>, BoxError>> + Send
-    where
-        T: DeserializeOwned;
+    ) -> impl Future<Output = Result<Vec<String>, BoxError>> + Send;
 
     /// Performs a semantic search but returns only document IDs
     /// More efficient when only document identifiers are needed

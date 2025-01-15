@@ -1,8 +1,8 @@
 use anda_core::{
     AgentContext, AgentOutput, AgentSet, BaseContext, BoxError, CacheExpiry, CacheFeatures,
     CancellationToken, CanisterFeatures, CompletionFeatures, CompletionRequest, Embedding,
-    EmbeddingFeatures, HttpFeatures, KeysFeatures, ObjectMeta, Path, PutMode, PutResult,
-    StateFeatures, StoreFeatures, ToolSet, VectorSearchFeatures,
+    EmbeddingFeatures, FunctionDefinition, HttpFeatures, KeysFeatures, ObjectMeta, Path, PutMode,
+    PutResult, StateFeatures, StoreFeatures, ToolSet, VectorSearchFeatures,
 };
 use candid::{utils::ArgumentEncoder, CandidType, Principal};
 use rand::Rng;
@@ -17,7 +17,7 @@ use crate::{
 
 #[derive(Clone)]
 pub struct AgentCtx {
-    pub(crate) base: BaseCtx,
+    pub base: BaseCtx,
     pub(crate) model: Model,
     pub(crate) store: VectorStore,
     pub(crate) tools: Arc<ToolSet<BaseCtx>>,
@@ -58,7 +58,7 @@ impl AgentCtx {
     pub(crate) fn child_with(
         &self,
         agent_name: &str,
-        user: String,
+        user: Option<String>,
         caller: Option<Principal>,
     ) -> Result<Self, BoxError> {
         Ok(Self {
@@ -75,7 +75,7 @@ impl AgentCtx {
     pub(crate) fn child_base_with(
         &self,
         tool_name: &str,
-        user: String,
+        user: Option<String>,
         caller: Option<Principal>,
     ) -> Result<BaseCtx, BoxError> {
         self.base
@@ -84,6 +84,16 @@ impl AgentCtx {
 }
 
 impl AgentContext for AgentCtx {
+    /// Gets definitions for multiple tools, optionally filtered by names
+    fn tool_definitions(&self, names: Option<&[&str]>) -> Vec<FunctionDefinition> {
+        self.tools.definitions(names)
+    }
+
+    /// Gets definitions for multiple agents, optionally filtered by names
+    fn agent_definitions(&self, names: Option<&[&str]>) -> Vec<FunctionDefinition> {
+        self.agents.definitions(names)
+    }
+
     async fn tool_call(&self, name: &str, args: String) -> Result<String, BoxError> {
         if !self.tools.contains(name) {
             return Err(format!("tool {} not found", name).into());
@@ -165,16 +175,10 @@ impl EmbeddingFeatures for AgentCtx {
 impl VectorSearchFeatures for AgentCtx {
     /// Get the top n documents based on the distance to the given query.
     /// The result is a list of json document
-    async fn top_n<T>(&self, query: &str, n: usize) -> Result<Vec<T>, BoxError>
-    where
-        T: DeserializeOwned,
-    {
-        let res = self
-            .store
+    async fn top_n(&self, query: &str, n: usize) -> Result<Vec<String>, BoxError> {
+        self.store
             .top_n(self.base.path.clone(), query.to_string(), n)
-            .await?;
-        let val = serde_json::from_slice(res.as_ref())?;
-        Ok(val)
+            .await
     }
 
     /// Same as `top_n` but returns the document ids only.
@@ -188,7 +192,7 @@ impl VectorSearchFeatures for AgentCtx {
 impl BaseContext for AgentCtx {}
 
 impl StateFeatures for AgentCtx {
-    fn user(&self) -> String {
+    fn user(&self) -> Option<String> {
         self.base.user()
     }
 
