@@ -1,5 +1,5 @@
 use candid::{utils::ArgumentEncoder, CandidType};
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{future::Future, time::Duration};
 
 pub use candid::Principal;
@@ -27,7 +27,7 @@ pub trait AgentContext: BaseContext + CompletionFeatures + EmbeddingFeatures {
         &self,
         tool_name: &str,
         args: String,
-    ) -> impl Future<Output = Result<String, BoxError>> + Send;
+    ) -> impl Future<Output = Result<(String, bool), BoxError>> + Send;
 
     /// Executes a remote tool on another agent
     fn remote_tool_call(
@@ -35,7 +35,7 @@ pub trait AgentContext: BaseContext + CompletionFeatures + EmbeddingFeatures {
         endpoint: &str,
         tool_name: &str,
         args: String,
-    ) -> impl Future<Output = Result<String, BoxError>> + Send;
+    ) -> impl Future<Output = Result<(String, bool), BoxError>> + Send;
 
     /// Runs a local agent with optional attachment
     fn agent_run(
@@ -128,6 +128,39 @@ pub trait VectorSearchFeatures: Sized {
         query: &str,
         n: usize,
     ) -> impl std::future::Future<Output = Result<Vec<String>, BoxError>> + Send;
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct Knowledge {
+    pub id: String,
+    pub user: String,
+    pub text: String,
+    pub meta: Value,
+}
+
+#[derive(Debug, Clone)]
+pub struct KnowledgeInput {
+    pub user: String,
+    pub text: String,
+    pub meta: Value,
+    pub vec: Vec<f32>,
+}
+
+pub trait KnowledgeFeatures: Sized {
+    /// Performs a semantic search to find top n most similar documents
+    /// Returns a list of deserialized Knowledge document
+    fn knowledge_top_n(
+        &self,
+        query: &str,
+        n: usize,
+        user: Option<String>,
+    ) -> impl Future<Output = Result<Vec<Knowledge>, BoxError>> + Send;
+
+    /// Adds a list of Knowledge documents to the knowledge store
+    fn knowledge_add(
+        &self,
+        docs: Vec<KnowledgeInput>,
+    ) -> impl std::future::Future<Output = Result<(), BoxError>> + Send;
 }
 
 /// KeysFeatures is one of the context feature sets available when calling Agent or Tool.

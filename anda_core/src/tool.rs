@@ -12,6 +12,7 @@ pub trait Tool<C>: Send + Sync
 where
     C: BaseContext + Send + Sync,
 {
+    const CONTINUE: bool;
     /// The arguments type of the tool.
     type Args: DeserializeOwned + Send;
     /// The output type of the tool.
@@ -47,12 +48,13 @@ where
         args: Self::Args,
     ) -> impl Future<Output = Result<Self::Output, BoxError>> + Send;
 
-    /// Executes the tool with given context and arguments using raw JSON strings
-    fn call_raw(
+    /// Executes the tool with given context and arguments using raw JSON string
+    /// Returns the output as struct.
+    fn call_string(
         &self,
         ctx: C,
         args: String,
-    ) -> impl Future<Output = Result<String, BoxError>> + Send {
+    ) -> impl Future<Output = Result<Self::Output, BoxError>> + Send {
         async move {
             let args: Self::Args = serde_json::from_str(&args)
                 .map_err(|err| format!("tool {}, invalid args: {}", self.name(), err))?;
@@ -60,7 +62,25 @@ where
                 .call(ctx, args)
                 .await
                 .map_err(|err| format!("tool {}, call failed: {}", self.name(), err))?;
-            Ok(serde_json::to_string(&result)?)
+            Ok(result)
+        }
+    }
+
+    /// Executes the tool with given context and arguments using raw JSON string
+    /// Returns the output as a string in JSON format.
+    fn call_raw(
+        &self,
+        ctx: C,
+        args: String,
+    ) -> impl Future<Output = Result<(String, bool), BoxError>> + Send {
+        async move {
+            let args: Self::Args = serde_json::from_str(&args)
+                .map_err(|err| format!("tool {}, invalid args: {}", self.name(), err))?;
+            let result = self
+                .call(ctx, args)
+                .await
+                .map_err(|err| format!("tool {}, call failed: {}", self.name(), err))?;
+            Ok((serde_json::to_string(&result)?, Self::CONTINUE))
         }
     }
 }
@@ -80,7 +100,7 @@ where
     fn definition(&self) -> FunctionDefinition;
 
     /// Executes the tool with given context and arguments using dynamic dispatch
-    fn call(&self, ctx: C, args: String) -> BoxPinFut<Result<String, BoxError>>;
+    fn call(&self, ctx: C, args: String) -> BoxPinFut<Result<(String, bool), BoxError>>;
 }
 
 /// Wrapper to convert static Tool implementation to dynamic dispatch
@@ -102,7 +122,7 @@ where
         self.0.definition()
     }
 
-    fn call(&self, ctx: C, args: String) -> BoxPinFut<Result<String, BoxError>> {
+    fn call(&self, ctx: C, args: String) -> BoxPinFut<Result<(String, bool), BoxError>> {
         let tool = self.0.clone();
         Box::pin(async move { tool.call_raw(ctx, args).await })
     }
@@ -194,7 +214,12 @@ where
     /// # Returns
     /// - A future resolving to the tool's output as a JSON value
     /// - Returns an error if the tool is not found
-    pub fn call(&self, name: &str, ctx: C, args: String) -> BoxPinFut<Result<String, BoxError>> {
+    pub fn call(
+        &self,
+        name: &str,
+        ctx: C,
+        args: String,
+    ) -> BoxPinFut<Result<(String, bool), BoxError>> {
         if let Some(tool) = self.set.get(name) {
             tool.call(ctx, args)
         } else {

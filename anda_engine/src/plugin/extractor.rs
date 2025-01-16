@@ -14,6 +14,7 @@ pub use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::context::{AgentCtx, BaseCtx};
 
+#[derive(Debug, Clone)]
 pub struct SubmitTool<T: JsonSchema + DeserializeOwned + Send + Sync> {
     name: String,
     schema: Value,
@@ -56,6 +57,7 @@ impl<T> Tool<BaseCtx> for SubmitTool<T>
 where
     T: JsonSchema + DeserializeOwned + Serialize + Send + Sync,
 {
+    const CONTINUE: bool = false;
     type Args = T;
     type Output = T;
 
@@ -79,17 +81,41 @@ where
 }
 
 /// Extractor for structured data from text
-pub struct Extractor<T: JsonSchema + DeserializeOwned + Serialize + Send + Sync>(pub SubmitTool<T>);
+#[derive(Debug, Clone)]
+pub struct Extractor<T: JsonSchema + DeserializeOwned + Serialize + Send + Sync> {
+    tool: SubmitTool<T>,
+    system: String,
+    max_tokens: Option<usize>,
+}
 
 impl<T: JsonSchema + DeserializeOwned + Serialize + Send + Sync> Default for Extractor<T> {
     fn default() -> Self {
-        Self::new()
+        Self::new(None, None)
     }
 }
 
 impl<T: JsonSchema + DeserializeOwned + Serialize + Send + Sync> Extractor<T> {
-    pub fn new() -> Self {
-        Self(SubmitTool::new())
+    pub fn new(max_tokens: Option<usize>, system_prompt: Option<String>) -> Self {
+        let tool = SubmitTool::new();
+        Self::new_with_tool(tool, max_tokens, system_prompt)
+    }
+
+    pub fn new_with_tool(
+        tool: SubmitTool<T>,
+        max_tokens: Option<usize>,
+        system_prompt: Option<String>,
+    ) -> Self {
+        let tool_name = tool.name();
+        Self {
+            tool,
+            max_tokens,
+            system: system_prompt.unwrap_or_else(|| format!("\
+            You are an AI assistant whose purpose is to\
+            extract structured data from the provided text.\n\
+            You will have access to a `{tool_name}` function that defines the structure of the data to extract from the provided text.\n\
+            Use the `{tool_name}` function to submit the structured data.\n\
+            Be sure to fill out every field and ALWAYS CALL THE `{tool_name}` function, event with default values!!!.")),
+        }
     }
 
     pub async fn extract(
@@ -97,31 +123,28 @@ impl<T: JsonSchema + DeserializeOwned + Serialize + Send + Sync> Extractor<T> {
         ctx: &AgentCtx,
         prompt: String,
     ) -> Result<(T, AgentOutput), BoxError> {
-        let tool = self.0.name();
         let req = CompletionRequest {
-            system: Some(format!("\
-                You are an AI assistant whose purpose is to\
-                extract structured data from the provided text.\n\
-                You will have access to a `{tool}` function that defines the structure of the data to extract from the provided text.\n\
-                Use the `{tool}` function to submit the structured data.\n\
-                Be sure to fill out every field and ALWAYS CALL THE `{tool}` function, event with default values!!!.")),
+            system: Some(self.system.clone()),
             prompt,
-            tools: vec![self.0.definition()],
+            tools: vec![self.tool.definition()],
             tool_choice_required: true,
+            max_tokens: self.max_tokens,
             ..Default::default()
         };
 
         let mut res = ctx.completion(req).await?;
         if let Some(tool_calls) = &mut res.tool_calls {
             if let Some(tool) = tool_calls.iter_mut().next() {
-                let result = self.0.call_raw(ctx.base.clone(), tool.args.clone()).await?;
-                let t: T = serde_json::from_str(&result)?;
-                tool.result = Some(result);
-                return Ok((t, res));
+                let result = self
+                    .tool
+                    .call_string(ctx.base.clone(), tool.args.clone())
+                    .await?;
+                tool.result = Some(serde_json::to_string(&result)?);
+                return Ok((result, res));
             }
         }
 
-        Err(format!("extract with {tool} failed, no tool_calls").into())
+        Err(format!("extract with {} failed, no tool_calls", self.tool.name()).into())
     }
 }
 
@@ -130,7 +153,7 @@ where
     T: JsonSchema + DeserializeOwned + Serialize + Send + Sync,
 {
     fn name(&self) -> String {
-        format!("{}_extractor", self.0.name)
+        format!("{}_extractor", self.tool.name)
     }
 
     fn description(&self) -> String {
@@ -172,7 +195,7 @@ mod tests {
         println!("{}", s);
         // {"name":"submit_teststruct","description":"Submit the structured data you extracted from the provided text.","parameters":{"properties":{"age":{"format":"uint8","minimum":0.0,"type":["integer","null"]},"name":{"type":"string"}},"required":["name"],"title":"TestStruct","type":"object"},"strict":true}
 
-        let agent = Extractor::<TestStruct>::new();
+        let agent = Extractor::<TestStruct>::default();
         let definition = agent.definition();
         assert_eq!(definition.name, "teststruct_extractor");
         let s = serde_json::to_string(&definition).unwrap();
@@ -184,8 +207,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_with_ctx() {
-        let tool = SubmitTool::<TestStruct>::new();
-        let agent = Extractor::<TestStruct>::new();
+        let tool = SubmitTool::<TestStruct>::default();
+        let agent = Extractor::<TestStruct>::default();
         let tool_name = tool.name();
         let agent_name = agent.name();
 
@@ -197,13 +220,13 @@ mod tests {
             .unwrap()
             .mock_ctx();
 
-        let res = ctx
+        let (res, _) = ctx
             .tool_call(&tool_name, r#"{"name":"Anda","age": 1}"#.to_string())
             .await
             .unwrap();
         assert_eq!(res, r#"{"name":"Anda","age":1}"#);
 
-        let res = ctx
+        let (res, _) = ctx
             .tool_call(&tool_name, r#"{"name": "Anda"}"#.to_string())
             .await
             .unwrap();

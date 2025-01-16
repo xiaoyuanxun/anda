@@ -22,10 +22,12 @@ pub struct AgentOutput {
 /// Represents a tool call response with it's ID, function name, and arguments
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct ToolCall {
+    /// tool call id
     pub id: String,
+    /// tool function name
     pub name: String,
+    /// tool function  arguments
     pub args: String,
-
     /// The result of the tool call, auto processed by agents engine, if available
     pub result: Option<String>,
 }
@@ -169,7 +171,7 @@ pub struct CompletionRequest {
     pub temperature: Option<f64>,
 
     /// The max tokens to be sent to the completion model provider
-    pub max_tokens: Option<u64>,
+    pub max_tokens: Option<usize>,
 
     /// An object specifying the JSON format that the model must output.
     /// https://platform.openai.com/docs/guides/structured-outputs
@@ -245,6 +247,11 @@ pub trait EmbeddingFeatures: Sized {
     /// Generates a single embedding for a query text
     /// Optimized for single text embedding generation
     fn embed_query(&self, text: &str) -> impl Future<Output = Result<Embedding, BoxError>> + Send;
+}
+
+/// Returns the number of tokens in the given content in the simplest way
+pub fn evaluate_tokens(content: &str) -> usize {
+    content.len() / 3
 }
 
 #[cfg(test)]

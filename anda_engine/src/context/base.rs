@@ -305,7 +305,7 @@ impl StoreFeatures for BaseCtx {
 impl CacheFeatures for BaseCtx {
     /// Checks if a key exists in the cache
     fn cache_contains(&self, key: &str) -> bool {
-        self.cache.cache_contains(&self.path, key)
+        self.cache.contains(&self.path, key)
     }
 
     /// Gets a cached value by key, returns error if not found or deserialization fails
@@ -313,7 +313,7 @@ impl CacheFeatures for BaseCtx {
     where
         T: DeserializeOwned,
     {
-        self.cache.cache_get(&self.path, key).await
+        self.cache.get(&self.path, key).await
     }
 
     /// Gets a cached value or initializes it if missing
@@ -324,7 +324,7 @@ impl CacheFeatures for BaseCtx {
         T: Sized + DeserializeOwned + Serialize + Send,
         F: Future<Output = Result<(T, Option<CacheExpiry>), BoxError>> + Send + 'static,
     {
-        self.cache.cache_get_with(&self.path, key, init).await
+        self.cache.get_with(&self.path, key, init).await
     }
 
     /// Sets a value in cache with optional expiration policy
@@ -332,12 +332,12 @@ impl CacheFeatures for BaseCtx {
     where
         T: Sized + Serialize + Send,
     {
-        self.cache.cache_set(&self.path, key, val).await
+        self.cache.set(&self.path, key, val).await
     }
 
     /// Deletes a cached value by key, returns true if key existed
     async fn cache_delete(&self, key: &str) -> bool {
-        self.cache.cache_delete(&self.path, key).await
+        self.cache.delete(&self.path, key).await
     }
 }
 

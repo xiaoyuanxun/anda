@@ -50,6 +50,7 @@ moka = { version = "0.12", features = ["future"] }
 xid = "1.1"
 toml = "0.8"
 ed25519-consensus = "2.1"
+log = "0.4"
 
 [profile.release]
 debug = false

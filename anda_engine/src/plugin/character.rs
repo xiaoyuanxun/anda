@@ -1,15 +1,16 @@
-use std::time::Duration;
-
 use anda_core::{
-    Agent, AgentContext, AgentOutput, BoxError, CacheExpiry, CacheFeatures, CompletionFeatures,
-    CompletionRequest, Documents, MessageInput, StateFeatures, VectorSearchFeatures,
+    evaluate_tokens, Agent, AgentContext, AgentOutput, BoxError, CacheExpiry, CacheFeatures,
+    CompletionFeatures, CompletionRequest, Documents, Embedding, EmbeddingFeatures,
+    KnowledgeFeatures, KnowledgeInput, MessageInput, StateFeatures, VectorSearchFeatures,
 };
 use ic_cose_types::to_cbor_bytes;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 use crate::{
     context::AgentCtx,
-    plugin::attention::{Attention, AttentionCommand},
+    plugin::attention::{Attention, AttentionCommand, ContentQuality},
+    plugin::segmenter::DocumentSegmenter,
     store::MAX_STORE_OBJECT_SIZE,
 };
 
@@ -122,24 +123,45 @@ impl Character {
         }
         .context("style_context".to_string(), style_context)
     }
+
+    pub fn build<K: KnowledgeFeatures + VectorSearchFeatures + Clone>(
+        self,
+        attention: Attention,
+        segmenter: DocumentSegmenter,
+        knowledge: K,
+    ) -> CharacterAgent<K> {
+        CharacterAgent::new(self, attention, segmenter, knowledge)
+    }
 }
 
 #[derive(Debug, Clone)]
-pub struct CharacterAgent {
+pub struct CharacterAgent<K: KnowledgeFeatures + VectorSearchFeatures + Clone> {
     character: Character,
     attention: Attention,
+    segmenter: DocumentSegmenter,
+    knowledge: K,
 }
 
-impl CharacterAgent {
-    pub fn new(character: Character, attention: Attention) -> Self {
+impl<K: KnowledgeFeatures + VectorSearchFeatures + Clone> CharacterAgent<K> {
+    pub fn new(
+        character: Character,
+        attention: Attention,
+        segmenter: DocumentSegmenter,
+        knowledge: K,
+    ) -> Self {
         Self {
             character,
             attention,
+            segmenter,
+            knowledge,
         }
     }
 }
 
-impl Agent<AgentCtx> for CharacterAgent {
+impl<K> Agent<AgentCtx> for CharacterAgent<K>
+where
+    K: KnowledgeFeatures + VectorSearchFeatures + Clone + Send + Sync + 'static,
+{
     fn name(&self) -> String {
         self.character.name.clone()
     }
@@ -170,27 +192,85 @@ impl Agent<AgentCtx> for CharacterAgent {
             None
         };
 
-        let recent_messages: Vec<String> = chat_history
-            .as_ref()
-            .map(|(_, c)| c.iter().map(|m| m.content.clone()).collect())
-            .unwrap_or_default();
-        match self
-            .attention
-            .should_reply(&ctx, &prompt, recent_messages)
-            .await
-        {
-            AttentionCommand::Stop | AttentionCommand::Ignore => {
-                return Ok(AgentOutput {
-                    content: "I'm sorry, I will stop responding.".to_string(),
-                    failed_reason: Some("STOP_COMMAND".to_string()),
-                    ..Default::default()
-                });
+        let mut content_quality = ContentQuality::Ignore;
+        if evaluate_tokens(&prompt) <= self.attention.min_content_tokens {
+            let recent_messages: Vec<MessageInput> = vec![];
+            match self
+                .attention
+                .should_reply(
+                    &ctx,
+                    &self.character.topics,
+                    chat_history
+                        .as_ref()
+                        .map(|(_, c)| c)
+                        .unwrap_or(&recent_messages),
+                    &MessageInput {
+                        role: "user".to_string(),
+                        content: prompt.clone(),
+                        name: ctx.user(),
+                        ..Default::default()
+                    },
+                )
+                .await
+            {
+                AttentionCommand::Stop | AttentionCommand::Ignore => {
+                    return Ok(AgentOutput {
+                        content: "I'm sorry, I will stop responding.".to_string(),
+                        failed_reason: Some("STOP_COMMAND".to_string()),
+                        ..Default::default()
+                    });
+                }
+                _ => {}
             }
-            _ => {}
+        } else {
+            content_quality = self.attention.evaluate_content(&ctx, &prompt).await;
         }
 
-        let knowledges = ctx.top_n(&prompt, 5).await.unwrap_or_default();
-        let knowledges: Documents = knowledges.into();
+        let knowledges: Documents = if content_quality == ContentQuality::Ignore {
+            let knowledges = self.knowledge.top_n(&prompt, 5).await.unwrap_or_default();
+            knowledges.into()
+        } else {
+            // do not append knowledges if content quality is high
+            Documents::default()
+        };
+
+        if content_quality > ContentQuality::Ignore {
+            let content = prompt.clone();
+            let ctx = ctx.clone();
+            let user = ctx.user().unwrap_or("user".to_string());
+            let segmenter = self.segmenter.clone();
+            let knowledge = self.knowledge.clone();
+
+            // save high quality content to knowledge store in background
+            tokio::spawn(async move {
+                let (docs, _) = segmenter.segment(&ctx, &content).await?;
+                let mut vecs: Vec<Embedding> = Vec::with_capacity(docs.segments.len());
+                for texts in docs.segments.chunks(90) {
+                    match ctx.embed(texts.to_owned()).await {
+                        Ok(embeddings) => vecs.extend(embeddings),
+                        Err(err) => {
+                            log::error!("Failed to embed segments: {}", err);
+                        }
+                    }
+                }
+
+                let docs: Vec<KnowledgeInput> = vecs
+                    .into_iter()
+                    .map(|embedding| KnowledgeInput {
+                        user: user.clone(),
+                        text: embedding.text,
+                        meta: serde_json::Map::new().into(),
+                        vec: embedding.vec,
+                    })
+                    .collect();
+                let total = docs.len();
+                if let Err(err) = knowledge.knowledge_add(docs).await {
+                    log::error!("failed to add {} knowledges: {}", total, err);
+                }
+
+                Ok::<(), BoxError>(())
+            });
+        }
 
         let tools: Vec<&str> = self
             .character
@@ -212,18 +292,30 @@ impl Agent<AgentCtx> for CharacterAgent {
             chat.push(MessageInput {
                 role: "user".to_string(),
                 content: req.prompt.clone(),
+                name: Some(user.clone()),
                 ..Default::default()
             });
 
             // tools will be auto called in completion
             let res = ctx.completion(req).await?;
-            if res.failed_reason.is_none() && !res.content.is_empty() {
-                // TODO: tool_calls?
-                chat.push(MessageInput {
-                    role: "assistant".to_string(),
-                    content: res.content.clone(),
-                    ..Default::default()
-                });
+            if res.failed_reason.is_none() {
+                if !res.content.is_empty() {
+                    chat.push(MessageInput {
+                        role: "assistant".to_string(),
+                        content: res.content.clone(),
+                        ..Default::default()
+                    });
+                }
+                if let Some(tool_calls) = &res.tool_calls {
+                    for tool_res in tool_calls {
+                        chat.push(MessageInput {
+                            role: "tool".to_string(),
+                            content: "".to_string(),
+                            name: Some(tool_res.name.clone()),
+                            tool_call_id: Some(tool_res.id.clone()),
+                        });
+                    }
+                }
 
                 if chat.len() > MAX_CHAT_HISTORY {
                     chat.drain(0..(chat.len() - MAX_CHAT_HISTORY));
@@ -231,6 +323,12 @@ impl Agent<AgentCtx> for CharacterAgent {
 
                 // save chat history to cache
                 let data = to_cbor_bytes(&chat);
+                let data = if data.len() < MAX_STORE_OBJECT_SIZE {
+                    data
+                } else {
+                    chat.drain(0..(chat.len() / 2));
+                    to_cbor_bytes(&chat)
+                };
                 if data.len() < MAX_STORE_OBJECT_SIZE {
                     let _ = ctx
                         .cache_set(user, (chat, Some(CacheExpiry::TTI(CHAT_HISTORY_TTI))))

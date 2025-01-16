@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     context::{AgentCtx, BaseCtx},
     model::Model,
-    store::{Store, VectorStore},
+    store::Store,
     APP_USER_AGENT,
 };
 
@@ -73,7 +73,7 @@ impl Engine {
         args: String,
         user: Option<String>,
         caller: Option<Principal>,
-    ) -> Result<String, BoxError> {
+    ) -> Result<(String, bool), BoxError> {
         if !self.ctx.tools.contains(&name) {
             return Err(format!("tool {} not found", name).into());
         }
@@ -101,7 +101,6 @@ pub struct EngineBuilder {
     agents: AgentSet<AgentCtx>,
     model: Model,
     store: Store,
-    vector_store: VectorStore,
     tee_host: String,
     basic_token: Option<String>,
     cancellation_token: CancellationToken,
@@ -122,7 +121,6 @@ impl EngineBuilder {
             agents: AgentSet::new(),
             model: Model::not_implemented(),
             store: Store::new(mstore),
-            vector_store: VectorStore::not_implemented(),
             tee_host: TEE_LOCAL_SERVER.to_string(),
             basic_token: None,
             cancellation_token: CancellationToken::new(),
@@ -151,11 +149,6 @@ impl EngineBuilder {
 
     pub fn with_store(mut self, store: Store) -> Self {
         self.store = store;
-        self
-    }
-
-    pub fn with_vector_store(mut self, vector_store: VectorStore) -> Self {
-        self.vector_store = vector_store;
         self
     }
 
@@ -243,13 +236,7 @@ impl EngineBuilder {
             self.store,
         );
 
-        let ctx = AgentCtx::new(
-            ctx,
-            self.model,
-            self.vector_store,
-            Arc::new(self.tools),
-            Arc::new(self.agents),
-        );
+        let ctx = AgentCtx::new(ctx, self.model, Arc::new(self.tools), Arc::new(self.agents));
 
         Ok(Engine {
             ctx,
@@ -266,12 +253,6 @@ impl EngineBuilder {
             reqwest::Client::new(),
             self.store,
         );
-        AgentCtx::new(
-            ctx,
-            self.model,
-            self.vector_store,
-            Arc::new(self.tools),
-            Arc::new(self.agents),
-        )
+        AgentCtx::new(ctx, self.model, Arc::new(self.tools), Arc::new(self.agents))
     }
 }

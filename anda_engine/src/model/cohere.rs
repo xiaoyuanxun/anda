@@ -185,6 +185,9 @@ impl EmbeddingFeaturesDyn for EmbeddingModel {
         self.ndims
     }
 
+    // https://docs.cohere.com/reference/embed
+    // An array of strings for the model to embed. Maximum number of texts per call is 96.
+    // Tecommend reducing the length of each text to be under 512 tokens for optimal quality.
     fn embed(&self, texts: Vec<String>) -> BoxPinFut<Result<Vec<Embedding>, BoxError>> {
         let model = self.model.clone();
         let client = self.client.clone();

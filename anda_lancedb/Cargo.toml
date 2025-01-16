@@ -10,8 +10,8 @@ categories.workspace = true
 license.workspace = true
 
 [dependencies]
-anda_core = { path = "../anda_core", version = "0.2" }
-anda_engine = { path = "../anda_engine", version = "0.2" }
+anda_core = { path = "../anda_core", version = "0.3" }
+anda_engine = { path = "../anda_engine", version = "0.3" }
 futures = { workspace = true }
 tokio = { workspace = true }
 object_store = { workspace = true }

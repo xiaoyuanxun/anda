@@ -1,54 +1,42 @@
-use anda_core::BoxError;
-use futures::TryStreamExt;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use anda_core::{BoxError, Knowledge, KnowledgeFeatures, KnowledgeInput, VectorSearchFeatures};
 use std::{sync::Arc, vec};
 
 use crate::lancedb::*;
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-pub struct Knowledge {
-    pub id: String,
-    pub text: String,
-    pub meta: Value,
-}
-
-#[derive(Debug, Clone)]
-pub struct KnowledgeInput<const DIM: usize> {
-    pub text: String,
-    pub meta: Value,
-    pub vec: [f32; DIM],
-}
-
 #[derive(Clone)]
-pub struct KnowledgeStore<const DIM: usize> {
-    pub name: Path,
+pub struct KnowledgeStore {
+    name: Path,
+    dim: i32,
     table: Arc<Table>,
     embedder: Option<Arc<dyn EmbeddingFeaturesDyn>>,
-    columns: Vec<String>,
 }
 
-impl<const DIM: usize> KnowledgeStore<DIM> {
+impl KnowledgeStore {
+    pub fn name(&self) -> &Path {
+        &self.name
+    }
+
     pub async fn init(
         db: &mut LanceVectorStore,
         name: Path,
+        dim: u16,
         index_cache_size: Option<u32>,
     ) -> Result<Self, BoxError> {
         let schema = Schema::new(vec![
             Field::new("id", DataType::Utf8, false),
+            Field::new("user", DataType::Utf8, false),
             Field::new("text", DataType::Utf8, false),
             Field::new("meta", DataType::Utf8, false),
             Field::new(
                 "vec",
                 DataType::FixedSizeList(
                     Arc::new(Field::new("item", DataType::Float32, false)),
-                    DIM as i32,
+                    dim as i32,
                 ),
                 false,
             ),
         ]);
 
-        let columns = vec!["id".to_string(), "text".to_string(), "meta".to_string()];
         let table = db
             .init_table(
                 name.clone(),
@@ -61,9 +49,9 @@ impl<const DIM: usize> KnowledgeStore<DIM> {
 
         Ok(Self {
             name,
+            dim: dim as i32,
             table: Arc::new(table),
-            embedder: db.embedder.clone(),
-            columns,
+            embedder: db.embedder(),
         })
     }
 
@@ -86,19 +74,95 @@ impl<const DIM: usize> KnowledgeStore<DIM> {
         let _ = self.table.optimize(OptimizeAction::All).await?;
         Ok(())
     }
+}
 
-    pub async fn add(&self, docs: Vec<KnowledgeInput<DIM>>) -> Result<(), BoxError> {
+impl VectorSearchFeatures for KnowledgeStore {
+    async fn top_n(&self, query: &str, n: usize) -> Result<Vec<String>, BoxError> {
+        let docs = hybrid_search(
+            &self.table,
+            self.embedder.clone(),
+            ["text".to_string()],
+            query.to_string(),
+            n,
+            None,
+        )
+        .await?;
+
+        Ok(docs.into_iter().flatten().collect())
+    }
+
+    async fn top_n_ids(&self, query: &str, n: usize) -> Result<Vec<String>, BoxError> {
+        let ids = hybrid_search(
+            &self.table,
+            self.embedder.clone(),
+            ["id".to_string()],
+            query.to_string(),
+            n,
+            None,
+        )
+        .await?;
+        Ok(ids.into_iter().flatten().collect())
+    }
+}
+
+impl KnowledgeFeatures for KnowledgeStore {
+    async fn knowledge_top_n(
+        &self,
+        query: &str,
+        n: usize,
+        user: Option<String>,
+    ) -> Result<Vec<Knowledge>, BoxError> {
+        let filter = user.map(|user| format!("user = {user}"));
+        let docs = hybrid_search(
+            &self.table,
+            self.embedder.clone(),
+            [
+                "id".to_string(),
+                "user".to_string(),
+                "text".to_string(),
+                "meta".to_string(),
+            ],
+            query.to_string(),
+            n,
+            filter,
+        )
+        .await?;
+        let docs: Vec<Knowledge> = docs
+            .into_iter()
+            .map(|doc| Knowledge {
+                id: doc[0].to_owned(),
+                user: doc[1].to_owned(),
+                text: doc[2].to_owned(),
+                meta: serde_json::from_str(&doc[3]).unwrap_or(serde_json::Value::Null),
+            })
+            .collect();
+
+        Ok(docs)
+    }
+
+    async fn knowledge_add(&self, docs: Vec<KnowledgeInput>) -> Result<(), BoxError> {
         if docs.is_empty() {
             return Ok(());
         }
 
         let schema = self.table.schema().await?;
         let mut ids: Vec<String> = Vec::with_capacity(docs.len());
+        let mut users: Vec<String> = Vec::with_capacity(docs.len());
         let mut texts: Vec<String> = Vec::with_capacity(docs.len());
         let mut metas: Vec<String> = Vec::with_capacity(docs.len());
         let mut vecs: Vec<Option<Vec<Option<f32>>>> = Vec::with_capacity(docs.len());
         for doc in docs {
+            if doc.vec.len() != self.dim as usize {
+                return Err(format!(
+                    "invalid vector length, expected {}, got {}",
+                    self.dim,
+                    doc.vec.len()
+                )
+                .into());
+            }
+
             ids.push(xid::new().to_string());
+            users.push(doc.user);
             texts.push(doc.text);
             metas.push(serde_json::to_string(&doc.meta)?);
             vecs.push(Some(doc.vec.into_iter().map(Some).collect()));
@@ -108,51 +172,17 @@ impl<const DIM: usize> KnowledgeStore<DIM> {
             schema.clone(),
             vec![
                 Arc::new(StringArray::from(ids)),
+                Arc::new(StringArray::from(users)),
                 Arc::new(StringArray::from(texts)),
                 Arc::new(StringArray::from(metas)),
                 Arc::new(
-                    FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(vecs, DIM as i32),
+                    FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(vecs, self.dim),
                 ),
             ],
         )?;
         let batches = RecordBatchIterator::new(vec![batches].into_iter().map(Ok), schema);
         self.table.add(batches).execute().await?;
         Ok(())
-    }
-
-    pub async fn top_n(&self, query: String, n: usize) -> Result<Vec<Knowledge>, BoxError> {
-        let mut res = if let Some(embedder) = &self.embedder {
-            let prompt_embedding = embedder.embed_query(query.clone()).await?;
-            self.table
-                .vector_search(prompt_embedding.vec.clone())?
-                .full_text_search(FullTextSearchQuery::new(query))
-                .select(Select::Columns(self.columns.clone()))
-                .limit(n)
-                .execute()
-                .await?
-        } else {
-            self.table
-                .query()
-                .full_text_search(FullTextSearchQuery::new(query))
-                .select(Select::Columns(self.columns.clone()))
-                .limit(n)
-                .execute()
-                .await?
-        };
-
-        let mut writer = arrow_json::ArrayWriter::new(Vec::new());
-        while let Some(batch) = res.try_next().await? {
-            writer.write(&batch)?;
-        }
-        let mut data = writer.into_inner();
-        if data.is_empty() {
-            data.extend_from_slice(b"[]");
-        }
-        if data.last() != Some(&b']') {
-            data.push(b']');
-        }
-        let docs = serde_json::from_slice(&data)?;
-        Ok(docs)
     }
 }
 
@@ -180,9 +210,9 @@ mod tests {
         .await
         .unwrap();
 
-        const DIM: usize = 384;
+        const DIM: u16 = 384;
         let namespace: Path = "anda".into();
-        let ks = KnowledgeStore::<DIM>::init(&mut store, namespace.clone(), Some(1024))
+        let ks = KnowledgeStore::init(&mut store, namespace.clone(), DIM, Some(1024))
             .await
             .unwrap();
 
@@ -192,16 +222,18 @@ mod tests {
         assert_eq!(ks.name.as_ref(), lt.table.name());
         assert_eq!(&lt.id_field, "id");
 
-        ks.add(vec![
+        ks.knowledge_add(vec![
             KnowledgeInput {
+                user: "a".to_string(),
                 text: "Hello".to_string(),
-                meta: serde_json::json!({ "author": "a" }),
-                vec: [0.1; DIM],
+                meta: serde_json::json!({}),
+                vec: vec![0.1; DIM as usize],
             },
             KnowledgeInput {
+                user: "a".to_string(),
                 text: "Anda".to_string(),
-                meta: serde_json::json!({ "author": "b" }),
-                vec: [0.1; DIM],
+                meta: serde_json::json!({}),
+                vec: vec![0.1; DIM as usize],
             },
         ])
         .await
@@ -216,12 +248,12 @@ mod tests {
             .unwrap();
         assert_eq!(res1, vec!["Hello".to_string()]);
 
-        let res2 = ks.top_n("hello".to_string(), 10).await.unwrap();
+        let res2 = ks.knowledge_top_n("hello", 10, None).await.unwrap();
         println!("{:?}", res2);
         assert_eq!(res2.len(), 1);
         assert_eq!(res2[0].text, "Hello");
 
-        let res3 = ks.top_n("anda".to_string(), 10).await.unwrap();
+        let res3 = ks.knowledge_top_n("anda", 10, None).await.unwrap();
         println!("{:?}", res3);
         assert_eq!(res3.len(), 1);
         assert_eq!(res3[0].text, "Anda");
@@ -261,9 +293,9 @@ mod tests {
         .await
         .unwrap();
 
-        const DIM: usize = 1024;
+        const DIM: u16 = 1024;
         let namespace: Path = "anda".into();
-        let ks = KnowledgeStore::<DIM>::init(&mut store, namespace.clone(), Some(1024))
+        let ks = KnowledgeStore::init(&mut store, namespace.clone(), DIM, Some(1024))
             .await
             .unwrap();
 
@@ -273,22 +305,24 @@ mod tests {
         assert_eq!(ks.name.as_ref(), lt.table.name());
         assert_eq!(&lt.id_field, "id");
 
-        let res = ks.top_n("great".to_string(), 10).await.unwrap();
+        let res = ks.top_n("great", 10).await.unwrap();
         println!("{:?}", res);
 
         if res.is_empty() {
             println!("add some data");
-            ks.add(vec![
+            ks.knowledge_add(vec![
                 KnowledgeInput {
+                    user: "Anda".to_string(),
                     text: "Albert Einstein was a great theoretical physicist.".to_string(),
-                    meta: serde_json::json!({ "author": "Anda" }),
-                    vec: [0.1; DIM],
+                    meta: serde_json::json!({}),
+                    vec: vec![0.1; DIM as usize],
                 },
                 KnowledgeInput {
+                    user: "Anda".to_string(),
                     text: "The Great Wall of China is one of the Seven Wonders of the World."
                         .to_string(),
-                    meta: serde_json::json!({ "author": "Anda" }),
-                    vec: [0.2; DIM],
+                    meta: serde_json::json!({}),
+                    vec: vec![0.2; DIM as usize],
                 },
             ])
             .await
@@ -297,7 +331,7 @@ mod tests {
             // create_index or optimize the table at some time
             ks.create_index().await.unwrap();
 
-            let res = ks.top_n("great".to_string(), 10).await.unwrap();
+            let res = ks.top_n("great", 10).await.unwrap();
             println!("{:?}", res);
         }
     }

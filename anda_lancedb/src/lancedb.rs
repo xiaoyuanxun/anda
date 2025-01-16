@@ -24,7 +24,7 @@ pub use object_store::{memory::InMemory, path::Path, DynObjectStore, ObjectStore
 pub struct LanceVectorStore {
     db: Connection,
     tables: BTreeMap<Path, LanceVectorTable>,
-    pub embedder: Option<Arc<dyn EmbeddingFeaturesDyn>>,
+    embedder: Option<Arc<dyn EmbeddingFeaturesDyn>>,
 }
 
 /// Type on which vector searches can be performed for a lanceDb table.
@@ -41,24 +41,29 @@ pub async fn hybrid_search<const N: usize>(
     select_columns: [String; N],
     query: String,
     n: usize,
+    filter: Option<String>,
 ) -> Result<Vec<[String; N]>, BoxError> {
     let mut res = if let Some(embedder) = embedder {
         let prompt_embedding = embedder.embed_query(query.clone()).await?;
-        table
+        let mut q = table
             .vector_search(prompt_embedding.vec.clone())?
             .full_text_search(FullTextSearchQuery::new(query))
             .select(Select::Columns(select_columns.to_vec()))
-            .limit(n)
-            .execute()
-            .await?
+            .limit(n);
+        if let Some(filter) = filter {
+            q = q.only_if(filter);
+        }
+        q.execute().await?
     } else {
-        table
+        let mut q = table
             .query()
             .full_text_search(FullTextSearchQuery::new(query))
             .select(Select::Columns(select_columns.to_vec()))
-            .limit(n)
-            .execute()
-            .await?
+            .limit(n);
+        if let Some(filter) = filter {
+            q = q.only_if(filter);
+        }
+        q.execute().await?
     };
 
     let mut docs: Vec<[String; N]> = Vec::new();
@@ -171,6 +176,10 @@ impl LanceVectorStore {
             .ok_or_else(|| format!("table {} not found", name))?;
         Ok(table.clone())
     }
+
+    pub fn embedder(&self) -> Option<Arc<dyn EmbeddingFeaturesDyn>> {
+        self.embedder.clone()
+    }
 }
 
 impl VectorSearchFeaturesDyn for LanceVectorStore {
@@ -189,7 +198,7 @@ impl VectorSearchFeaturesDyn for LanceVectorStore {
         let text_field = table.text_field.clone();
         let table = table.table.clone();
         Box::pin(async move {
-            let docs = hybrid_search(&table, embedder, [text_field], query, n).await?;
+            let docs = hybrid_search(&table, embedder, [text_field], query, n, None).await?;
 
             Ok(docs.into_iter().flatten().collect())
         })
@@ -210,7 +219,7 @@ impl VectorSearchFeaturesDyn for LanceVectorStore {
         let id_field = table.id_field.clone();
         let table = table.table.clone();
         Box::pin(async move {
-            let ids = hybrid_search(&table, embedder, [id_field], query, n).await?;
+            let ids = hybrid_search(&table, embedder, [id_field], query, n, None).await?;
 
             Ok(ids.into_iter().flatten().collect())
         })

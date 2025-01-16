@@ -1,8 +1,8 @@
 use anda_core::{
     AgentContext, AgentOutput, AgentSet, BaseContext, BoxError, CacheExpiry, CacheFeatures,
     CancellationToken, CanisterFeatures, CompletionFeatures, CompletionRequest, Embedding,
-    EmbeddingFeatures, FunctionDefinition, HttpFeatures, KeysFeatures, ObjectMeta, Path, PutMode,
-    PutResult, StateFeatures, StoreFeatures, ToolSet, VectorSearchFeatures,
+    EmbeddingFeatures, FunctionDefinition, HttpFeatures, KeysFeatures, MessageInput, ObjectMeta,
+    Path, PutMode, PutResult, StateFeatures, StoreFeatures, ToolCall, ToolSet,
 };
 use candid::{utils::ArgumentEncoder, CandidType, Principal};
 use rand::Rng;
@@ -10,16 +10,12 @@ use serde::{de::DeserializeOwned, Serialize};
 use std::{future::Future, sync::Arc, time::Duration};
 
 use super::base::BaseCtx;
-use crate::{
-    model::Model,
-    store::{VectorSearchFeaturesDyn, VectorStore},
-};
+use crate::model::Model;
 
 #[derive(Clone)]
 pub struct AgentCtx {
     pub base: BaseCtx,
     pub(crate) model: Model,
-    pub(crate) store: VectorStore,
     pub(crate) tools: Arc<ToolSet<BaseCtx>>,
     pub(crate) agents: Arc<AgentSet<AgentCtx>>,
 }
@@ -28,14 +24,12 @@ impl AgentCtx {
     pub(crate) fn new(
         base: BaseCtx,
         model: Model,
-        store: VectorStore,
         tools: Arc<ToolSet<BaseCtx>>,
         agents: Arc<AgentSet<AgentCtx>>,
     ) -> Self {
         Self {
             base,
             model,
-            store,
             tools,
             agents,
         }
@@ -45,7 +39,6 @@ impl AgentCtx {
         Ok(Self {
             base: self.base.child(format!("A:{}", agent_name))?,
             model: self.model.clone(),
-            store: self.store.clone(),
             tools: self.tools.clone(),
             agents: self.agents.clone(),
         })
@@ -66,7 +59,6 @@ impl AgentCtx {
                 .base
                 .child_with(format!("A:{}", agent_name), user, caller)?,
             model: self.model.clone(),
-            store: self.store.clone(),
             tools: self.tools.clone(),
             agents: self.agents.clone(),
         })
@@ -94,7 +86,7 @@ impl AgentContext for AgentCtx {
         self.agents.definitions(names)
     }
 
-    async fn tool_call(&self, name: &str, args: String) -> Result<String, BoxError> {
+    async fn tool_call(&self, name: &str, args: String) -> Result<(String, bool), BoxError> {
         if !self.tools.contains(name) {
             return Err(format!("tool {} not found", name).into());
         }
@@ -108,7 +100,7 @@ impl AgentContext for AgentCtx {
         endpoint: &str,
         tool_name: &str,
         args: String,
-    ) -> Result<String, BoxError> {
+    ) -> Result<(String, bool), BoxError> {
         self.https_signed_rpc(endpoint, "tool_call", &(tool_name, args))
             .await
     }
@@ -140,18 +132,54 @@ impl AgentContext for AgentCtx {
 }
 
 impl CompletionFeatures for AgentCtx {
-    async fn completion(&self, req: CompletionRequest) -> Result<AgentOutput, BoxError> {
-        let mut res = self.model.completion(req).await?;
-        // auto call tools
-        if let Some(tools) = &mut res.tool_calls {
-            for tool in tools {
-                if let Ok(val) = self.tool_call(&tool.id, tool.args.clone()).await {
-                    tool.result = Some(val);
+    async fn completion(&self, mut req: CompletionRequest) -> Result<AgentOutput, BoxError> {
+        let mut tool_calls_result: Vec<ToolCall> = Vec::new();
+        loop {
+            let mut res = self.model.completion(req.clone()).await?;
+            // 自动执行 tools 调用
+            let mut tool_calls_continue: Vec<MessageInput> = Vec::new();
+            if let Some(tool_calls) = &mut res.tool_calls {
+                // 移除已处理的 tools
+                req.tools
+                    .retain(|t| !tool_calls.iter().any(|o| o.name == t.name));
+                for tool in tool_calls.iter_mut() {
+                    match self.tool_call(&tool.id, tool.args.clone()).await {
+                        Ok((val, con)) => {
+                            if con {
+                                // 需要使用大模型继续处理 tool 返回结果
+                                tool_calls_continue.push(MessageInput {
+                                    role: "tool".to_string(),
+                                    content: val.clone(),
+                                    name: Some(tool.name.clone()),
+                                    tool_call_id: Some(tool.id.clone()),
+                                });
+                            }
+                            tool.result = Some(val);
+                        }
+                        Err(_) => {
+                            // TODO:
+                            // support remote_tool_call
+                            // support agent_run
+                            // support remote_agent_run
+                        }
+                    }
                 }
-            }
-        }
 
-        Ok(res)
+                tool_calls_result.append(tool_calls);
+            }
+
+            if tool_calls_continue.is_empty() {
+                res.tool_calls = if tool_calls_result.is_empty() {
+                    None
+                } else {
+                    Some(tool_calls_result)
+                };
+                return Ok(res);
+            }
+
+            // 将 tools 处理结果追加到 history 消息列表，交给大模型继续处理
+            req.chat_history.append(&mut tool_calls_continue);
+        }
     }
 }
 
@@ -169,23 +197,6 @@ impl EmbeddingFeatures for AgentCtx {
 
     async fn embed_query(&self, text: &str) -> Result<Embedding, BoxError> {
         self.model.embed_query(text).await
-    }
-}
-
-impl VectorSearchFeatures for AgentCtx {
-    /// Get the top n documents based on the distance to the given query.
-    /// The result is a list of json document
-    async fn top_n(&self, query: &str, n: usize) -> Result<Vec<String>, BoxError> {
-        self.store
-            .top_n(self.base.path.clone(), query.to_string(), n)
-            .await
-    }
-
-    /// Same as `top_n` but returns the document ids only.
-    async fn top_n_ids(&self, query: &str, n: usize) -> Result<Vec<String>, BoxError> {
-        self.store
-            .top_n_ids(self.base.path.clone(), query.to_string(), n)
-            .await
     }
 }
 
