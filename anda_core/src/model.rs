@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{collections::BTreeMap, future::Future};
 
-use crate::BoxError;
+use crate::{BoxError, Knowledge};
 
 /// Represents the output of an agent execution
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -34,12 +34,12 @@ pub struct ToolCall {
 
 /// Represents a message in the agent's conversation history
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct MessageInput {
+pub struct Message {
     /// Message role: "developer", "system", "user", "assistant", "tool"
     pub role: String,
 
-    /// The content of the message
-    pub content: String,
+    /// The content of the message, can be text or structured data
+    pub content: Value,
 
     /// An optional name for the participant. Provides the model information to differentiate between participants of the same role.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -60,7 +60,7 @@ pub struct FunctionDefinition {
     pub description: String,
 
     /// JSON schema defining the function's parameters
-    pub parameters: serde_json::Value,
+    pub parameters: Value,
 
     /// Whether to enable strict schema adherence when generating the function call. If set to true, the model will follow the exact schema defined in the parameters field. Only a subset of JSON Schema is supported when strict is true.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -74,6 +74,24 @@ pub struct Document {
     pub text: String,
     #[serde(flatten)]
     pub additional_props: BTreeMap<String, String>,
+}
+
+impl From<Knowledge> for Document {
+    fn from(doc: Knowledge) -> Self {
+        let mut additional_props = BTreeMap::new();
+        additional_props.insert("user".to_string(), doc.user);
+        if let Value::Object(obj) = doc.meta {
+            for (k, v) in obj {
+                additional_props.insert(k, v.to_string());
+            }
+        }
+
+        Document {
+            id: doc.id,
+            text: doc.text,
+            additional_props,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -96,6 +114,12 @@ impl From<Vec<String>> for Documents {
 impl From<Vec<Document>> for Documents {
     fn from(docs: Vec<Document>) -> Self {
         Self(docs)
+    }
+}
+
+impl From<Vec<Knowledge>> for Documents {
+    fn from(docs: Vec<Knowledge>) -> Self {
+        Self(docs.into_iter().map(Document::from).collect())
     }
 }
 
@@ -152,14 +176,19 @@ pub struct CompletionRequest {
     /// The system message to be sent to the completion model provider, as the "system" role
     pub system: Option<String>,
 
+    pub system_name: Option<String>,
+
     /// The chat history to be sent to the completion model provider
-    pub chat_history: Vec<MessageInput>,
+    pub chat_history: Vec<Message>,
 
     /// The documents to embed into the prompt
     pub documents: Documents,
 
     /// The prompt to be sent to the completion model provider as "user" role
     pub prompt: String,
+
+    /// The name of the prompter
+    pub prompter_name: Option<String>,
 
     /// The tools to be sent to the completion model provider
     pub tools: Vec<FunctionDefinition>,

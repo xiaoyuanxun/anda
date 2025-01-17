@@ -1,0 +1,10 @@
+[log]
+# Log level: "trace", "debug", "info", "warn", "error"
+level = "info"
+
+[server]
+# The address to bind to.
+port = 8042
+
+[character]
+path = "./Character.toml"

@@ -3,7 +3,7 @@ name = "anda_core"
 description = "Core types and traits for Anda -- a framework for AI agent development."
 repository = "https://github.com/ldclabs/anda/tree/main/anda_core"
 publish = true
-version = "0.3.0"
+version = "0.3.1"
 edition.workspace = true
 keywords.workspace = true
 categories.workspace = true
@@ -23,4 +23,3 @@ object_store = { workspace = true }
 ic_cose_types = { workspace = true }
 tokio-util = { workspace = true }
 reqwest = { workspace = true }
-rand = { workspace = true }

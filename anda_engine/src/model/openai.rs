@@ -1,8 +1,8 @@
 //! OpenAI API client and Anda integration
 //!
 use anda_core::{
-    AgentOutput, BoxError, BoxPinFut, CompletionRequest, Embedding, FunctionDefinition,
-    MessageInput, ToolCall, CONTENT_TYPE_JSON,
+    AgentOutput, BoxError, BoxPinFut, CompletionRequest, Embedding, FunctionDefinition, Message,
+    ToolCall, CONTENT_TYPE_JSON,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -387,13 +387,14 @@ impl CompletionFeaturesDyn for CompletionModel {
         Box::pin(async move {
             // Add preamble to chat history (if available)
             let mut full_history = if let Some(system) = &req.system {
-                vec![MessageInput {
+                vec![Message {
                     role: if is_new {
                         "developer".into()
                     } else {
                         "system".into()
                     },
-                    content: system.clone(),
+                    content: system.to_owned().into(),
+                    name: req.system_name.clone(),
                     ..Default::default()
                 }]
             } else {
@@ -405,9 +406,10 @@ impl CompletionFeaturesDyn for CompletionModel {
 
             // Add context documents to chat history
             let prompt_with_context = req.prompt_with_context();
-            full_history.push(MessageInput {
+            full_history.push(Message {
                 role: "user".into(),
-                content: prompt_with_context,
+                content: prompt_with_context.into(),
+                name: req.prompter_name,
                 ..Default::default()
             });
 

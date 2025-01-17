@@ -1,11 +1,10 @@
 use anda_core::{
     AgentContext, AgentOutput, AgentSet, BaseContext, BoxError, CacheExpiry, CacheFeatures,
     CancellationToken, CanisterFeatures, CompletionFeatures, CompletionRequest, Embedding,
-    EmbeddingFeatures, FunctionDefinition, HttpFeatures, KeysFeatures, MessageInput, ObjectMeta,
-    Path, PutMode, PutResult, StateFeatures, StoreFeatures, ToolCall, ToolSet,
+    EmbeddingFeatures, FunctionDefinition, HttpFeatures, KeysFeatures, Message, ObjectMeta, Path,
+    PutMode, PutResult, StateFeatures, StoreFeatures, ToolCall, ToolSet,
 };
 use candid::{utils::ArgumentEncoder, CandidType, Principal};
-use rand::Rng;
 use serde::{de::DeserializeOwned, Serialize};
 use std::{future::Future, sync::Arc, time::Duration};
 
@@ -137,7 +136,7 @@ impl CompletionFeatures for AgentCtx {
         loop {
             let mut res = self.model.completion(req.clone()).await?;
             // 自动执行 tools 调用
-            let mut tool_calls_continue: Vec<MessageInput> = Vec::new();
+            let mut tool_calls_continue: Vec<Message> = Vec::new();
             if let Some(tool_calls) = &mut res.tool_calls {
                 // 移除已处理的 tools
                 req.tools
@@ -147,9 +146,9 @@ impl CompletionFeatures for AgentCtx {
                         Ok((val, con)) => {
                             if con {
                                 // 需要使用大模型继续处理 tool 返回结果
-                                tool_calls_continue.push(MessageInput {
+                                tool_calls_continue.push(Message {
                                     role: "tool".to_string(),
-                                    content: val.clone(),
+                                    content: val.clone().into(),
                                     name: Some(tool.name.clone()),
                                     tool_call_id: Some(tool.id.clone()),
                                 });
@@ -217,23 +216,6 @@ impl StateFeatures for AgentCtx {
 
     fn time_elapsed(&self) -> Duration {
         self.base.time_elapsed()
-    }
-
-    fn unix_ms() -> u64 {
-        BaseCtx::unix_ms()
-    }
-
-    fn rand_bytes<const N: usize>() -> [u8; N] {
-        BaseCtx::rand_bytes()
-    }
-
-    fn rand_number<T, R>(range: R) -> T
-    where
-        T: rand::distributions::uniform::SampleUniform,
-        R: rand::distributions::uniform::SampleRange<T>,
-    {
-        let mut rng = rand::thread_rng();
-        rng.gen_range(range)
     }
 }
 

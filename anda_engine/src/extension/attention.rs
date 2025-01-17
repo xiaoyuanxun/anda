@@ -1,6 +1,4 @@
-use anda_core::{
-    evaluate_tokens, AgentOutput, CompletionFeatures, CompletionRequest, MessageInput,
-};
+use anda_core::{evaluate_tokens, AgentOutput, CompletionFeatures, CompletionRequest, Message};
 
 use crate::context::AgentCtx;
 
@@ -116,20 +114,18 @@ impl Attention {
     pub async fn should_reply(
         &self,
         ctx: &AgentCtx,
+        my_name: &str,
         topics: &[String],
-        recent_messages: &[MessageInput],
-        message: &MessageInput,
+        recent_messages: &[Message],
+        message: &Message,
     ) -> AttentionCommand {
-        if self
-            .phrases
-            .iter()
-            .any(|phrase| message.content.contains(phrase))
-        {
+        let content = message.content.to_string().to_lowercase();
+        if self.phrases.iter().any(|phrase| content.contains(phrase)) {
             return AttentionCommand::Stop;
         }
 
         // Ignore very short messages
-        if evaluate_tokens(&message.content) < self.min_prompt_tokens {
+        if evaluate_tokens(&content) < self.min_prompt_tokens {
             return AttentionCommand::Ignore;
         }
 
@@ -151,6 +147,7 @@ impl Attention {
 
         let req = CompletionRequest {
             system: Some(format!("\
+                You are {my_name}.\n\
                 You are part of a multi-user discussion environment. Your primary task is to evaluate the relevance of each message to your assigned conversation topics and decide whether to respond. Always prioritize messages that directly mention you or are closely related to the conversation topic.\n\n\
                 Response options:\n\
                 - {RESPOND_COMMAND}: The message is directly addressed to you or is highly relevant to the conversation topic.\n\

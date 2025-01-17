@@ -43,7 +43,16 @@ pub async fn hybrid_search<const N: usize>(
     n: usize,
     filter: Option<String>,
 ) -> Result<Vec<[String; N]>, BoxError> {
-    let mut res = if let Some(embedder) = embedder {
+    let mut res = if query.is_empty() {
+        let mut q = table
+            .query()
+            .select(Select::Columns(select_columns.to_vec()))
+            .limit(n);
+        if let Some(filter) = filter {
+            q = q.only_if(filter);
+        }
+        q.execute().await?
+    } else if let Some(embedder) = embedder {
         let prompt_embedding = embedder.embed_query(query.clone()).await?;
         let mut q = table
             .vector_search(prompt_embedding.vec.clone())?

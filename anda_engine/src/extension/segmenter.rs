@@ -1,9 +1,7 @@
 use anda_core::{evaluate_tokens, Agent, AgentOutput, BoxError, Tool, ToolCall};
 
-use crate::{
-    context::AgentCtx,
-    plugin::extractor::{Deserialize, Extractor, JsonSchema, Serialize, SubmitTool},
-};
+use super::extractor::{Deserialize, Extractor, JsonSchema, Serialize, SubmitTool};
+use crate::context::AgentCtx;
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
 pub struct SegmentOutput {
@@ -16,6 +14,12 @@ pub struct DocumentSegmenter {
     tool_name: String,
     segment_tokens: usize,
     max_tokens: usize,
+}
+
+impl Default for DocumentSegmenter {
+    fn default() -> Self {
+        Self::new(500, 8000)
+    }
 }
 
 impl DocumentSegmenter {

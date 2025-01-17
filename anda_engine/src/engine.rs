@@ -3,17 +3,18 @@ use anda_core::{
 };
 use candid::Principal;
 use object_store::memory::InMemory;
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    context::{AgentCtx, BaseCtx},
+    context::{AgentCtx, BaseCtx, TEEClient},
     model::Model,
     store::Store,
-    APP_USER_AGENT,
 };
 
 static TEE_LOCAL_SERVER: &str = "http://127.0.0.1:8080";
+
+pub static ROOT_PATH: &str = "_";
 
 #[derive(Clone)]
 pub struct Engine {
@@ -31,19 +32,39 @@ impl Engine {
         self.name.clone()
     }
 
+    pub fn default_agent(&self) -> String {
+        self.default_agent.clone()
+    }
+
     /// Cancel all tasks in engine.
     pub fn cancel(&self) {
         self.ctx.base.cancellation_token.cancel()
     }
 
-    /// Return the agent context without user and caller.
-    pub fn agent_ctx(&self, agent_name: &str) -> Result<AgentCtx, BoxError> {
-        let name = agent_name.to_ascii_lowercase();
+    /// Return a child cancellation token.
+    pub fn cancellation_token(&self) -> CancellationToken {
+        self.ctx.base.cancellation_token.child_token()
+    }
+
+    /// Return the agent context with user and caller.
+    pub fn ctx_with<A>(
+        &self,
+        agent: &A,
+        user: Option<String>,
+        caller: Option<Principal>,
+    ) -> Result<AgentCtx, BoxError>
+    where
+        A: Agent<AgentCtx>,
+    {
+        let name = agent.name().to_ascii_lowercase();
         if !self.ctx.agents.contains(&name) {
             return Err(format!("agent {} not found", name).into());
         }
+        if let Some(user) = &user {
+            validate_path_part(user)?;
+        }
 
-        self.ctx.child(&name)
+        self.ctx.child_with(&name, user, caller)
     }
 
     pub async fn agent_run(
@@ -101,8 +122,7 @@ pub struct EngineBuilder {
     agents: AgentSet<AgentCtx>,
     model: Model,
     store: Store,
-    tee_host: String,
-    basic_token: Option<String>,
+    tee_client: TEEClient,
     cancellation_token: CancellationToken,
 }
 
@@ -121,8 +141,7 @@ impl EngineBuilder {
             agents: AgentSet::new(),
             model: Model::not_implemented(),
             store: Store::new(mstore),
-            tee_host: TEE_LOCAL_SERVER.to_string(),
-            basic_token: None,
+            tee_client: TEEClient::new(TEE_LOCAL_SERVER, ""),
             cancellation_token: CancellationToken::new(),
         }
     }
@@ -132,28 +151,23 @@ impl EngineBuilder {
         self
     }
 
-    pub fn with_tee_host(mut self, tee_host: String) -> Self {
-        self.tee_host = tee_host;
-        self
-    }
-
-    pub fn with_basic_token(mut self, basic_token: String) -> Self {
-        self.basic_token = Some(basic_token);
-        self
-    }
-
     pub fn with_cancellation_token(mut self, cancellation_token: CancellationToken) -> Self {
         self.cancellation_token = cancellation_token;
         self
     }
 
-    pub fn with_store(mut self, store: Store) -> Self {
-        self.store = store;
+    pub fn with_tee_client(mut self, tee_client: TEEClient) -> Self {
+        self.tee_client = tee_client;
         self
     }
 
     pub fn with_model(mut self, model: Model) -> Self {
         self.model = model;
+        self
+    }
+
+    pub fn with_store(mut self, store: Store) -> Self {
+        self.store = store;
         self
     }
 
@@ -207,52 +221,24 @@ impl EngineBuilder {
         Ok(self)
     }
 
-    pub async fn build(self, default_agent: String) -> Result<Engine, BoxError> {
+    pub fn build(self, default_agent: String) -> Result<Engine, BoxError> {
         if !self.agents.contains(&default_agent) {
             return Err(format!("default agent {} not found", default_agent).into());
         }
 
-        let name = self.name;
-        let local_http = reqwest::Client::builder()
-            .http2_keep_alive_interval(Some(Duration::from_secs(25)))
-            .http2_keep_alive_timeout(Duration::from_secs(15))
-            .http2_keep_alive_while_idle(true)
-            .connect_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(20))
-            .user_agent(APP_USER_AGENT)
-            .default_headers({
-                let mut headers = http::header::HeaderMap::new();
-                if let Some(token) = self.basic_token {
-                    headers.insert(http::header::AUTHORIZATION, token.parse().unwrap());
-                }
-                headers
-            })
-            .build()?;
-
-        let ctx = BaseCtx::new(
-            &self.tee_host,
-            self.cancellation_token.clone(),
-            local_http.clone(),
-            self.store,
-        );
-
+        let ctx = BaseCtx::new(self.cancellation_token, self.tee_client, self.store);
         let ctx = AgentCtx::new(ctx, self.model, Arc::new(self.tools), Arc::new(self.agents));
 
         Ok(Engine {
             ctx,
-            name,
+            name: self.name,
             default_agent,
         })
     }
 
     #[cfg(test)]
     pub fn mock_ctx(self) -> AgentCtx {
-        let ctx = BaseCtx::new(
-            &self.tee_host,
-            self.cancellation_token,
-            reqwest::Client::new(),
-            self.store,
-        );
+        let ctx = BaseCtx::new(self.cancellation_token, self.tee_client, self.store);
         AgentCtx::new(ctx, self.model, Arc::new(self.tools), Arc::new(self.agents))
     }
 }

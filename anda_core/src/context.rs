@@ -97,18 +97,6 @@ pub trait StateFeatures: Sized {
 
     /// Gets the time elapsed since the original context was created
     fn time_elapsed(&self) -> Duration;
-
-    /// Gets current unix timestamp in milliseconds
-    fn unix_ms() -> u64;
-
-    /// Generates N random bytes
-    fn rand_bytes<const N: usize>() -> [u8; N];
-
-    /// Generates a random number within the given range
-    fn rand_number<T, R>(range: R) -> T
-    where
-        T: rand::distributions::uniform::SampleUniform,
-        R: rand::distributions::uniform::SampleRange<T>;
 }
 
 /// Provides vector search capabilities for semantic similarity search
@@ -152,6 +140,14 @@ pub trait KnowledgeFeatures: Sized {
     fn knowledge_top_n(
         &self,
         query: &str,
+        n: usize,
+        user: Option<String>,
+    ) -> impl Future<Output = Result<Vec<Knowledge>, BoxError>> + Send;
+
+    /// Retrieves the latest n Knowledge documents created in last N seconds
+    fn knowledge_latest_n(
+        &self,
+        last_seconds: u32,
         n: usize,
         user: Option<String>,
     ) -> impl Future<Output = Result<Vec<Knowledge>, BoxError>> + Send;

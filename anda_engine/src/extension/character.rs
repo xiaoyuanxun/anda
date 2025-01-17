@@ -1,26 +1,30 @@
 use anda_core::{
     evaluate_tokens, Agent, AgentContext, AgentOutput, BoxError, CacheExpiry, CacheFeatures,
-    CompletionFeatures, CompletionRequest, Documents, Embedding, EmbeddingFeatures,
-    KnowledgeFeatures, KnowledgeInput, MessageInput, StateFeatures, VectorSearchFeatures,
+    CompletionFeatures, CompletionRequest, Documents, Embedding, EmbeddingFeatures, Knowledge,
+    KnowledgeFeatures, KnowledgeInput, Message, StateFeatures, VectorSearchFeatures,
 };
+use chrono::prelude::*;
 use ic_cose_types::to_cbor_bytes;
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
-use crate::{
-    context::AgentCtx,
-    plugin::attention::{Attention, AttentionCommand, ContentQuality},
-    plugin::segmenter::DocumentSegmenter,
-    store::MAX_STORE_OBJECT_SIZE,
+use super::{
+    attention::{Attention, AttentionCommand, ContentQuality},
+    segmenter::DocumentSegmenter,
 };
+
+use crate::{context::AgentCtx, store::MAX_STORE_OBJECT_SIZE};
 
 const MAX_CHAT_HISTORY: usize = 42;
 const CHAT_HISTORY_TTI: Duration = Duration::from_secs(3600 * 24 * 7);
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Character {
-    /// Name of the character, e.g. "Anda"
+    /// Name of the character, e.g. "Anda ICP"
     pub name: String,
+
+    /// Character’s account or username, e.g. "AndaICP"
+    pub username: String,
 
     /// Character’s profession, status, or role, e.g. "Scientist and Prophet"
     pub identity: String,
@@ -77,21 +81,27 @@ impl Character {
         Ok(content)
     }
 
-    pub fn to_request(&self, prompt: String) -> CompletionRequest {
+    pub fn to_request(&self, prompt: String, prompter_name: Option<String>) -> CompletionRequest {
+        let utc: DateTime<Utc> = Utc::now();
         let system = format!(
             "Character Definition:\n\
             Your name: {}\n\
+            Your username: {}\n\
             Your identity: {}\n\
             Background: {}\n\
             Personality traits: {}\n\
             Motivations and goals: {}\n\
-            Topics of expertise: {}",
+            Topics of expertise: {}\n\
+            The current time is {}.\
+            ",
             self.name,
+            self.username,
             self.identity,
             self.description,
             self.traits.join(", "),
             self.goals.join(", "),
             self.topics.join(", "),
+            utc.to_rfc3339_opts(SecondsFormat::Secs, true)
         );
 
         let style_context = format!(
@@ -118,13 +128,15 @@ impl Character {
 
         CompletionRequest {
             system: Some(system),
+            system_name: Some(self.name.clone()),
             prompt,
+            prompter_name,
             ..Default::default()
         }
         .context("style_context".to_string(), style_context)
     }
 
-    pub fn build<K: KnowledgeFeatures + VectorSearchFeatures + Clone>(
+    pub fn build<K: KnowledgeFeatures + VectorSearchFeatures>(
         self,
         attention: Attention,
         segmenter: DocumentSegmenter,
@@ -135,14 +147,14 @@ impl Character {
 }
 
 #[derive(Debug, Clone)]
-pub struct CharacterAgent<K: KnowledgeFeatures + VectorSearchFeatures + Clone> {
-    character: Character,
-    attention: Attention,
-    segmenter: DocumentSegmenter,
-    knowledge: K,
+pub struct CharacterAgent<K: KnowledgeFeatures + VectorSearchFeatures> {
+    pub character: Arc<Character>,
+    pub attention: Arc<Attention>,
+    pub segmenter: Arc<DocumentSegmenter>,
+    pub knowledge: Arc<K>,
 }
 
-impl<K: KnowledgeFeatures + VectorSearchFeatures + Clone> CharacterAgent<K> {
+impl<K: KnowledgeFeatures + VectorSearchFeatures> CharacterAgent<K> {
     pub fn new(
         character: Character,
         attention: Attention,
@@ -150,11 +162,22 @@ impl<K: KnowledgeFeatures + VectorSearchFeatures + Clone> CharacterAgent<K> {
         knowledge: K,
     ) -> Self {
         Self {
-            character,
-            attention,
-            segmenter,
-            knowledge,
+            character: Arc::new(character),
+            attention: Arc::new(attention),
+            segmenter: Arc::new(segmenter),
+            knowledge: Arc::new(knowledge),
         }
+    }
+
+    pub async fn latest_knowledge(
+        &self,
+        last_seconds: u32,
+        n: usize,
+        user: Option<String>,
+    ) -> Result<Vec<Knowledge>, BoxError> {
+        self.knowledge
+            .knowledge_latest_n(last_seconds, n, user)
+            .await
     }
 }
 
@@ -163,7 +186,7 @@ where
     K: KnowledgeFeatures + VectorSearchFeatures + Clone + Send + Sync + 'static,
 {
     fn name(&self) -> String {
-        self.character.name.clone()
+        self.character.username.clone()
     }
 
     fn description(&self) -> String {
@@ -182,7 +205,7 @@ where
     ) -> Result<AgentOutput, BoxError> {
         // read chat history from store
         let mut chat_history = if let Some(user) = ctx.user() {
-            let chat: Vec<MessageInput> = ctx
+            let chat: Vec<Message> = ctx
                 .cache_get_with(&user, async {
                     Ok((Vec::new(), Some(CacheExpiry::TTI(CHAT_HISTORY_TTI))))
                 })
@@ -194,19 +217,20 @@ where
 
         let mut content_quality = ContentQuality::Ignore;
         if evaluate_tokens(&prompt) <= self.attention.min_content_tokens {
-            let recent_messages: Vec<MessageInput> = vec![];
+            let recent_messages: Vec<Message> = vec![];
             match self
                 .attention
                 .should_reply(
                     &ctx,
+                    &self.character.username,
                     &self.character.topics,
                     chat_history
                         .as_ref()
                         .map(|(_, c)| c)
                         .unwrap_or(&recent_messages),
-                    &MessageInput {
+                    &Message {
                         role: "user".to_string(),
-                        content: prompt.clone(),
+                        content: prompt.clone().into(),
                         name: ctx.user(),
                         ..Default::default()
                     },
@@ -237,7 +261,7 @@ where
         if content_quality > ContentQuality::Ignore {
             let content = prompt.clone();
             let ctx = ctx.clone();
-            let user = ctx.user().unwrap_or("user".to_string());
+            let user = ctx.user().unwrap_or("anonymous".to_string());
             let segmenter = self.segmenter.clone();
             let knowledge = self.knowledge.clone();
 
@@ -245,7 +269,7 @@ where
             tokio::spawn(async move {
                 let (docs, _) = segmenter.segment(&ctx, &content).await?;
                 let mut vecs: Vec<Embedding> = Vec::with_capacity(docs.segments.len());
-                for texts in docs.segments.chunks(90) {
+                for texts in docs.segments.chunks(16) {
                     match ctx.embed(texts.to_owned()).await {
                         Ok(embeddings) => vecs.extend(embeddings),
                         Err(err) => {
@@ -283,15 +307,15 @@ where
 
         let mut req = self
             .character
-            .to_request(prompt)
+            .to_request(prompt, ctx.user())
             .append_documents(knowledges)
             .append_tools(tools);
 
         if let Some((user, chat)) = &mut chat_history {
             req.chat_history = chat.clone();
-            chat.push(MessageInput {
+            chat.push(Message {
                 role: "user".to_string(),
-                content: req.prompt.clone(),
+                content: req.prompt.clone().into(),
                 name: Some(user.clone()),
                 ..Default::default()
             });
@@ -300,17 +324,17 @@ where
             let res = ctx.completion(req).await?;
             if res.failed_reason.is_none() {
                 if !res.content.is_empty() {
-                    chat.push(MessageInput {
+                    chat.push(Message {
                         role: "assistant".to_string(),
-                        content: res.content.clone(),
+                        content: res.content.clone().into(),
                         ..Default::default()
                     });
                 }
                 if let Some(tool_calls) = &res.tool_calls {
                     for tool_res in tool_calls {
-                        chat.push(MessageInput {
+                        chat.push(Message {
                             role: "tool".to_string(),
-                            content: "".to_string(),
+                            content: "".to_string().into(),
                             name: Some(tool_res.name.clone()),
                             tool_call_id: Some(tool_res.id.clone()),
                         });
@@ -384,7 +408,7 @@ mod tests {
             tools: vec!["submit_character".to_string()],
             ..Default::default()
         };
-        let req = character.to_request("Who are you?".to_string());
+        let req = character.to_request("Who are you?".to_string(), None);
         println!("{}\n", req.system.as_ref().unwrap());
         println!("{}\n", req.prompt_with_context());
         println!("{:?}", req.tools);

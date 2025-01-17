@@ -1,28 +1,20 @@
 use anda_core::{
-    canister_rpc, cbor_rpc, http_rpc, BaseContext, BoxError, CacheExpiry, CacheFeatures,
-    CancellationToken, CanisterFeatures, HttpFeatures, HttpRPCError, KeysFeatures, ObjectMeta,
-    Path, PutMode, PutResult, RPCRequest, StateFeatures, StoreFeatures,
+    BaseContext, BoxError, CacheExpiry, CacheFeatures, CancellationToken, CanisterFeatures,
+    HttpFeatures, KeysFeatures, ObjectMeta, Path, PutMode, PutResult, StateFeatures, StoreFeatures,
 };
 use candid::{utils::ArgumentEncoder, CandidType, Principal};
-use ciborium::from_reader;
-use ic_cose::rand_bytes;
-use ic_cose_types::{cose::sha3_256, to_cbor_bytes};
-use rand::Rng;
-use reqwest::Client;
 use serde::{de::DeserializeOwned, Serialize};
 use std::{
-    collections::HashMap,
     future::Future,
     sync::Arc,
     time::{Duration, Instant},
 };
-use structured_logger::unix_ms;
 
 const CONTEXT_MAX_DEPTH: u8 = 42;
 const CACHE_MAX_CAPACITY: u64 = 1000000;
 
-use super::{cache::CacheService, keys::KeysService};
-use crate::{store::Store, APP_USER_AGENT};
+use super::{cache::CacheService, tee::TEEClient};
+use crate::store::Store;
 
 #[derive(Clone)]
 pub struct BaseCtx {
@@ -33,49 +25,22 @@ pub struct BaseCtx {
     pub(crate) start_at: Instant,
     pub(crate) depth: u8,
 
-    local_http: Client,
-    outer_http: Client,
     cache: Arc<CacheService>,
-    keys: Arc<KeysService>,
+    tee: Arc<TEEClient>,
     store: Store,
-    endpoint_identity: String,
-    endpoint_canister_query: String,
-    endpoint_canister_update: String,
 }
 
 impl BaseCtx {
-    pub(crate) fn new(
-        tee_host: &str,
-        cancellation_token: CancellationToken,
-        local_http: Client,
-        store: Store,
-    ) -> Self {
-        let outer_http = reqwest::Client::builder()
-            .use_rustls_tls()
-            .https_only(true)
-            .http2_keep_alive_interval(Some(Duration::from_secs(25)))
-            .http2_keep_alive_timeout(Duration::from_secs(15))
-            .http2_keep_alive_while_idle(true)
-            .connect_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(30))
-            .user_agent(APP_USER_AGENT)
-            .build()
-            .expect("Anda reqwest client should build");
-
+    pub(crate) fn new(cancellation_token: CancellationToken, tee: TEEClient, store: Store) -> Self {
         Self {
             user: None,
             caller: None,
             path: Path::default(),
             cancellation_token,
             start_at: Instant::now(),
-            local_http: local_http.clone(),
-            outer_http,
             cache: Arc::new(CacheService::new(CACHE_MAX_CAPACITY)),
             store,
-            keys: Arc::new(KeysService::new(format!("{}/keys", tee_host), local_http)),
-            endpoint_identity: format!("{}/identity", tee_host),
-            endpoint_canister_query: format!("{}/canister/query", tee_host),
-            endpoint_canister_update: format!("{}/canister/update", tee_host),
+            tee: Arc::new(tee),
             depth: 0,
         }
     }
@@ -137,31 +102,12 @@ impl StateFeatures for BaseCtx {
     fn time_elapsed(&self) -> Duration {
         self.start_at.elapsed()
     }
-
-    fn unix_ms() -> u64 {
-        unix_ms()
-    }
-
-    /// Generates N random bytes
-    fn rand_bytes<const N: usize>() -> [u8; N] {
-        rand_bytes()
-    }
-
-    /// Generates a random number within the given range
-    fn rand_number<T, R>(range: R) -> T
-    where
-        T: rand::distributions::uniform::SampleUniform,
-        R: rand::distributions::uniform::SampleRange<T>,
-    {
-        let mut rng = rand::thread_rng();
-        rng.gen_range(range)
-    }
 }
 
 impl KeysFeatures for BaseCtx {
     /// Derives a 256-bit AES-GCM key from the given derivation path
     async fn a256gcm_key(&self, derivation_path: &[&[u8]]) -> Result<[u8; 32], BoxError> {
-        self.keys.a256gcm_key(&self.path, derivation_path).await
+        self.tee.a256gcm_key(&self.path, derivation_path).await
     }
 
     /// Signs a message using Ed25519 signature scheme from the given derivation path
@@ -170,7 +116,7 @@ impl KeysFeatures for BaseCtx {
         derivation_path: &[&[u8]],
         message: &[u8],
     ) -> Result<[u8; 64], BoxError> {
-        self.keys
+        self.tee
             .ed25519_sign_message(&self.path, derivation_path, message)
             .await
     }
@@ -182,14 +128,14 @@ impl KeysFeatures for BaseCtx {
         message: &[u8],
         signature: &[u8],
     ) -> Result<(), BoxError> {
-        self.keys
+        self.tee
             .ed25519_verify(&self.path, derivation_path, message, signature)
             .await
     }
 
     /// Gets the public key for Ed25519 from the given derivation path
     async fn ed25519_public_key(&self, derivation_path: &[&[u8]]) -> Result<[u8; 32], BoxError> {
-        self.keys
+        self.tee
             .ed25519_public_key(&self.path, derivation_path)
             .await
     }
@@ -200,7 +146,7 @@ impl KeysFeatures for BaseCtx {
         derivation_path: &[&[u8]],
         message: &[u8],
     ) -> Result<[u8; 64], BoxError> {
-        self.keys
+        self.tee
             .secp256k1_sign_message_bip340(&self.path, derivation_path, message)
             .await
     }
@@ -212,7 +158,7 @@ impl KeysFeatures for BaseCtx {
         message: &[u8],
         signature: &[u8],
     ) -> Result<(), BoxError> {
-        self.keys
+        self.tee
             .secp256k1_verify_bip340(&self.path, derivation_path, message, signature)
             .await
     }
@@ -223,7 +169,7 @@ impl KeysFeatures for BaseCtx {
         derivation_path: &[&[u8]],
         message: &[u8],
     ) -> Result<[u8; 64], BoxError> {
-        self.keys
+        self.tee
             .secp256k1_sign_message_ecdsa(&self.path, derivation_path, message)
             .await
     }
@@ -235,14 +181,14 @@ impl KeysFeatures for BaseCtx {
         message: &[u8],
         signature: &[u8],
     ) -> Result<(), BoxError> {
-        self.keys
+        self.tee
             .secp256k1_verify_ecdsa(&self.path, derivation_path, message, signature)
             .await
     }
 
     /// Gets the compressed SEC1-encoded public key for Secp256k1 from the given derivation path
     async fn secp256k1_public_key(&self, derivation_path: &[&[u8]]) -> Result<[u8; 33], BoxError> {
-        self.keys
+        self.tee
             .secp256k1_public_key(&self.path, derivation_path)
             .await
     }
@@ -357,15 +303,7 @@ impl CanisterFeatures for BaseCtx {
         method: &str,
         args: In,
     ) -> Result<Out, BoxError> {
-        let res = canister_rpc(
-            &self.local_http,
-            &self.endpoint_canister_query,
-            canister,
-            method,
-            args,
-        )
-        .await?;
-        Ok(res)
+        self.tee.canister_query(canister, method, args).await
     }
 
     /// Performs an update call to a canister (may modify state)
@@ -383,15 +321,7 @@ impl CanisterFeatures for BaseCtx {
         method: &str,
         args: In,
     ) -> Result<Out, BoxError> {
-        let res = canister_rpc(
-            &self.local_http,
-            &self.endpoint_canister_update,
-            canister,
-            method,
-            args,
-        )
-        .await?;
-        Ok(res)
+        self.tee.canister_update(canister, method, args).await
     }
 }
 
@@ -410,18 +340,7 @@ impl HttpFeatures for BaseCtx {
         headers: Option<http::HeaderMap>,
         body: Option<Vec<u8>>, // default is empty
     ) -> Result<reqwest::Response, BoxError> {
-        if !url.starts_with("https://") {
-            return Err("Invalid URL, must start with https://".into());
-        }
-        let mut req = self.outer_http.request(method, url);
-        if let Some(headers) = headers {
-            req = req.headers(headers);
-        }
-        if let Some(body) = body {
-            req = req.body(body);
-        }
-
-        req.send().await.map_err(|e| e.into())
+        self.tee.https_call(url, method, headers, body).await
     }
 
     /// Makes a signed HTTPs request with message authentication
@@ -440,21 +359,9 @@ impl HttpFeatures for BaseCtx {
         headers: Option<http::HeaderMap>,
         body: Option<Vec<u8>>, // default is empty
     ) -> Result<reqwest::Response, BoxError> {
-        let res: HashMap<String, String> = http_rpc(
-            &self.local_http,
-            &self.endpoint_identity,
-            "sign_http",
-            &(message_digest,),
-        )
-        .await?;
-        let mut headers = headers.unwrap_or_default();
-        res.into_iter().for_each(|(k, v)| {
-            headers.insert(
-                http::HeaderName::try_from(k).expect("invalid header name"),
-                http::HeaderValue::try_from(v).expect("invalid header value"),
-            );
-        });
-        self.https_call(url, method, Some(headers), body).await
+        self.tee
+            .https_signed_call(url, method, message_digest, headers, body)
+            .await
     }
 
     /// Makes a signed CBOR-encoded RPC call
@@ -472,34 +379,6 @@ impl HttpFeatures for BaseCtx {
     where
         T: DeserializeOwned,
     {
-        let params = to_cbor_bytes(&params);
-        let req = RPCRequest {
-            method,
-            params: &params.into(),
-        };
-        let body = to_cbor_bytes(&req);
-        let digest: [u8; 32] = sha3_256(&body);
-        let res: HashMap<String, String> = http_rpc(
-            &self.local_http,
-            &self.endpoint_identity,
-            "sign_http",
-            &(digest,),
-        )
-        .await?;
-        let mut headers = http::HeaderMap::new();
-        res.into_iter().for_each(|(k, v)| {
-            headers.insert(
-                http::HeaderName::try_from(k).expect("invalid header name"),
-                http::HeaderValue::try_from(v).expect("invalid header value"),
-            );
-        });
-
-        let res = cbor_rpc(&self.outer_http, endpoint, method, Some(headers), body).await?;
-        let res = from_reader(&res[..]).map_err(|e| HttpRPCError::ResultError {
-            endpoint: endpoint.to_string(),
-            path: method.to_string(),
-            error: e.into(),
-        })?;
-        Ok(res)
+        self.tee.https_signed_rpc(endpoint, method, params).await
     }
 }

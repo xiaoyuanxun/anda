@@ -1,4 +1,5 @@
 use anda_core::{BoxError, Knowledge, KnowledgeFeatures, KnowledgeInput, VectorSearchFeatures};
+use anda_engine::unix_ms;
 use std::{sync::Arc, vec};
 
 use crate::lancedb::*;
@@ -9,6 +10,12 @@ pub struct KnowledgeStore {
     dim: i32,
     table: Arc<Table>,
     embedder: Option<Arc<dyn EmbeddingFeaturesDyn>>,
+}
+
+pub fn xid_from_timestamp(unix_secs: u32) -> xid::Id {
+    let mut id = [0u8; 12];
+    id[0..4].copy_from_slice(&unix_secs.to_be_bytes());
+    xid::Id(id)
 }
 
 impl KnowledgeStore {
@@ -66,7 +73,6 @@ impl KnowledgeStore {
             .create_index(&["vec"], Index::Auto)
             .execute()
             .await;
-        // println!("{:?}", res);
         Ok(())
     }
 
@@ -78,6 +84,9 @@ impl KnowledgeStore {
 
 impl VectorSearchFeatures for KnowledgeStore {
     async fn top_n(&self, query: &str, n: usize) -> Result<Vec<String>, BoxError> {
+        if n == 0 {
+            return Ok(vec![]);
+        }
         let docs = hybrid_search(
             &self.table,
             self.embedder.clone(),
@@ -92,6 +101,10 @@ impl VectorSearchFeatures for KnowledgeStore {
     }
 
     async fn top_n_ids(&self, query: &str, n: usize) -> Result<Vec<String>, BoxError> {
+        if n == 0 {
+            return Ok(vec![]);
+        }
+
         let ids = hybrid_search(
             &self.table,
             self.embedder.clone(),
@@ -112,7 +125,11 @@ impl KnowledgeFeatures for KnowledgeStore {
         n: usize,
         user: Option<String>,
     ) -> Result<Vec<Knowledge>, BoxError> {
-        let filter = user.map(|user| format!("user = {user}"));
+        if n == 0 {
+            return Ok(vec![]);
+        }
+
+        let filter = user.map(|user| format!("user = {:?}", user.to_ascii_lowercase()));
         let docs = hybrid_search(
             &self.table,
             self.embedder.clone(),
@@ -125,6 +142,50 @@ impl KnowledgeFeatures for KnowledgeStore {
             query.to_string(),
             n,
             filter,
+        )
+        .await?;
+        let docs: Vec<Knowledge> = docs
+            .into_iter()
+            .map(|doc| Knowledge {
+                id: doc[0].to_owned(),
+                user: doc[1].to_owned(),
+                text: doc[2].to_owned(),
+                meta: serde_json::from_str(&doc[3]).unwrap_or(serde_json::Value::Null),
+            })
+            .collect();
+
+        Ok(docs)
+    }
+
+    async fn knowledge_latest_n(
+        &self,
+        last_seconds: u32,
+        n: usize,
+        user: Option<String>,
+    ) -> Result<Vec<Knowledge>, BoxError> {
+        if last_seconds == 0 || n == 0 {
+            return Ok(vec![]);
+        }
+
+        let timestamp = (unix_ms() / 1000).saturating_sub(last_seconds as u64);
+        let id = xid_from_timestamp(timestamp as u32).to_string();
+        let filter = if let Some(user) = user {
+            format!("(id > {id:?}) AND (user = {:?})", user.to_ascii_lowercase())
+        } else {
+            format!("id > {id:?}")
+        };
+        let docs = hybrid_search(
+            &self.table,
+            self.embedder.clone(),
+            [
+                "id".to_string(),
+                "user".to_string(),
+                "text".to_string(),
+                "meta".to_string(),
+            ],
+            "".to_string(),
+            n,
+            Some(filter),
         )
         .await?;
         let docs: Vec<Knowledge> = docs
@@ -162,7 +223,7 @@ impl KnowledgeFeatures for KnowledgeStore {
             }
 
             ids.push(xid::new().to_string());
-            users.push(doc.user);
+            users.push(doc.user.to_ascii_lowercase());
             texts.push(doc.text);
             metas.push(serde_json::to_string(&doc.meta)?);
             vecs.push(Some(doc.vec.into_iter().map(Some).collect()));
@@ -224,13 +285,13 @@ mod tests {
 
         ks.knowledge_add(vec![
             KnowledgeInput {
-                user: "a".to_string(),
+                user: "Anda".to_string(),
                 text: "Hello".to_string(),
                 meta: serde_json::json!({}),
                 vec: vec![0.1; DIM as usize],
             },
             KnowledgeInput {
-                user: "a".to_string(),
+                user: "Dom".to_string(),
                 text: "Anda".to_string(),
                 meta: serde_json::json!({}),
                 vec: vec![0.1; DIM as usize],
@@ -264,6 +325,26 @@ mod tests {
             .unwrap();
         println!("{:?}", res);
         assert_eq!(res[0], res2[0].id);
+
+        let res = ks.knowledge_latest_n(1, 10, None).await.unwrap();
+        println!("latest_n\n{:?}", res);
+        assert_eq!(res.len(), 2);
+
+        let res = ks
+            .knowledge_latest_n(1, 10, Some("Anda".to_string()))
+            .await
+            .unwrap();
+        println!("latest_n Anda:\n{:?}", res);
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].user, "anda");
+
+        let res = ks
+            .knowledge_latest_n(1, 10, Some("Dom".to_string()))
+            .await
+            .unwrap();
+        println!("latest_n Dom:\n{:?}", res);
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].user, "dom");
     }
 
     #[tokio::test(flavor = "current_thread")]

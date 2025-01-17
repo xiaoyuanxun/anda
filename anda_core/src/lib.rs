@@ -20,11 +20,10 @@ pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 /// A type alias for a boxed future that is thread-safe and sendable across threads.
 pub type BoxPinFut<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 
-/// Joins two paths together
-pub fn join_path(a: &Path, b: &Path) -> Path {
-    Path::from(format!("{}/{}", a, b))
+/// Converts a path to lowercase path.
+pub fn path_lowercase(path: &Path) -> Path {
+    Path::from(path.as_ref().to_ascii_lowercase())
 }
-
 /// Validates a path part to ensure it doesn't contain the path delimiter
 /// agent name and user name should be validated.
 pub fn validate_path_part(part: &str) -> Result<(), BoxError> {
@@ -40,12 +39,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_join_path() {
-        let a = Path::from("a/foo/");
-        let b = Path::from("/b/bar");
-        assert_eq!(a.as_ref(), "a/foo");
-        assert_eq!(b.as_ref(), "b/bar");
-        assert_eq!(join_path(&a, &b), Path::from("a/foo/b/bar"));
+    fn test_path_lowercase() {
+        let a = Path::from("a/Foo");
+        assert_eq!(path_lowercase(&a).as_ref(), "a/foo");
     }
 
     #[test]

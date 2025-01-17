@@ -1,5 +1,5 @@
-use anda_core::context::CacheExpiry;
 use anda_core::BoxError;
+use anda_core::{context::CacheExpiry, path_lowercase};
 use bytes::Bytes;
 use ciborium::from_reader;
 use ic_cose_types::to_cbor_bytes;
@@ -34,7 +34,8 @@ impl CacheService {
 impl CacheService {
     /// Checks if a key exists in the cache
     pub fn contains(&self, path: &Path, key: &str) -> bool {
-        self.cache.contains_key(path.child(key).as_ref())
+        self.cache
+            .contains_key(path_lowercase(&path.child(key)).as_ref())
     }
 
     /// Gets a cached value by key, returns error if not found or deserialization fails
@@ -42,7 +43,11 @@ impl CacheService {
     where
         T: DeserializeOwned,
     {
-        if let Some(val) = self.cache.get(path.child(key).as_ref()).await {
+        if let Some(val) = self
+            .cache
+            .get(path_lowercase(&path.child(key)).as_ref())
+            .await
+        {
             from_reader(&val.0[..]).map_err(|err| err.into())
         } else {
             Err(format!("key {} not found", key).into())
@@ -60,7 +65,7 @@ impl CacheService {
         futures_util::pin_mut!(init);
         match self
             .cache
-            .try_get_with(path.child(key).into(), async move {
+            .try_get_with(path_lowercase(&path.child(key)).into(), async move {
                 match init.await {
                     Ok((val, expiry)) => {
                         let data = to_cbor_bytes(&val);
@@ -83,13 +88,19 @@ impl CacheService {
     {
         let data = to_cbor_bytes(&val.0);
         self.cache
-            .insert(path.child(key).into(), Arc::new((data.into(), val.1)))
+            .insert(
+                path_lowercase(&path.child(key)).into(),
+                Arc::new((data.into(), val.1)),
+            )
             .await;
     }
 
     /// Deletes a cached value by key, returns true if key existed
     pub async fn delete(&self, path: &Path, key: &str) -> bool {
-        self.cache.remove(path.child(key).as_ref()).await.is_some()
+        self.cache
+            .remove(path_lowercase(&path.child(key)).as_ref())
+            .await
+            .is_some()
     }
 }
 

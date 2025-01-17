@@ -1,4 +1,4 @@
-use anda_core::{join_path, BoxError, BoxPinFut, ObjectMeta, Path, PutMode, PutResult};
+use anda_core::{path_lowercase, BoxError, BoxPinFut, ObjectMeta, Path, PutMode, PutResult};
 use futures::TryStreamExt;
 use object_store::{ObjectStore, PutOptions};
 use std::sync::Arc;
@@ -121,7 +121,7 @@ impl Store {
         namespace: &Path,
         path: &Path,
     ) -> Result<(bytes::Bytes, ObjectMeta), BoxError> {
-        let path = join_path(namespace, path);
+        let path = path_lowercase(&namespace.child(path.as_ref()));
         let res = self.store.get_opts(&path, Default::default()).await?;
         let data = match res.payload {
             object_store::GetResultPayload::Stream(mut stream) => {
@@ -147,8 +147,8 @@ impl Store {
         prefix: Option<&Path>,
         offset: &Path,
     ) -> Result<Vec<ObjectMeta>, BoxError> {
-        let prefix = prefix.map(|p| join_path(namespace, p));
-        let offset = join_path(namespace, offset);
+        let prefix = prefix.map(|p| path_lowercase(&namespace.child(p.as_ref())));
+        let offset = path_lowercase(&namespace.child(offset.as_ref()));
         let mut res = self.store.list_with_offset(prefix.as_ref(), &offset);
         let mut metas = Vec::new();
         while let Some(meta) = res.try_next().await? {
@@ -171,7 +171,7 @@ impl Store {
         mode: PutMode,
         val: bytes::Bytes,
     ) -> Result<PutResult, BoxError> {
-        let path = join_path(namespace, path);
+        let path = path_lowercase(&namespace.child(path.as_ref()));
         let res = self
             .store
             .put_opts(
@@ -197,8 +197,8 @@ impl Store {
         from: &Path,
         to: &Path,
     ) -> Result<(), BoxError> {
-        let from = join_path(namespace, from);
-        let to = join_path(namespace, to);
+        let from = path_lowercase(&namespace.child(from.as_ref()));
+        let to = path_lowercase(&namespace.child(to.as_ref()));
         self.store.rename_if_not_exists(&from, &to).await?;
         Ok(())
     }
@@ -208,7 +208,7 @@ impl Store {
     /// # Arguments
     /// * `path` - Path of the object to delete
     pub async fn store_delete(&self, namespace: &Path, path: &Path) -> Result<(), BoxError> {
-        let path = join_path(namespace, path);
+        let path = path_lowercase(&namespace.child(path.as_ref()));
         self.store.delete(&path).await?;
         Ok(())
     }
