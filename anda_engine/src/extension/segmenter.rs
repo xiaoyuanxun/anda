@@ -1,4 +1,6 @@
-use anda_core::{evaluate_tokens, Agent, AgentOutput, BoxError, Tool, ToolCall};
+use anda_core::{
+    evaluate_tokens, Agent, AgentOutput, BoxError, CompletionFeatures, Tool, ToolCall,
+};
 
 use super::extractor::{Deserialize, Extractor, JsonSchema, Serialize, SubmitTool};
 use crate::context::AgentCtx;
@@ -49,7 +51,7 @@ impl DocumentSegmenter {
 
     pub async fn segment(
         &self,
-        ctx: &AgentCtx,
+        ctx: &impl CompletionFeatures,
         content: &str,
     ) -> Result<(SegmentOutput, AgentOutput), BoxError> {
         if evaluate_tokens(content) <= self.segment_tokens {

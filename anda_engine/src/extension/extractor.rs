@@ -51,6 +51,10 @@ where
             _t: PhantomData,
         }
     }
+
+    pub fn submit(&self, args: String) -> Result<T, BoxError> {
+        serde_json::from_str(&args).map_err(|err| format!("invalid args: {}", err).into())
+    }
 }
 
 impl<T> Tool<BaseCtx> for SubmitTool<T>
@@ -120,7 +124,7 @@ impl<T: JsonSchema + DeserializeOwned + Serialize + Send + Sync> Extractor<T> {
 
     pub async fn extract(
         &self,
-        ctx: &AgentCtx,
+        ctx: &impl CompletionFeatures,
         prompt: String,
     ) -> Result<(T, AgentOutput), BoxError> {
         let req = CompletionRequest {
@@ -135,10 +139,7 @@ impl<T: JsonSchema + DeserializeOwned + Serialize + Send + Sync> Extractor<T> {
         let mut res = ctx.completion(req).await?;
         if let Some(tool_calls) = &mut res.tool_calls {
             if let Some(tool) = tool_calls.iter_mut().next() {
-                let result = self
-                    .tool
-                    .call_string(ctx.base.clone(), tool.args.clone())
-                    .await?;
+                let result = self.tool.submit(tool.args.clone())?;
                 tool.result = Some(serde_json::to_string(&result)?);
                 return Ok((result, res));
             }

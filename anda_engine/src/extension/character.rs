@@ -85,10 +85,11 @@ pub struct Learning {
     /// Persona flexibility description, defining how the character adapts to user interaction styles
     pub persona_flexibility: String,
 
-    /// List of required tools for the character to perform tasks (checked during agent registration)
+    /// Tools that the character uses to complete tasks.
+    /// These tools will be checked for availability when registering the agent.
     pub tools: Vec<String>,
 
-    /// List of optional tools that the character can use but aren't required
+    /// Optional tools that the character uses to complete tasks.
     pub optional_tools: Vec<String>,
 }
 

@@ -153,7 +153,7 @@ impl std::fmt::Display for Document {
             }
             writeln!(f, "/>")?;
         }
-        write!(f, "{}\n</doc>\n", self.text)
+        write!(f, "{:?}\n</doc>\n", self.text)
     }
 }
 
@@ -313,7 +313,7 @@ mod tests {
         println!("{}", prompt);
         assert_eq!(
             prompt,
-            "<attachments>\n<doc id=\"1\">\nTest document 1.\n</doc>\n<doc id=\"2\">\n<meta a=\"b\" key=\"value\" />\nTest document 2.\n</doc>\n</attachments>\n\nThis is a test prompt."
+            "<attachments>\n<doc id=\"1\">\n\"Test document 1.\"\n</doc>\n<doc id=\"2\">\n<meta a=\"b\" key=\"value\" />\n\"Test document 2.\"\n</doc>\n</attachments>\n\nThis is a test prompt."
         );
     }
 }
