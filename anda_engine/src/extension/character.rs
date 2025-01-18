@@ -44,12 +44,8 @@ pub struct Character {
     /// Character’s communication style, interests, and meme-related phrases.
     pub style: Style,
 
-    /// Tools that the character uses to complete tasks.
-    /// These tools will be checked for availability when registering the agent.
-    pub tools: Vec<String>,
-
-    /// Optional tools that the character uses to complete tasks.
-    pub optional_tools: Vec<String>,
+    /// Self-learning and adaptability enhancements
+    pub learning: Learning,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -66,8 +62,25 @@ pub struct Style {
     pub interests: Vec<String>,
     /// Meme-related phrases used by the character
     pub meme_phrases: Vec<String>,
-    /// Example messages for reference
-    pub example_messages: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Learning {
+    /// Curiosity-driven behavior
+    pub active_inquiry: Vec<String>,
+
+    /// Memory capacity and contextual awareness
+    pub memory: String,
+
+    /// Dynamic persona adjustments based on user interaction style
+    pub persona_flexibility: String,
+
+    /// Tools that the character uses to complete tasks.
+    /// These tools will be checked for availability when registering the agent.
+    pub tools: Vec<String>,
+
+    /// Optional tools that the character uses to complete tasks.
+    pub optional_tools: Vec<String>,
 }
 
 impl Character {
@@ -108,22 +121,26 @@ impl Character {
             "Your personality and communication style:\n\
             - Tone of speech: {}\n\
             Communication style:\n\
-            - In chat: {}\n\
-            - In posts: {}\n\n\
+            - In chat:\n{}\n\n\
+            - In posts:\n{}\n\n\
             Expression elements:\n\
             - Common adjectives: {}\n\n\
             Personal elements:\n\
             - Key interests: {}\n\
-            - Meme-related phrases: {}\n\n\
-            Example messages for reference:\n\
-            {}",
+            - Meme-related phrases: {}\
+            ",
             self.style.tone.join(", "),
-            self.style.chat.join(", "),
-            self.style.post.join(", "),
+            self.style.chat.join("\n"),
+            self.style.post.join("\n"),
             self.style.adjectives.join(", "),
             self.style.interests.join(", "),
             self.style.meme_phrases.join(", "),
-            self.style.example_messages.join("\n")
+        );
+
+        let learning_context = format!(
+            "Curiosity-driven behavior:\n{}\
+            ",
+            self.learning.active_inquiry.join("\n"),
         );
 
         CompletionRequest {
@@ -134,6 +151,7 @@ impl Character {
             ..Default::default()
         }
         .context("style_context".to_string(), style_context)
+        .context("self_learning_context".to_string(), learning_context)
     }
 
     pub fn build<K: KnowledgeFeatures + VectorSearchFeatures>(
@@ -194,7 +212,7 @@ where
     }
 
     fn tool_dependencies(&self) -> Vec<String> {
-        self.character.tools.clone()
+        self.character.learning.tools.clone()
     }
 
     async fn run(
@@ -298,9 +316,10 @@ where
 
         let tools: Vec<&str> = self
             .character
+            .learning
             .tools
             .iter()
-            .chain(self.character.optional_tools.iter())
+            .chain(self.character.learning.optional_tools.iter())
             .map(|s| s.as_str())
             .collect();
         let tools = ctx.tool_definitions(Some(&tools));
@@ -400,12 +419,14 @@ mod tests {
                     "I have seen the future".to_string(),
                     "The end is near".to_string(),
                 ],
-                example_messages: vec![
-                    "Hello, I am Anda".to_string(),
-                    "The future is uncertain".to_string(),
-                ],
             },
-            tools: vec!["submit_character".to_string()],
+            learning: Learning {
+                active_inquiry: vec!["What is the future?".to_string()],
+                memory: "Unlimited".to_string(),
+                persona_flexibility: "Dynamic".to_string(),
+                tools: vec!["submit_character".to_string()],
+                optional_tools: vec!["submit_character".to_string()],
+            },
             ..Default::default()
         };
         let req = character.to_request("Who are you?".to_string(), None);
