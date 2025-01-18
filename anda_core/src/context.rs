@@ -1,8 +1,8 @@
-use candid::{utils::ArgumentEncoder, CandidType};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{future::Future, time::Duration};
 
 pub use candid::Principal;
+pub use ic_cose_types::CanisterCaller;
 pub use object_store::{path::Path, ObjectMeta, PutMode, PutResult};
 pub use serde_json::Value;
 pub use tokio_util::sync::CancellationToken;
@@ -64,13 +64,7 @@ pub trait AgentContext: BaseContext + CompletionFeatures + EmbeddingFeatures {
 /// - CanisterFeatures: ICP blockchain interactions
 /// - HttpFeatures: HTTP request capabilities
 pub trait BaseContext:
-    Sized
-    + StateFeatures
-    + KeysFeatures
-    + StoreFeatures
-    + CacheFeatures
-    + CanisterFeatures
-    + HttpFeatures
+    Sized + StateFeatures + KeysFeatures + StoreFeatures + CacheFeatures + HttpFeatures + CanisterCaller
 {
 }
 
@@ -328,45 +322,6 @@ pub trait CacheFeatures: Sized {
 
     /// Deletes a cached value by key, returns true if key existed
     fn cache_delete(&self, key: &str) -> impl Future<Output = bool> + Send;
-}
-
-/// CanisterFeatures is one of the context feature sets available when calling Agent or Tool.
-///
-/// Allows Agents/Tools to interact with any canister contract on the ICP blockchain.
-/// The Agent engine will sign canister requests, and they share the same identity ID.
-/// A single TEE instance runs only one Agent engine and has only one ICP identity.
-pub trait CanisterFeatures: Sized {
-    /// Performs a query call to a canister (read-only, no state changes)
-    ///
-    /// # Arguments
-    /// * `canister` - Target canister principal
-    /// * `method` - Method name to call
-    /// * `args` - Input arguments encoded in Candid format
-    fn canister_query<
-        In: ArgumentEncoder + Send,
-        Out: CandidType + for<'a> candid::Deserialize<'a>,
-    >(
-        &self,
-        canister: &Principal,
-        method: &str,
-        args: In,
-    ) -> impl Future<Output = Result<Out, BoxError>> + Send;
-
-    /// Performs an update call to a canister (may modify state)
-    ///
-    /// # Arguments
-    /// * `canister` - Target canister principal
-    /// * `method` - Method name to call
-    /// * `args` - Input arguments encoded in Candid format
-    fn canister_update<
-        In: ArgumentEncoder + Send,
-        Out: CandidType + for<'a> candid::Deserialize<'a>,
-    >(
-        &self,
-        canister: &Principal,
-        method: &str,
-        args: In,
-    ) -> impl Future<Output = Result<Out, BoxError>> + Send;
 }
 
 /// HttpFeatures provides HTTP request capabilities for Agents and Tools

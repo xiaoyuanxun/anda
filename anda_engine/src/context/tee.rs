@@ -1,12 +1,18 @@
 use anda_core::{
-    canister_rpc, cbor_rpc, http_rpc, BoxError, CanisterFeatures, HttpFeatures, HttpRPCError, Path,
-    RPCRequest, CONTENT_TYPE_CBOR,
+    canister_rpc, cbor_rpc, http_rpc, BoxError, HttpFeatures, HttpRPCError, Path, RPCRequest,
+    CONTENT_TYPE_CBOR,
 };
 use candid::{utils::ArgumentEncoder, CandidType, Principal};
 use ciborium::from_reader;
-use ic_cose_types::cose::ed25519::ed25519_verify;
-use ic_cose_types::cose::k256::{secp256k1_verify_bip340, secp256k1_verify_ecdsa};
-use ic_cose_types::{cose::sha3_256, to_cbor_bytes};
+use ic_cose::client::CoseSDK;
+use ic_cose_types::{
+    cose::{
+        ed25519::ed25519_verify,
+        k256::{secp256k1_verify_bip340, secp256k1_verify_ecdsa},
+        sha3_256,
+    },
+    to_cbor_bytes, CanisterCaller,
+};
 use reqwest::Client;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_bytes::ByteArray;
@@ -18,6 +24,7 @@ use crate::APP_USER_AGENT;
 pub struct TEEClient {
     pub http: Client,
     pub outer_http: Client,
+    pub cose_canister: Principal,
     endpoint_keys: String,
     endpoint_identity: String,
     endpoint_canister_query: String,
@@ -25,7 +32,7 @@ pub struct TEEClient {
 }
 
 impl TEEClient {
-    pub fn new(tee_host: &str, basic_token: &str) -> Self {
+    pub fn new(tee_host: &str, basic_token: &str, cose_canister: Principal) -> Self {
         let http = reqwest::Client::builder()
             .http2_keep_alive_interval(Some(Duration::from_secs(25)))
             .http2_keep_alive_timeout(Duration::from_secs(15))
@@ -62,6 +69,7 @@ impl TEEClient {
         Self {
             http,
             outer_http,
+            cose_canister,
             endpoint_keys: format!("{}/keys", tee_host),
             endpoint_identity: format!("{}/identity", tee_host),
             endpoint_canister_query: format!("{}/canister/query", tee_host),
@@ -218,7 +226,13 @@ impl TEEClient {
     }
 }
 
-impl CanisterFeatures for TEEClient {
+impl CoseSDK for TEEClient {
+    fn canister(&self) -> &Principal {
+        &self.cose_canister
+    }
+}
+
+impl CanisterCaller for TEEClient {
     /// Performs a query call to a canister (read-only, no state changes)
     ///
     /// # Arguments

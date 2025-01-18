@@ -1,5 +1,5 @@
 use anda_core::{
-    BaseContext, BoxError, CacheExpiry, CacheFeatures, CancellationToken, CanisterFeatures,
+    BaseContext, BoxError, CacheExpiry, CacheFeatures, CancellationToken, CanisterCaller,
     HttpFeatures, KeysFeatures, ObjectMeta, Path, PutMode, PutResult, StateFeatures, StoreFeatures,
 };
 use candid::{utils::ArgumentEncoder, CandidType, Principal};
@@ -24,9 +24,9 @@ pub struct BaseCtx {
     pub(crate) cancellation_token: CancellationToken,
     pub(crate) start_at: Instant,
     pub(crate) depth: u8,
+    pub(crate) tee: Arc<TEEClient>,
 
     cache: Arc<CacheService>,
-    tee: Arc<TEEClient>,
     store: Store,
 }
 
@@ -287,7 +287,7 @@ impl CacheFeatures for BaseCtx {
     }
 }
 
-impl CanisterFeatures for BaseCtx {
+impl CanisterCaller for BaseCtx {
     /// Performs a query call to a canister (read-only, no state changes)
     ///
     /// # Arguments

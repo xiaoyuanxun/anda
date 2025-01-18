@@ -263,7 +263,7 @@ mod tests {
     async fn test_knowledge_store() {
         let os = InMemory::new();
         let mut store = LanceVectorStore::new_with_object_store(
-            "ic://object_store".to_string(),
+            "test://object_store".to_string(),
             Arc::new(os),
             Some(CHUNK_SIZE),
             None,
@@ -366,7 +366,7 @@ mod tests {
         let os = ObjectStoreClient::new(cli.clone());
 
         let mut store = LanceVectorStore::new_with_object_store(
-            "ic://object_store".to_string(),
+            "test://object_store".to_string(),
             Arc::new(os),
             Some(CHUNK_SIZE),
             None,

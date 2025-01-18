@@ -3,7 +3,6 @@ resolver = "2"
 members = ["anda_core", "anda_engine", "anda_lancedb", "agents/*"]
 
 [workspace.package]
-name = "anda"
 description = "Anda is a framework for AI agent development, designed to build a highly composable, autonomous, and perpetually memorizing network of AI agents."
 repository = "https://github.com/ldclabs/anda"
 homepage = "https://github.com/ldclabs/anda"
@@ -65,6 +64,7 @@ toml = "0.8"
 ed25519-consensus = "2.1"
 log = "0.4"
 chrono = "0.4"
+dotenv = "0.15"
 
 [profile.release]
 debug = false

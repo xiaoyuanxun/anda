@@ -96,8 +96,8 @@ impl EmbeddingFeaturesDyn for MockImplemented {
 
 #[derive(Clone)]
 pub struct Model {
-    embedder: Arc<dyn EmbeddingFeaturesDyn>,
-    completer: Arc<dyn CompletionFeaturesDyn>,
+    pub embedder: Arc<dyn EmbeddingFeaturesDyn>,
+    pub completer: Arc<dyn CompletionFeaturesDyn>,
 }
 
 impl Model {

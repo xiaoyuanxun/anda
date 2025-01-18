@@ -1,6 +1,6 @@
 use anda_core::{
     AgentContext, AgentOutput, AgentSet, BaseContext, BoxError, CacheExpiry, CacheFeatures,
-    CancellationToken, CanisterFeatures, CompletionFeatures, CompletionRequest, Embedding,
+    CancellationToken, CanisterCaller, CompletionFeatures, CompletionRequest, Embedding,
     EmbeddingFeatures, FunctionDefinition, HttpFeatures, KeysFeatures, Message, ObjectMeta, Path,
     PutMode, PutResult, StateFeatures, StoreFeatures, ToolCall, ToolSet,
 };
@@ -397,7 +397,7 @@ impl CacheFeatures for AgentCtx {
     }
 }
 
-impl CanisterFeatures for AgentCtx {
+impl CanisterCaller for AgentCtx {
     /// Performs a query call to a canister (read-only, no state changes)
     ///
     /// # Arguments

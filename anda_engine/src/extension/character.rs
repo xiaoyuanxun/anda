@@ -18,68 +18,77 @@ use crate::{context::AgentCtx, store::MAX_STORE_OBJECT_SIZE};
 const MAX_CHAT_HISTORY: usize = 42;
 const CHAT_HISTORY_TTI: Duration = Duration::from_secs(3600 * 24 * 7);
 
+/// Character definition structure containing all attributes and behavioral traits
+/// For a complete, production-level character definition example, see:
+/// https://github.com/ldclabs/anda/blob/main/agents/anda_bot/Character.toml
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Character {
-    /// Name of the character, e.g. "Anda ICP"
+    /// Character's display name, used for identification, e.g., "Anda ICP"
     pub name: String,
 
-    /// Character’s account or username, e.g. "AndaICP"
+    /// Character's account or username, used for system identification and message routing
     pub username: String,
 
-    /// Character’s profession, status, or role, e.g. "Scientist and Prophet"
+    /// Character's professional identity or role description, e.g., "Scientist and Prophet"
     pub identity: String,
 
-    /// Character’s backstory, upbringing, or history.
+    /// Character's backstory and historical background
     pub description: String,
 
-    /// Character’s personality traits, e.g., brave, cunning, kind, etc.
+    /// List of personality traits that define the character's behavior, e.g., brave, cunning, kind
     pub traits: Vec<String>,
 
-    /// Character’s motivations, desires, or objectives.
+    /// List of motivations and objectives that drive the character's actions
     pub goals: Vec<String>,
 
-    /// Character’s areas of expertise, e.g., "quantum physics", "time travel", etc.
+    /// List of expertise areas the character specializes in, e.g., "quantum physics", "time travel"
     pub topics: Vec<String>,
 
-    /// Character’s communication style, interests, and meme-related phrases.
+    /// Communication style and expression characteristics
     pub style: Style,
 
-    /// Self-learning and adaptability enhancements
+    /// Learning capabilities and adaptability configurations
     pub learning: Learning,
 }
 
+/// Defines the character's communication style and expression patterns
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Style {
-    /// Tone of speech, e.g., formal, casual, humorous
+    /// List of speech tones, e.g., formal, casual, humorous
     pub tone: Vec<String>,
-    /// Communication style in chat
+
+    /// Communication style descriptions for chat interactions
     pub chat: Vec<String>,
-    /// Communication style in posts
+
+    /// Communication style descriptions for post content
     pub post: Vec<String>,
-    /// Common adjectives used by the character
+
+    /// List of commonly used adjectives in character's speech
     pub adjectives: Vec<String>,
-    /// Key interests of the character
+
+    /// List of key interests that the character focuses on
     pub interests: Vec<String>,
-    /// Meme-related phrases used by the character
+
+    /// List of meme phrases or internet slang the character uses
     pub meme_phrases: Vec<String>,
 }
 
+/// Defines the character's learning capabilities and adaptability
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Learning {
-    /// Curiosity-driven behavior
+    /// List of active inquiry behaviors, describing questions or exploration directions
     pub active_inquiry: Vec<String>,
 
-    /// Memory capacity and contextual awareness
+    /// Memory capacity description, defining the character's ability to retain context
     pub memory: String,
 
-    /// Dynamic persona adjustments based on user interaction style
+    /// Persona flexibility description, defining how the character adapts to user interaction styles
     pub persona_flexibility: String,
 
-    /// Tools that the character uses to complete tasks.
-    /// These tools will be checked for availability when registering the agent.
+    /// List of required tools for the character to perform tasks (checked during agent registration)
     pub tools: Vec<String>,
 
-    /// Optional tools that the character uses to complete tasks.
+    /// List of optional tools that the character can use but aren't required
     pub optional_tools: Vec<String>,
 }
 

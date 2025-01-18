@@ -17,11 +17,16 @@ use candid::Principal;
 use ciborium::from_reader;
 use ed25519_consensus::SigningKey;
 use ic_agent::identity::{BasicIdentity, Identity};
-use ic_cose_types::types::object_store::CHUNK_SIZE;
+use ic_cose::client::CoseSDK;
+use ic_cose_types::{
+    types::{object_store::CHUNK_SIZE, setting::SettingPath},
+    CanisterCaller,
+};
 use ic_object_store::{
     agent::build_agent,
     client::{Client, ObjectStoreClient},
 };
+use ic_tee_agent::setting::decrypt_payload;
 use ic_tee_cdk::TEEAppInformation;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use structured_logger::{async_json::new_writer, unix_ms, Builder};
@@ -39,6 +44,7 @@ static LOG_TARGET: &str = "bootstrap";
 static IC_OBJECT_STORE: &str = "ic://object_store";
 const LOCAL_SERVER_SHUTDOWN_DURATION: Duration = Duration::from_secs(5);
 
+// cargo run -p anda_bot
 #[tokio::main]
 async fn main() -> Result<(), BoxError> {
     let cfg = config::Conf::new().unwrap_or_else(|err| panic!("config error: {}", err));
@@ -53,26 +59,66 @@ async fn main() -> Result<(), BoxError> {
     let character = Character::from_toml(&cfg.character.content)?;
     let default_agent = character.username.clone();
     let engine_name = "Anda.bot".to_string();
+    let cose_canister = Principal::from_text(&cfg.icp.cose_canister)?;
 
-    let tee = TEEClient::new(&cfg.tee.tee_host, &cfg.tee.basic_token);
-    let info = tee.http.get(&cfg.tee.tee_host).send().await?;
-    let info = info.bytes().await?;
-    let info: TEEAppInformation = from_reader(&info[..])?;
-    log::debug!("TEEAppInformation: {:?}", cfg);
+    log::info!(target: LOG_TARGET, "start to connect TEE service");
+    let tee = TEEClient::new(&cfg.tee.tee_host, &cfg.tee.basic_token, cose_canister);
+    let tee_info = tee
+        .http
+        .get(format!("{}/information", &cfg.tee.tee_host))
+        .send()
+        .await?;
+    let tee_info = tee_info.bytes().await?;
+    let tee_info: TEEAppInformation = from_reader(&tee_info[..])?;
+    log::debug!(target: LOG_TARGET, "TEEAppInformation: {:?}", tee_info);
 
-    let model = if cfg.llm.openai_api_key.is_empty() {
+    let root_path = Path::from(ROOT_PATH);
+    let id_secret = tee
+        .a256gcm_key(&root_path, &[default_agent.as_bytes()])
+        .await?;
+    let my_id = BasicIdentity::from_signing_key(SigningKey::from(id_secret));
+    let my_principal = my_id.sender()?;
+
+    log::info!(target: LOG_TARGET, "start to get master_secret");
+    let master_secret = tee
+        .get_cose_encrypted_key(&SettingPath {
+            ns: cfg.icp.cose_namespace.clone(),
+            key: default_agent.as_bytes().to_vec().into(),
+            subject: Some(tee_info.id),
+            ..Default::default()
+        })
+        .await?;
+
+    log::info!(target: LOG_TARGET, "start to get encrypted config");
+    let encrypted_cfg = if let Ok(setting) = tee
+        .setting_get(&SettingPath {
+            ns: cfg.icp.cose_namespace.clone(),
+            key: default_agent.as_bytes().to_vec().into(),
+            subject: Some(tee_info.id),
+            ..Default::default()
+        })
+        .await
+    {
+        let encrypted_cfg = decrypt_payload(&setting, &master_secret, &[])?;
+        
+        config::Conf::from_toml(&String::from_utf8(encrypted_cfg)?)?
+    } else {
+        cfg.clone()
+    };
+
+    let model = if encrypted_cfg.llm.openai_api_key.is_empty() {
         Model::new(
             Arc::new(
-                cohere::Client::new(&cfg.llm.cohere_api_key)
-                    .embedding_model(&cfg.llm.cohere_embedding_model),
+                cohere::Client::new(&encrypted_cfg.llm.cohere_api_key)
+                    .embedding_model(&encrypted_cfg.llm.cohere_embedding_model),
             ),
-            Arc::new(deepseek::Client::new(&cfg.llm.deepseek_api_key).completion_model()),
+            Arc::new(deepseek::Client::new(&encrypted_cfg.llm.deepseek_api_key).completion_model()),
         )
     } else {
-        let cli = openai::Client::new(&cfg.llm.openai_api_key);
+        let cli = openai::Client::new(&encrypted_cfg.llm.openai_api_key);
         Model::new(
-            Arc::new(cli.embedding_model(&cfg.llm.openai_embedding_model)),
-            Arc::new(cli.completion_model(&cfg.llm.openai_completion_model)),
+            Arc::new(cli.embedding_model(&encrypted_cfg.llm.openai_embedding_model)),
+            Arc::new(cli.completion_model(&encrypted_cfg.llm.openai_completion_model)),
         )
     };
 
@@ -80,81 +126,77 @@ async fn main() -> Result<(), BoxError> {
 
     // ObjectStore
     let object_store_canister = Principal::from_text(cfg.icp.object_store_canister)?;
-    let root_path = Path::from(ROOT_PATH);
-    let (object_store_client, object_store_client_id) = {
-        let id_secret = tee
-            .a256gcm_key(&root_path, &[IC_OBJECT_STORE.as_bytes()])
-            .await?;
+    let object_store_client = {
         let aes_secret = tee
             .a256gcm_key(&root_path, &[IC_OBJECT_STORE.as_bytes(), b"A256GCM"])
             .await?;
-        let sk = SigningKey::from(id_secret);
-        let id = BasicIdentity::from_signing_key(sk);
-        let object_store_client_id = id.sender()?;
-        let agent = build_agent(&cfg.icp.api_host, Arc::new(id)).await.unwrap();
-        let cli = Arc::new(Client::new(
+        let agent = build_agent(&cfg.icp.api_host, Arc::new(my_id))
+            .await
+            .unwrap();
+        
+        Arc::new(Client::new(
             Arc::new(agent),
             object_store_canister,
             Some(aes_secret),
-        ));
-        (cli, object_store_client_id)
+        ))
     };
 
-    let object_store_status = object_store_client.head(&Path::from("information")).await;
-    let x_status = Arc::new(RwLock::new(if object_store_status.is_err() {
-        // object store is not available
-        handler::ServiceStatus::Stopped
-    } else {
-        handler::ServiceStatus::Running
-    }));
+    // ensure write access to object store
+    let res: Result<bool, String> = tee
+        .canister_query(
+            &object_store_canister,
+            "is_member",
+            ("manager", &my_principal),
+        )
+        .await?;
+    if !res? {
+        let res: Result<(), String> = tee
+            .canister_update(
+                &object_store_canister,
+                "admin_add_managers",
+                (vec![&my_principal],),
+            )
+            .await?;
+        res?;
+    }
 
+    let x_status = Arc::new(RwLock::new(handler::ServiceStatus::Running));
     let app_state = handler::AppState {
+        tee: Arc::new(tee.clone()),
         x_status: x_status.clone(),
+        cose_namespace: cfg.icp.cose_namespace.clone(),
         info: Arc::new(handler::AppInformation {
-            id: info.id,
+            id: my_principal,
             name: engine_name.clone(),
             start_time_ms: unix_ms(),
             default_agent: default_agent.clone(),
-            object_store_client: Some(object_store_client_id),
             object_store_canister: Some(object_store_canister),
             caller: Principal::anonymous(),
         }),
     };
 
-    if object_store_status.is_err() {
-        match tokio::try_join!(
-            start_server(
-                format!("127.0.0.1:{}", cfg.server.port),
-                app_state,
-                global_cancel_token.clone()
-            ),
-            shutdown_future
-        ) {
-            Ok(_) => return Ok(()),
-            Err(err) => {
-                log::error!(target: LOG_TARGET, "server error: {:?}", err);
-                return Err(err);
-            }
-        }
-    }
-
+    log::info!(target: LOG_TARGET, "start to init knowledge_store");
     let object_store = Arc::new(ObjectStoreClient::new(object_store_client));
     let knowledge_store: KnowledgeStore = {
         let mut store = LanceVectorStore::new_with_object_store(
             IC_OBJECT_STORE.to_string(),
             object_store.clone(),
             Some(CHUNK_SIZE),
-            None,
+            Some(model.embedder.clone()),
         )
         .await?;
 
         let namespace: Path = default_agent.clone().into();
+        println!("99999 namespace: {:?}", namespace);
         let ks = KnowledgeStore::init(&mut store, namespace, ndims as u16, Some(1024 * 10)).await?;
+        println!("99999 ks");
 
         ks.create_index().await?;
+        println!("99999 ks index");
         ks
     };
 
+    log::info!(target: LOG_TARGET, "start to build engine");
     let agent = character.build(
         Attention::default(),
         DocumentSegmenter::default(),
@@ -177,7 +219,13 @@ async fn main() -> Result<(), BoxError> {
             app_state,
             global_cancel_token.clone()
         ),
-        start_x(cfg.x, engine, agent, global_cancel_token.clone(), x_status),
+        start_x(
+            encrypted_cfg.x,
+            engine,
+            agent,
+            global_cancel_token.clone(),
+            x_status
+        ),
         shutdown_future
     ) {
         Ok(_) => Ok(()),
@@ -222,7 +270,8 @@ async fn start_x(
 ) -> Result<(), BoxError> {
     let mut scraper = Scraper::new().await?;
 
-    if let Some(cookie_str) = cfg.cookie_string {
+    let cookie_str = cfg.cookie_string.unwrap_or_default();
+    if !cookie_str.is_empty() {
         scraper.set_from_cookie_string(&cookie_str).await?;
     } else {
         scraper

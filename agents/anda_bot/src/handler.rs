@@ -1,9 +1,11 @@
+use anda_engine::context::TEEClient;
 use axum::{
     extract::{Request, State},
     http::StatusCode,
     response::IntoResponse,
 };
 use candid::Principal;
+use ic_cose::client::CoseSDK;
 use ic_cose_types::to_cbor_bytes;
 use ic_tee_agent::{
     http::{Content, ANONYMOUS_PRINCIPAL, HEADER_IC_TEE_CALLER},
@@ -15,8 +17,23 @@ use tokio::sync::RwLock;
 
 #[derive(Clone)]
 pub struct AppState {
+    pub tee: Arc<TEEClient>,
     pub x_status: Arc<RwLock<ServiceStatus>>,
     pub info: Arc<AppInformation>,
+    pub cose_namespace: String,
+}
+
+impl AppState {
+    pub async fn is_manager(&self, headers: &http::HeaderMap) -> bool {
+        let caller = get_caller(headers);
+        caller != ANONYMOUS_PRINCIPAL
+            && self
+                .tee
+                .as_ref()
+                .namespace_is_member(&self.cose_namespace, "manager", &caller)
+                .await
+                .unwrap_or(false)
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -32,7 +49,6 @@ pub struct AppInformation {
     pub name: String, // engine name
     pub start_time_ms: u64,
     pub default_agent: String,
-    pub object_store_client: Option<Principal>,
     pub object_store_canister: Option<Principal>,
     pub caller: Principal,
 }
@@ -43,7 +59,6 @@ pub struct AppInformationJSON {
     pub name: String, // engine name
     pub start_time_ms: u64,
     pub default_agent: String,
-    pub object_store_client: Option<String>,
     pub object_store_canister: Option<String>,
     pub caller: String,
 }
@@ -52,17 +67,8 @@ pub struct AppInformationJSON {
 pub async fn get_information(State(app): State<AppState>, req: Request) -> impl IntoResponse {
     let mut info = app.info.as_ref().clone();
     let headers = req.headers();
-    info.caller = if let Some(caller) = headers.get(&HEADER_IC_TEE_CALLER) {
-        if let Ok(caller) = Principal::from_text(caller.to_str().unwrap_or_default()) {
-            caller
-        } else {
-            ANONYMOUS_PRINCIPAL
-        }
-    } else {
-        ANONYMOUS_PRINCIPAL
-    };
-
-    match Content::from(req.headers()) {
+    info.caller = get_caller(headers);
+    match Content::from(headers) {
         Content::CBOR(_, _) => Content::CBOR(info, None).into_response(),
         _ => Content::JSON(
             AppInformationJSON {
@@ -70,7 +76,6 @@ pub async fn get_information(State(app): State<AppState>, req: Request) -> impl 
                 name: info.name,
                 start_time_ms: info.start_time_ms,
                 default_agent: info.default_agent.clone(),
-                object_store_client: info.object_store_client.as_ref().map(|p| p.to_string()),
                 object_store_canister: info.object_store_canister.as_ref().map(|p| p.to_string()),
                 caller: info.caller.to_string(),
             },
@@ -82,11 +87,16 @@ pub async fn get_information(State(app): State<AppState>, req: Request) -> impl 
 
 pub async fn add_proposal(
     State(app): State<AppState>,
+    headers: http::HeaderMap,
     ct: Content<RPCRequest>,
 ) -> impl IntoResponse {
     match ct {
         Content::CBOR(req, _) => {
-            // TODO: add access control
+            let is_manager = app.is_manager(&headers).await;
+            if !is_manager {
+                return StatusCode::FORBIDDEN.into_response();
+            }
+
             let res = handle_proposal(&req, &app).await;
             Content::CBOR(res, None).into_response()
         }
@@ -107,5 +117,17 @@ async fn handle_proposal(req: &RPCRequest, app: &AppState) -> RPCResponse {
             Ok(to_cbor_bytes(&"Ok").into())
         }
         _ => Err(format!("unsupported method {}", req.method)),
+    }
+}
+
+fn get_caller(headers: &http::HeaderMap) -> Principal {
+    if let Some(caller) = headers.get(&HEADER_IC_TEE_CALLER) {
+        if let Ok(caller) = Principal::from_text(caller.to_str().unwrap_or_default()) {
+            caller
+        } else {
+            ANONYMOUS_PRINCIPAL
+        }
+    } else {
+        ANONYMOUS_PRINCIPAL
     }
 }

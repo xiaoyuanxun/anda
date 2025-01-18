@@ -141,7 +141,7 @@ impl EngineBuilder {
             agents: AgentSet::new(),
             model: Model::not_implemented(),
             store: Store::new(mstore),
-            tee_client: TEEClient::new(TEE_LOCAL_SERVER, ""),
+            tee_client: TEEClient::new(TEE_LOCAL_SERVER, "", Principal::anonymous()),
             cancellation_token: CancellationToken::new(),
         }
     }

@@ -249,3 +249,26 @@ impl EmbeddingFeaturesDyn for EmbeddingModel {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::extension::character::Character;
+
+    #[tokio::test(flavor = "current_thread")]
+    #[ignore]
+    async fn test_deepseek() {
+        dotenv::dotenv().ok();
+
+        let api_key = std::env::var("COHERE_API_KEY").expect("COHERE_API_KEY is not set");
+        let character_path = format!("{}/../characters/AndaICP.toml", env!("CARGO_MANIFEST_DIR"));
+        println!("Character path: {}", character_path);
+        let character = std::fs::read_to_string(character_path).expect("Character file not found");
+        let character = Character::from_toml(&character).expect("Character should parse");
+        let client = Client::new(&api_key);
+        let model = client.embedding_model(EMBED_MULTILINGUAL_V3);
+        let req = character.to_request("Who are you?".into(), Some("AndaICP".into()));
+        let res = model.embed(vec![req.system.unwrap()]).await.unwrap();
+        println!("{:?}", res);
+    }
+}

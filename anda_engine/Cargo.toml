@@ -35,3 +35,4 @@ chrono = { workspace = true }
 schemars = { version = "0.8" }
 
 [dev-dependencies]
+dotenv = { workspace = true }

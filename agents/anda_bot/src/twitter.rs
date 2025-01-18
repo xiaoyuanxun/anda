@@ -45,13 +45,19 @@ impl TwitterDaemon {
         info!(target: LOG_TARGET, "starting Twitter bot");
 
         loop {
-            sleep(Duration::from_secs(60)).await;
-
             {
                 let status = self.status.read().await;
                 if *status == ServiceStatus::Stopped {
+                    info!(target: LOG_TARGET, "Twitter task stopped");
+                    tokio::select! {
+                        _ = cancel_token.cancelled() => {
+                            return Ok(());
+                        },
+                        _ = sleep(Duration::from_secs(60)) => {},
+                    }
                     continue;
                 }
+                info!(target: LOG_TARGET, "run a Twitter task");
                 // release read lock
             }
 
@@ -83,7 +89,12 @@ impl TwitterDaemon {
                                     error!(target: LOG_TARGET, "handle mention error: {err:?}");
                                 }
 
-                                sleep(Duration::from_secs(rand_number(60..=180))).await;
+                                tokio::select! {
+                                    _ = cancel_token.cancelled() => {
+                                        return Ok(());
+                                    },
+                                    _ = sleep(Duration::from_secs(rand_number(3..=10))) => {},
+                                }
                             }
                         }
                         Err(err) => {
@@ -94,15 +105,14 @@ impl TwitterDaemon {
                 _ => unreachable!(),
             }
 
-            if cancel_token.is_cancelled() {
-                break;
-            }
-
             // Sleep between tasks
-            sleep(Duration::from_secs(rand_number(30 * 60..=60 * 60))).await;
+            tokio::select! {
+                _ = cancel_token.cancelled() => {
+                    return Ok(());
+                },
+                _ = sleep(Duration::from_secs(rand_number(30 * 60..=60 * 60))) => {},
+            }
         }
-
-        Ok(())
     }
 
     async fn post_new_tweet(&self) -> Result<(), BoxError> {
@@ -148,9 +158,9 @@ impl TwitterDaemon {
         debug!(target: LOG_TARGET, "process home timeline, {} tweets", tweets.len());
 
         for tweet in tweets {
-            let tweet_user = tweet["legacy"]["user_id_str"]
+            let tweet_user = tweet["core"]["user_results"]["result"]["legacy"]["screen_name"]
                 .as_str()
-                .unwrap_or_default()
+                .unwrap_or_else(|| tweet["legacy"]["user_id_str"].as_str().unwrap_or_default())
                 .to_string();
             let tweet_content = tweet["legacy"]["full_text"]
                 .as_str()
@@ -189,7 +199,7 @@ impl TwitterDaemon {
                 }
             }
 
-            sleep(Duration::from_secs(rand_number(60..=180))).await;
+            sleep(Duration::from_secs(rand_number(1..=10))).await;
         }
         Ok(())
     }
@@ -262,7 +272,7 @@ impl TwitterDaemon {
                 .scraper
                 .send_tweet(chunk.as_str(), tweet_id, None)
                 .await?;
-            sleep(Duration::from_secs(rand_number(1..=10))).await;
+            sleep(Duration::from_secs(rand_number(1..=3))).await;
         }
 
         Ok(())
@@ -365,5 +375,72 @@ impl TwitterDaemon {
         }
 
         Ok(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test(flavor = "current_thread")]
+    #[ignore]
+    async fn test_x_api() {
+        dotenv::dotenv().ok();
+
+        let mut scraper = Scraper::new().await.unwrap();
+        let cookie_string = std::env::var("TWITTER_COOKIES").expect("TWITTER_COOKIES is not set");
+
+        scraper
+            .set_from_cookie_string(&cookie_string)
+            .await
+            .unwrap();
+
+        // scraper
+        //     .login(
+        //         std::env::var("TWITTER_USERNAME").unwrap(),
+        //         std::env::var("TWITTER_PASSWORD").unwrap(),
+        //         std::env::var("TWITTER_EMAIL").ok(),
+        //         std::env::var("TWITTER_2FA_SECRET").ok(),
+        //     )
+        //     .await
+        //     .unwrap();
+
+        {
+            let res = scraper
+                .search_tweets(&format!("@{}", "ICPandaDAO"), 5, SearchMode::Latest, None)
+                .await
+                .unwrap();
+            for tweet in res.tweets {
+                // let data = serde_json::to_string_pretty(&tweet).unwrap();
+                // println!("{}", data);
+                let tweet_user = tweet.username.unwrap_or_default();
+                let tweet_content = tweet.text.unwrap_or_default();
+                let tweet_id = tweet.id.unwrap_or_default();
+                println!("\n\n{}: {} - {}", tweet_user, tweet_id, tweet_content);
+
+                println!("----------------------");
+            }
+        }
+
+        {
+            let tweets = scraper.get_home_timeline(1, Vec::new()).await.unwrap();
+            for tweet in &tweets {
+                let tweet_user = tweet["core"]["user_results"]["result"]["legacy"]["screen_name"]
+                    .as_str()
+                    .unwrap_or_else(|| tweet["legacy"]["user_id_str"].as_str().unwrap_or_default())
+                    .to_string();
+                let tweet_content = tweet["legacy"]["full_text"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string();
+                let tweet_id = tweet["legacy"]["id_str"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string();
+                println!("{}: {} - {}", tweet_user, tweet_id, tweet_content);
+            }
+        }
+        // let tweets = serde_json::to_string_pretty(&tweets).unwrap();
+        // std::fs::write("home_timeline_tweets.json", tweets).unwrap();
     }
 }
