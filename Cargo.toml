@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["anda_core", "anda_engine", "anda_lancedb", "agents/*"]
+members = ["anda_core", "anda_engine", "anda_lancedb", "agents/*", "tools/*"]
 
 [workspace.package]
 description = "Anda is a framework for AI agent development, designed to build a highly composable, autonomous, and perpetually memorizing network of AI agents."
@@ -17,6 +17,7 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
+async-trait = "0.1"
 axum = { version = "0.8", features = [
   "http1",
   "http2",
@@ -65,6 +66,7 @@ ed25519-consensus = "2.1"
 log = "0.4"
 chrono = "0.4"
 dotenv = "0.15"
+schemars = { version = "0.8" }
 
 [profile.release]
 debug = false

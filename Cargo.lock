@@ -194,6 +194,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "anda_icp"
+version = "0.1.0"
+dependencies = [
+ "anda_core",
+ "anda_engine",
+ "async-trait",
+ "bytes",
+ "candid",
+ "chrono",
+ "ciborium",
+ "dotenv",
+ "futures",
+ "futures-util",
+ "http 1.2.0",
+ "ic_cose",
+ "ic_cose_types",
+ "icrc-ledger-types",
+ "log",
+ "moka 0.12.10",
+ "object_store 0.10.2",
+ "rand",
+ "reqwest 0.12.12",
+ "schemars",
+ "serde",
+ "serde_bytes",
+ "serde_json",
+ "structured-logger",
+ "tokio",
+ "tokio-util",
+ "toml",
+]
+
+[[package]]
 name = "anda_lancedb"
 version = "0.1.1"
 dependencies = [

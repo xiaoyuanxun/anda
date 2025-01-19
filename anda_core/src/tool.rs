@@ -12,6 +12,8 @@ pub trait Tool<C>: Send + Sync
 where
     C: BaseContext + Send + Sync,
 {
+    /// A constant flag indicating whether the agent should continue processing the tool result
+    /// with completion model after execution
     const CONTINUE: bool;
     /// The arguments type of the tool.
     type Args: DeserializeOwned + Send;
@@ -26,6 +28,9 @@ where
     /// - Length must be ≤ 64 characters
     /// - Can only contain: lowercase letters (a-z), digits (0-9), and underscores (_)
     fn name(&self) -> String;
+
+    /// Returns the tool's capabilities description in a short string
+    fn description(&self) -> String;
 
     /// Provides the tool's definition including its parameters schema.
     ///
@@ -74,12 +79,7 @@ where
         args: String,
     ) -> impl Future<Output = Result<(String, bool), BoxError>> + Send {
         async move {
-            let args: Self::Args = serde_json::from_str(&args)
-                .map_err(|err| format!("tool {}, invalid args: {}", self.name(), err))?;
-            let result = self
-                .call(ctx, args)
-                .await
-                .map_err(|err| format!("tool {}, call failed: {}", self.name(), err))?;
+            let result = self.call_string(ctx, args).await?;
             Ok((serde_json::to_string(&result)?, Self::CONTINUE))
         }
     }

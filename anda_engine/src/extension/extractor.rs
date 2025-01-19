@@ -69,11 +69,14 @@ where
         format!("submit_{}", self.name)
     }
 
+    fn description(&self) -> String {
+        "Submit the structured data you extracted from the provided text.".to_string()
+    }
+
     fn definition(&self) -> FunctionDefinition {
         FunctionDefinition {
             name: self.name(),
-            description: "Submit the structured data you extracted from the provided text."
-                .to_string(),
+            description: self.description(),
             parameters: self.schema.clone(),
             strict: Some(true),
         }
