@@ -15,8 +15,11 @@ jobs:
     - name: Build linux binary
       run: |
         sudo apt-get update
-        sudo apt-get install -y musl-tools libssl-dev
+        sudo apt-get install -y musl-tools libssl-dev pkg-config
         rustup target add x86_64-unknown-linux-musl
+        export OPENSSL_DIR=$(dirname $(dirname $(dpkg -L libssl-dev | grep 'opensslv.h$')))
+        export OPENSSL_STATIC=1
+        echo "Using OPENSSL_DIR: $OPENSSL_DIR"
         for PACK in anda_bot
         do
           cargo build --release --locked -p $PACK --target x86_64-unknown-linux-musl
