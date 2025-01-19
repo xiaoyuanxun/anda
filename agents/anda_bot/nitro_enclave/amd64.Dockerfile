@@ -23,13 +23,11 @@ RUN chmod +x vsock-to-ip
 RUN wget -qO- https://github.com/AdguardTeam/dnsproxy/releases/download/v0.73.3/dnsproxy-linux-amd64-v0.73.3.tar.gz | tar xvz
 RUN mv linux-amd64/dnsproxy ./ && chmod +x dnsproxy
 
-# dnsproxy to provide DNS services inside the enclave
 RUN wget -O ic_tee_nitro_gateway https://github.com/ldclabs/ic-tee/releases/download/v0.2.9/ic_tee_nitro_gateway
 RUN chmod +x ic_tee_nitro_gateway
 
-WORKDIR /build
-COPY . .
-RUN cargo build --release --locked -p anda_bot
+RUN wget -O anda_bot https://github.com/ldclabs/anda/releases/download/v0.2.0/anda_bot
+RUN chmod +x anda_bot
 
 FROM --platform=linux/amd64 debian:bookworm-slim AS runtime
 
@@ -48,9 +46,6 @@ COPY agents/anda_bot/nitro_enclave/supervisord.conf /etc/supervisord.conf
 # setup.sh script that will act as entrypoint
 COPY agents/anda_bot/nitro_enclave/Config.toml agents/anda_bot/nitro_enclave/Character.toml agents/anda_bot/nitro_enclave/setup.sh ./
 RUN chmod +x setup.sh && ls -la
-
-# your custom setup goes here
-COPY --from=builder /build/target/release/anda_bot ./anda_bot
 
 # entry point
 ENTRYPOINT [ "/app/setup.sh" ]
