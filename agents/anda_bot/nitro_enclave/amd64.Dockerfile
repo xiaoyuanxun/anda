@@ -44,9 +44,9 @@ COPY --from=builder /app /app/
 WORKDIR /app
 
 # supervisord config
-COPY nitro_enclave/supervisord.conf /etc/supervisord.conf
+COPY agents/anda_bot/nitro_enclave/supervisord.conf /etc/supervisord.conf
 # setup.sh script that will act as entrypoint
-COPY nitro_enclave/Config.toml nitro_enclave/Character.toml nitro_enclave/setup.sh ./
+COPY agents/anda_bot/nitro_enclave/Config.toml agents/anda_bot/nitro_enclave/Character.toml agents/anda_bot/nitro_enclave/setup.sh ./
 RUN chmod +x setup.sh
 
 # your custom setup goes here

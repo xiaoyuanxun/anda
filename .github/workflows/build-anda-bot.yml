@@ -20,9 +20,8 @@ jobs:
     - uses: Swatinem/rust-cache@v2
     - name: Build the Docker image
       run: |
-        cd agents/anda_bot
         docker login --username ${{ github.actor }} --password ${{ secrets.GITHUB_TOKEN }} ${{ env.REGISTRY }}
         IMAGE_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}_enclave_amd64:${{ inputs.build_tag }}"
         LATEST_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}_enclave_amd64:latest"
         TAGS="-t ${IMAGE_TAG} -t ${LATEST_TAG}"
-        docker build -f nitro_enclave/amd64.Dockerfile $TAGS --push .
+        docker build -f agents/anda_bot/nitro_enclave/amd64.Dockerfile $TAGS --push .
