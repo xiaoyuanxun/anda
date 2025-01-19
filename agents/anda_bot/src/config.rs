@@ -3,11 +3,6 @@ use config::{Config, File, FileFormat};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct Log {
-    pub level: String,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Server {
     pub port: u16,
     pub logtail: String,
@@ -64,7 +59,6 @@ pub struct X {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Conf {
     pub character: Character,
-    pub log: Log,
     pub server: Server,
     pub llm: Llm,
     pub tee: Tee,

@@ -1,0 +1,32 @@
+name: Release
+on:
+  workflow_dispatch:
+    inputs:
+      build_tag:
+        description: 'release name'
+        required: true
+        type: string
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: Swatinem/rust-cache@v2
+    - name: Build linux binary
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y musl-tools
+        rustup target add x86_64-unknown-linux-musl
+        for PACK in anda_bot
+        do
+          cargo build --release --locked -p $PACK --target x86_64-unknown-linux-musl
+          cp "target/x86_64-unknown-linux-musl/release/$PACK" "out/"
+          SHA256="$(sha256sum < "out/$PACK" | sed 's/ .*$//g')"
+          echo $SHA256 > "out/$PACK.$SHA256.txt"
+        done
+        ls -lah out
+    - name: Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: out/*
+        name: ${{ inputs.build_tag }}

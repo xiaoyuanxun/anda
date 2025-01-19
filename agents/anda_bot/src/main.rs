@@ -32,7 +32,7 @@ use ic_object_store::{
 use ic_tee_agent::setting::decrypt_payload;
 use ic_tee_cdk::TEEAppInformation;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
-use structured_logger::{async_json::new_writer, unix_ms, Builder};
+use structured_logger::{async_json::new_writer, get_env_level, unix_ms, Builder};
 use tokio::{net::TcpStream, signal, sync::RwLock, time::sleep};
 use tokio_util::sync::CancellationToken;
 
@@ -52,6 +52,7 @@ const LOCAL_SERVER_SHUTDOWN_DURATION: Duration = Duration::from_secs(5);
 #[tokio::main]
 async fn main() -> Result<(), BoxError> {
     let cfg = config::Conf::new().unwrap_or_else(|err| panic!("config error: {}", err));
+    log::info!("{:?}", cfg);
 
     let writer = if !cfg.server.logtail.is_empty() {
         let stream = TcpStream::connect(&cfg.server.logtail).await?;
@@ -61,11 +62,10 @@ async fn main() -> Result<(), BoxError> {
         new_writer(tokio::io::stdout())
     };
 
-    Builder::with_level(cfg.log.level.as_str())
+    Builder::with_level(&get_env_level().to_string())
         .with_target_writer("*", writer)
         .init();
 
-    log::debug!("{:?}", cfg);
     let global_cancel_token = CancellationToken::new();
     let shutdown_future = shutdown_signal(global_cancel_token.clone());
 
