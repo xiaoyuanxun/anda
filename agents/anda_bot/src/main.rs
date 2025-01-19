@@ -64,7 +64,8 @@ async fn main() -> Result<(), BoxError> {
     let cose_canister = Principal::from_text(&cfg.icp.cose_canister)?;
     let character = Character::from_toml(&cfg.character.content)?;
     let default_agent = character.username.clone();
-    let namespace: Path = default_agent.clone().into();
+    let knowledge_table: Path = default_agent.to_ascii_lowercase().into();
+    let cose_setting_key: Vec<u8> = default_agent.to_ascii_lowercase().into();
 
     log::info!(target: LOG_TARGET, "start to connect TEE service");
     let tee = TEEClient::new(&cfg.tee.tee_host, &cfg.tee.basic_token, cose_canister);
@@ -85,7 +86,7 @@ async fn main() -> Result<(), BoxError> {
     let master_secret = tee
         .get_cose_encrypted_key(&SettingPath {
             ns: cfg.icp.cose_namespace.clone(),
-            key: default_agent.as_bytes().to_vec().into(),
+            key: cose_setting_key.clone().into(),
             subject: Some(tee_info.id),
             ..Default::default()
         })
@@ -95,7 +96,7 @@ async fn main() -> Result<(), BoxError> {
     let encrypted_cfg = if let Ok(setting) = tee
         .setting_get(&SettingPath {
             ns: cfg.icp.cose_namespace.clone(),
-            key: default_agent.as_bytes().to_vec().into(),
+            key: cose_setting_key.into(),
             subject: Some(tee_info.id),
             ..Default::default()
         })
@@ -118,7 +119,8 @@ async fn main() -> Result<(), BoxError> {
     let object_store = Arc::new(object_store);
 
     log::info!(target: LOG_TARGET, "start to init knowledge_store");
-    let knowledge_store = connect_knowledge_store(object_store.clone(), namespace, &model).await?;
+    let knowledge_store =
+        connect_knowledge_store(object_store.clone(), knowledge_table, &model).await?;
 
     log::info!(target: LOG_TARGET, "start to build engine");
     let agent = character.build(

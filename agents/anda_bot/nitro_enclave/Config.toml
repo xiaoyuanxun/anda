@@ -1,0 +1,35 @@
+[log]
+# Log level: "trace", "debug", "info", "warn", "error"
+level = "info"
+
+[server]
+# The address to bind to.
+port = 8042
+
+[character]
+path = "./Character.toml"
+
+[tee]
+tee_host = "http://127.0.0.1:8080"
+basic_token = "eGF4rxS4PMGK3YZ"
+
+[icp]
+api_host = "https://icp-api.io"
+cose_namespace = "anda"
+cose_canister = "53cyg-yyaaa-aaaap-ahpua-cai"
+object_store_canister = "6at64-oyaaa-aaaap-anvza-cai"
+
+[llm]
+deepseek_api_key = ""
+cohere_api_key = ""
+cohere_embedding_model = ""
+openai_api_key = ""
+openai_embedding_model = ""
+openai_completion_model = ""
+
+[x]
+username = ""
+password = ""
+email = ""
+two_factor_auth = ""
+cookie_string = ""
