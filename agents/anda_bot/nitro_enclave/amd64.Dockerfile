@@ -2,7 +2,7 @@
 FROM --platform=linux/amd64 rust:slim-bookworm AS builder
 
 RUN apt-get update \
-    && apt-get install -y gcc g++ libc6-dev pkg-config libssl-dev wget
+    && apt-get install -y gcc g++ libc6-dev pkg-config libssl-dev wget protobuf-compiler
 
 # working directory
 WORKDIR /app
@@ -47,7 +47,7 @@ WORKDIR /app
 COPY agents/anda_bot/nitro_enclave/supervisord.conf /etc/supervisord.conf
 # setup.sh script that will act as entrypoint
 COPY agents/anda_bot/nitro_enclave/Config.toml agents/anda_bot/nitro_enclave/Character.toml agents/anda_bot/nitro_enclave/setup.sh ./
-RUN chmod +x setup.sh
+RUN chmod +x setup.sh && ls -la
 
 # your custom setup goes here
 COPY --from=builder /build/target/release/anda_bot ./anda_bot
