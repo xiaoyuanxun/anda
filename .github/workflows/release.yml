@@ -9,19 +9,12 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    container: clux/muslrust:stable
     steps:
     - uses: actions/checkout@v4
     - uses: Swatinem/rust-cache@v2
     - name: Build linux binary
       run: |
-        sudo apt-get update
-        sudo apt-get install -y musl-tools libssl-dev pkg-config
-        rustup target add x86_64-unknown-linux-musl
-        export OPENSSL_DIR=/usr/lib/x86_64-linux-musl/
-        export OPENSSL_INCLUDE_DIR=/usr/include/x86_64-linux-musl/openssl
-        export OPENSSL_STATIC=1
-        echo "Using OPENSSL_DIR: $OPENSSL_DIR"
-        echo "Using OPENSSL_INCLUDE_DIR: $OPENSSL_INCLUDE_DIR"
         mkdir -p out
         for PACK in anda_bot
         do
