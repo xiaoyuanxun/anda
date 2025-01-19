@@ -3591,11 +3591,10 @@ dependencies = [
 
 [[package]]
 name = "ic_tee_agent"
-version = "0.2.6"
+version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a581faee57828997f2ccf8995c278e071c9b6a061a1376507a847d7b5b1644ee"
+checksum = "ebe3efb4255c56ef3130e95fd9f37b5941d39a374403b34dc8fa3489a955995f"
 dependencies = [
- "async-trait",
  "axum-core",
  "base64 0.22.1",
  "bytes",
@@ -3618,15 +3617,16 @@ dependencies = [
 
 [[package]]
 name = "ic_tee_cdk"
-version = "0.2.5"
+version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8e11f7599de665c166c4439efa98d2f641032423f521c08dff960dfdae9b4b8"
+checksum = "088ebba473b0c5557f5334ae280c4daf410a20765fb8062b2418045a45cd6400"
 dependencies = [
  "candid",
  "ciborium",
  "ic-canister-sig-creation",
  "serde",
  "serde_bytes",
+ "sha3",
 ]
 
 [[package]]

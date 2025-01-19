@@ -33,7 +33,7 @@ use ic_tee_agent::setting::decrypt_payload;
 use ic_tee_cdk::TEEAppInformation;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use structured_logger::{async_json::new_writer, unix_ms, Builder};
-use tokio::{signal, sync::RwLock, time::sleep};
+use tokio::{net::TcpStream, signal, sync::RwLock, time::sleep};
 use tokio_util::sync::CancellationToken;
 
 mod config;
@@ -52,8 +52,17 @@ const LOCAL_SERVER_SHUTDOWN_DURATION: Duration = Duration::from_secs(5);
 #[tokio::main]
 async fn main() -> Result<(), BoxError> {
     let cfg = config::Conf::new().unwrap_or_else(|err| panic!("config error: {}", err));
+
+    let writer = if !cfg.server.logtail.is_empty() {
+        let stream = TcpStream::connect(&cfg.server.logtail).await?;
+        stream.writable().await?;
+        new_writer(stream)
+    } else {
+        new_writer(tokio::io::stdout())
+    };
+
     Builder::with_level(cfg.log.level.as_str())
-        .with_target_writer("*", new_writer(tokio::io::stdout()))
+        .with_target_writer("*", writer)
         .init();
 
     log::debug!("{:?}", cfg);
@@ -148,7 +157,7 @@ async fn main() -> Result<(), BoxError> {
             id: my_principal,
             name: engine_name,
             start_time_ms: unix_ms(),
-            default_agent: default_agent,
+            default_agent,
             object_store_canister: Some(object_store_canister),
             caller: Principal::anonymous(),
         }),

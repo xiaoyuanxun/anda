@@ -5,6 +5,8 @@ level = "info"
 [server]
 # The address to bind to.
 port = 8042
+# where the logtail server is running on host (e.g. 127.0.0.1:9999)
+logtail = "127.0.0.1:9999"
 
 [character]
 path = "./Character.toml"

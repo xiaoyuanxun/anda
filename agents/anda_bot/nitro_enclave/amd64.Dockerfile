@@ -24,7 +24,7 @@ RUN wget -qO- https://github.com/AdguardTeam/dnsproxy/releases/download/v0.73.3/
 RUN mv linux-amd64/dnsproxy ./ && chmod +x dnsproxy
 
 # dnsproxy to provide DNS services inside the enclave
-RUN wget -O ic_tee_nitro_gateway https://github.com/ldclabs/ic-tee/releases/download/v0.2.6/ic_tee_nitro_gateway
+RUN wget -O ic_tee_nitro_gateway https://github.com/ldclabs/ic-tee/releases/download/v0.2.8/ic_tee_nitro_gateway
 RUN chmod +x ic_tee_nitro_gateway
 
 WORKDIR /build

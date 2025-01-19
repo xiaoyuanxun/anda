@@ -10,6 +10,7 @@ pub struct Log {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Server {
     pub port: u16,
+    pub logtail: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
