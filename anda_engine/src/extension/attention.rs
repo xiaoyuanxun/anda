@@ -205,13 +205,8 @@ impl Attention {
             ..Default::default()
         };
 
-        println!("{:?}", req.prompt);
-
         match ctx.completion(req).await {
-            Ok(AgentOutput { content, .. }) => {
-                println!("{:?}", content);
-                content.to_ascii_lowercase().contains("true")
-            }
+            Ok(AgentOutput { content, .. }) => content.to_ascii_lowercase().contains("true"),
             Err(_) => false,
         }
     }
