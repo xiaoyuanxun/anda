@@ -69,7 +69,7 @@ pub struct Conf {
 impl Conf {
     pub fn new() -> Result<Self, BoxError> {
         let file_name =
-            std::env::var("CONFIG_FILE_PATH").unwrap_or_else(|_| "./config.toml".into());
+            std::env::var("CONFIG_FILE_PATH").unwrap_or_else(|_| "./Config.toml".into());
         let mut cfg = Self::from(&file_name)?;
         cfg.character.content = std::fs::read_to_string(&cfg.character.path)?;
         Ok(cfg)

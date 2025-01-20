@@ -47,5 +47,7 @@ COPY agents/anda_bot/nitro_enclave/supervisord.conf /etc/supervisord.conf
 COPY agents/anda_bot/nitro_enclave/Config.toml agents/anda_bot/nitro_enclave/Character.toml agents/anda_bot/nitro_enclave/setup.sh ./
 RUN chmod +x setup.sh && ls -la
 
+ENV LOG_LEVEL=info CONFIG_FILE_PATH=/app/Config.toml
+
 # entry point
 ENTRYPOINT [ "/app/setup.sh" ]
