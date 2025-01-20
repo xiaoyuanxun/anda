@@ -146,28 +146,26 @@ async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
         .await?;
 
     log::info!(target: LOG_TARGET, "start to get encrypted config");
-    let encrypted_cfg = if let Ok(setting) = tee
-        .setting_get(&SettingPath {
-            ns: cfg.icp.cose_namespace.clone(),
-            user_owned: false,
-            subject: Some(tee_info.id),
-            key: cose_setting_key.into(),
-            version: 0,
-        })
-        .await
-    {
+    let encrypted_cfg_path = SettingPath {
+        ns: cfg.icp.cose_namespace.clone(),
+        user_owned: false,
+        subject: Some(tee_info.id),
+        key: cose_setting_key.into(),
+        version: 0,
+    };
+    let encrypted_cfg = if let Ok(setting) = tee.setting_get(&encrypted_cfg_path).await {
         let encrypted_cfg = decrypt_payload(&setting, &admin_master_secret, &[])?;
 
         config::Conf::from_toml(&String::from_utf8(encrypted_cfg)?)?
     } else {
+        log::info!("encrypted_cfg not found:\n{:?}", &encrypted_cfg_path);
+
         cfg.clone()
     };
 
-    log::info!("encrypted_cfg:\n{:?}", encrypted_cfg);
-
     // LL Models
     log::info!(target: LOG_TARGET, "start to connect models");
-    let model = connect_model(&encrypted_cfg)?;
+    let model = connect_model(&encrypted_cfg.llm)?;
 
     // ObjectStore
     log::info!(target: LOG_TARGET, "start to connect object_store");
@@ -314,20 +312,20 @@ async fn connect_knowledge_store(
     Ok(ks)
 }
 
-fn connect_model(cfg: &config::Conf) -> Result<Model, BoxError> {
-    if cfg.llm.openai_api_key.is_empty() {
+fn connect_model(cfg: &config::Llm) -> Result<Model, BoxError> {
+    if cfg.openai_api_key.is_empty() {
         Ok(Model::new(
             Arc::new(
-                cohere::Client::new(&cfg.llm.cohere_api_key)
-                    .embedding_model(&cfg.llm.cohere_embedding_model),
+                cohere::Client::new(&cfg.cohere_api_key)
+                    .embedding_model(&cfg.cohere_embedding_model),
             ),
-            Arc::new(deepseek::Client::new(&cfg.llm.deepseek_api_key).completion_model()),
+            Arc::new(deepseek::Client::new(&cfg.deepseek_api_key).completion_model()),
         ))
     } else {
-        let cli = openai::Client::new(&cfg.llm.openai_api_key);
+        let cli = openai::Client::new(&cfg.openai_api_key);
         Ok(Model::new(
-            Arc::new(cli.embedding_model(&cfg.llm.openai_embedding_model)),
-            Arc::new(cli.completion_model(&cfg.llm.openai_completion_model)),
+            Arc::new(cli.embedding_model(&cfg.openai_embedding_model)),
+            Arc::new(cli.completion_model(&cfg.openai_completion_model)),
         ))
     }
 }
