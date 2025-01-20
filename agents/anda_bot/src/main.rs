@@ -153,14 +153,21 @@ async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
         key: cose_setting_key.into(),
         version: 0,
     };
-    let encrypted_cfg = if let Ok(setting) = tee.setting_get(&encrypted_cfg_path).await {
-        let encrypted_cfg = decrypt_payload(&setting, &admin_master_secret, &[])?;
+    let encrypted_cfg = match tee.setting_get(&encrypted_cfg_path).await {
+        Ok(setting) => {
+            let encrypted_cfg = decrypt_payload(&setting, &admin_master_secret, &[])?;
 
-        config::Conf::from_toml(&String::from_utf8(encrypted_cfg)?)?
-    } else {
-        log::info!("encrypted_cfg not found:\n{:?}", &encrypted_cfg_path);
+            config::Conf::from_toml(&String::from_utf8(encrypted_cfg)?)?
+        }
+        Err(err) => {
+            log::info!(
+                "get encrypted_cfg error: {:?}\n{:?}",
+                err,
+                &encrypted_cfg_path
+            );
 
-        cfg.clone()
+            cfg.clone()
+        }
     };
 
     // LL Models
