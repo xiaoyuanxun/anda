@@ -1,12 +1,3 @@
-[server]
-# The address to bind to.
-port = 8042
-# where the logtail server is running on host (e.g. 127.0.0.1:9999)
-logtail = "127.0.0.1:9999"
-
-[character]
-path = "./Character.toml"
-
 [tee]
 tee_host = "http://127.0.0.1:8080"
 basic_token = "eGF4rxS4PMGK3YZ"

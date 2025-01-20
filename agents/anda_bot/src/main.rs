@@ -15,6 +15,7 @@ use anda_lancedb::{knowledge::KnowledgeStore, lancedb::LanceVectorStore};
 use axum::{routing, Router};
 use candid::Principal;
 use ciborium::from_reader;
+use clap::Parser;
 use ed25519_consensus::SigningKey;
 use ic_agent::{
     identity::{BasicIdentity, Identity},
@@ -43,35 +44,62 @@ mod twitter;
 const APP_NAME: &str = env!("CARGO_PKG_NAME");
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-static LOG_TARGET: &str = "bootstrap";
+static LOG_TARGET: &str = "anda_bot";
 static IC_OBJECT_STORE: &str = "ic://object_store";
 static ENGINE_NAME: &str = "Anda.bot";
 const LOCAL_SERVER_SHUTDOWN_DURATION: Duration = Duration::from_secs(5);
 
-// cargo run -p anda_bot
+#[derive(Debug, Parser)]
+#[clap(author, version, about, long_about = None)]
+struct Cli {
+    /// Port to listen on
+    #[clap(long, default_value = "8042")]
+    port: u16,
+
+    /// Path to the configuration file
+    #[clap(long, env = "CONFIG_FILE_PATH", default_value = "./Config.toml")]
+    config: String,
+
+    #[clap(long, env = "CHARACTER_FILE_PATH", default_value = "./Character.toml")]
+    character: String,
+
+    /// where the logtail server is running on host (e.g. 127.0.0.1:9999)
+    #[clap(long)]
+    logtail: Option<String>,
+}
+
+// cargo run -p anda_bot -- --port 8042 --config agents/anda_bot/nitro_enclave/Config.toml --character agents/anda_bot/nitro_enclave/Character.toml
 #[tokio::main]
 async fn main() -> Result<(), BoxError> {
-    let cfg = config::Conf::new().unwrap_or_else(|err| panic!("config error: {}", err));
-    log::info!("{:?}", cfg);
+    let cli = Cli::parse();
+    println!("{:?}", &cli);
 
-    let writer = if !cfg.server.logtail.is_empty() {
-        let stream = TcpStream::connect(&cfg.server.logtail).await?;
+    let writer = if let Some(logtail) = &cli.logtail {
+        let stream = TcpStream::connect(logtail).await?;
         stream.writable().await?;
         new_writer(stream)
     } else {
         new_writer(tokio::io::stdout())
     };
-
     Builder::with_level(&get_env_level().to_string())
         .with_target_writer("*", writer)
         .init();
+
+    let cfg = config::Conf::from_file(&cli.config).unwrap_or_else(|err| {
+        println!("config error: {:?}", err);
+        panic!("config error: {:?}", err)
+    });
+    log::info!("{:?}", cfg);
+
+    let character = std::fs::read_to_string(&cli.character)?;
+    let character = Character::from_toml(&character)?;
+    log::info!("{:?}", character);
 
     let global_cancel_token = CancellationToken::new();
     let shutdown_future = shutdown_signal(global_cancel_token.clone());
 
     let engine_name = ENGINE_NAME.to_string();
     let cose_canister = Principal::from_text(&cfg.icp.cose_canister)?;
-    let character = Character::from_toml(&cfg.character.content)?;
     let default_agent = character.username.clone();
     let knowledge_table: Path = default_agent.to_ascii_lowercase().into();
     let cose_setting_key: Vec<u8> = default_agent.to_ascii_lowercase().into();
@@ -165,7 +193,7 @@ async fn main() -> Result<(), BoxError> {
 
     match tokio::try_join!(
         start_server(
-            format!("127.0.0.1:{}", cfg.server.port),
+            format!("127.0.0.1:{}", cli.port),
             app_state,
             global_cancel_token.clone()
         ),

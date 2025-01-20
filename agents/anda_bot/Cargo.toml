@@ -16,6 +16,7 @@ anda_lancedb = { path = "../../anda_lancedb", version = "0.1" }
 axum = { workspace = true }
 axum-server = { workspace = true }
 candid = { workspace = true }
+clap = { workspace = true }
 bytes = { workspace = true }
 ciborium = { workspace = true }
 futures = { workspace = true }
