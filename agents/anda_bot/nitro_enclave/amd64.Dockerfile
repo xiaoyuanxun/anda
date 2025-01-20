@@ -23,7 +23,7 @@ RUN chmod +x vsock-to-ip
 RUN wget -qO- https://github.com/AdguardTeam/dnsproxy/releases/download/v0.73.3/dnsproxy-linux-amd64-v0.73.3.tar.gz | tar xvz
 RUN mv linux-amd64/dnsproxy ./ && chmod +x dnsproxy
 
-RUN wget -O ic_tee_nitro_gateway https://github.com/ldclabs/ic-tee/releases/download/v0.2.9/ic_tee_nitro_gateway
+RUN wget -O ic_tee_nitro_gateway https://github.com/ldclabs/ic-tee/releases/download/v0.2.10/ic_tee_nitro_gateway
 RUN chmod +x ic_tee_nitro_gateway
 
 RUN wget -O anda_bot https://github.com/ldclabs/anda/releases/download/v0.2.0/anda_bot
