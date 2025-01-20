@@ -15,6 +15,7 @@ jobs:
         mkdir -p out
         for PACK in anda_bot
         do
+          export RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-s"
           cargo build --release --locked -p $PACK --target x86_64-unknown-linux-musl
           cp "target/x86_64-unknown-linux-musl/release/$PACK" "out/"
           SHA256="$(sha256sum < "out/$PACK" | sed 's/ .*$//g')"

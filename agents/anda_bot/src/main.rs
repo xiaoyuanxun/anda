@@ -73,7 +73,6 @@ struct Cli {
 #[tokio::main]
 async fn main() -> Result<(), BoxError> {
     let cli = Cli::parse();
-    println!("{:?}", &cli);
 
     let writer = if let Some(logtail) = &cli.logtail {
         let stream = TcpStream::connect(logtail).await?;
@@ -86,6 +85,18 @@ async fn main() -> Result<(), BoxError> {
         .with_target_writer("*", writer)
         .init();
 
+    log::info!(target: LOG_TARGET, "bootstrap {}@{}", APP_NAME, APP_VERSION);
+    match bootstrap(cli).await {
+        Ok(_) => Ok(()),
+        Err(err) => {
+            log::error!(target: LOG_TARGET, "bootstrap error: {:?}", err);
+            tokio::time::sleep(Duration::from_secs(3)).await;
+            Err(err)
+        }
+    }
+}
+
+async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
     let cfg = config::Conf::from_file(&cli.config).unwrap_or_else(|err| {
         println!("config error: {:?}", err);
         panic!("config error: {:?}", err)
@@ -151,6 +162,8 @@ async fn main() -> Result<(), BoxError> {
     } else {
         cfg.clone()
     };
+
+    log::info!("encrypted_cfg:\n{:?}", encrypted_cfg);
 
     // LL Models
     log::info!(target: LOG_TARGET, "start to connect models");
