@@ -47,6 +47,7 @@ const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 static LOG_TARGET: &str = "anda_bot";
 static IC_OBJECT_STORE: &str = "ic://object_store";
 static ENGINE_NAME: &str = "Anda.bot";
+static COSE_SECRET_PERMANENT_KEY: &str = "v1";
 const LOCAL_SERVER_SHUTDOWN_DURATION: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Parser)]
@@ -107,7 +108,7 @@ async fn main() -> Result<(), BoxError> {
     log::info!(target: LOG_TARGET, "start to connect TEE service");
     let tee = TEEClient::new(&cfg.tee.tee_host, &cfg.tee.basic_token, cose_canister);
     let tee_info = connect_tee(&cfg, &tee, global_cancel_token.clone()).await?;
-    log::debug!(target: LOG_TARGET, "TEEAppInformation: {:?}", tee_info);
+    log::info!(target: LOG_TARGET, "TEEAppInformation: {:?}", tee_info);
 
     let root_path = Path::from(ROOT_PATH);
     let id_secret = tee
@@ -115,17 +116,21 @@ async fn main() -> Result<(), BoxError> {
         .await?;
     let my_id = BasicIdentity::from_signing_key(SigningKey::from(id_secret));
     let my_principal = my_id.sender()?;
+    log::info!(target: LOG_TARGET,
+       "sign_in, principal: {:?}", my_principal.to_text());
+
     let my_agent = build_agent(&cfg.icp.api_host, Arc::new(my_id))
         .await
         .unwrap();
 
-    log::info!(target: LOG_TARGET, "start to get master_secret");
-    let master_secret = tee
+    log::info!(target: LOG_TARGET, "start to get admin_master_secret");
+    let admin_master_secret = tee
         .get_cose_encrypted_key(&SettingPath {
             ns: cfg.icp.cose_namespace.clone(),
-            key: cose_setting_key.clone().into(),
+            user_owned: false,
             subject: Some(tee_info.id),
-            ..Default::default()
+            key: COSE_SECRET_PERMANENT_KEY.as_bytes().to_vec().into(),
+            version: 0,
         })
         .await?;
 
@@ -133,13 +138,14 @@ async fn main() -> Result<(), BoxError> {
     let encrypted_cfg = if let Ok(setting) = tee
         .setting_get(&SettingPath {
             ns: cfg.icp.cose_namespace.clone(),
-            key: cose_setting_key.into(),
+            user_owned: false,
             subject: Some(tee_info.id),
-            ..Default::default()
+            key: cose_setting_key.into(),
+            version: 0,
         })
         .await
     {
-        let encrypted_cfg = decrypt_payload(&setting, &master_secret, &[])?;
+        let encrypted_cfg = decrypt_payload(&setting, &admin_master_secret, &[])?;
 
         config::Conf::from_toml(&String::from_utf8(encrypted_cfg)?)?
     } else {
@@ -147,9 +153,11 @@ async fn main() -> Result<(), BoxError> {
     };
 
     // LL Models
+    log::info!(target: LOG_TARGET, "start to connect models");
     let model = connect_model(&encrypted_cfg)?;
 
     // ObjectStore
+    log::info!(target: LOG_TARGET, "start to connect object_store");
     let object_store_canister = Principal::from_text(cfg.icp.object_store_canister)?;
     let object_store =
         connect_object_store(&tee, Arc::new(my_agent), &root_path, object_store_canister).await?;
