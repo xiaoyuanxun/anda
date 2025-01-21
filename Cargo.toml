@@ -44,6 +44,7 @@ ic_object_store = "0.6"
 ic-agent = "0.39"
 ic_tee_agent = "0.2"
 ic_tee_cdk = "0.2"
+num-traits = "0.2"
 object_store = { version = "0.10.2" }
 tokio-util = "0.7"
 tokio = { version = "1", features = ["full"] }

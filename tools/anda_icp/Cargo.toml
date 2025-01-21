@@ -3,7 +3,7 @@ name = "anda_icp"
 description = "Anda agent tools offers integration with the Internet Computer (ICP)."
 repository = "https://github.com/ldclabs/anda/tree/main/tools/anda_icp"
 publish = true
-version = "0.1.0"
+version = "0.2.0"
 edition.workspace = true
 keywords.workspace = true
 categories.workspace = true
@@ -25,6 +25,7 @@ http = { workspace = true }
 object_store = { workspace = true }
 ic_cose = { workspace = true }
 ic_cose_types = { workspace = true }
+num-traits = { workspace = true }
 tokio-util = { workspace = true }
 structured-logger = { workspace = true }
 reqwest = { workspace = true }

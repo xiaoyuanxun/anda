@@ -196,7 +196,7 @@ dependencies = [
 
 [[package]]
 name = "anda_icp"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anda_core",
  "anda_engine",
@@ -214,6 +214,7 @@ dependencies = [
  "icrc-ledger-types",
  "log",
  "moka 0.12.10",
+ "num-traits",
  "object_store 0.10.2",
  "rand",
  "reqwest 0.12.12",
