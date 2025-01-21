@@ -43,7 +43,7 @@ impl Tool<BaseCtx> for BalanceOfTool {
     type Output = Nat;
 
     fn name(&self) -> String {
-        format!("icp_ledger_balance_of")
+        "icp_ledger_balance_of".to_string()
     }
 
     fn description(&self) -> String {

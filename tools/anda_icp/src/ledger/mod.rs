@@ -103,7 +103,7 @@ impl ICPLedgers {
         let amount = (args.amount * 10u64.pow(*decimals as u32) as f64) as u64;
         let res: Result<Nat, TransferError> = ctx
             .canister_update(
-                &canister,
+                canister,
                 "icrc1_transfer",
                 (TransferArg {
                     from_subaccount,
@@ -155,7 +155,7 @@ impl ICPLedgers {
         };
 
         let res: Nat = ctx
-            .canister_query(&canister, "icrc1_balance_of", (account,))
+            .canister_query(canister, "icrc1_balance_of", (account,))
             .await?;
         Ok(res)
     }

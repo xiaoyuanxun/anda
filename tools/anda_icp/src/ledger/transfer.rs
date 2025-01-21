@@ -46,7 +46,7 @@ impl Tool<BaseCtx> for TransferTool {
     type Output = Nat;
 
     fn name(&self) -> String {
-        format!("icp_ledger_transfer")
+        "icp_ledger_transfer".to_string()
     }
 
     fn description(&self) -> String {
