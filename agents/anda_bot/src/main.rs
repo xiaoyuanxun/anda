@@ -180,6 +180,8 @@ async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
     let object_store =
         connect_object_store(&tee, Arc::new(my_agent), &root_path, object_store_canister).await?;
     let object_store = Arc::new(object_store);
+    let os_state = object_store.get_state().await?;
+    log::info!(target: LOG_TARGET, "object_store state: {:?}", os_state);
 
     log::info!(target: LOG_TARGET, "start to init knowledge_store");
     let knowledge_store =
@@ -313,8 +315,10 @@ async fn connect_knowledge_store(
     )
     .await?;
 
+    log::info!(target: LOG_TARGET, "knowledge_store start init");
     let ks =
         KnowledgeStore::init(&mut store, namespace, model.ndims() as u16, Some(1024 * 10)).await?;
+    log::info!(target: LOG_TARGET, "knowledge_store ks: {:?}", ks.name());
     ks.create_index().await?;
     Ok(ks)
 }
