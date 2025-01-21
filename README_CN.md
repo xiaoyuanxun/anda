@@ -1,6 +1,6 @@
-# `Anda` 🐼
+# `Anda`
 
-> 一个专为 AI 智能体开发设计的框架，致力于构建高度可组合、自主运行且具备永久记忆能力的 AI 智能体网络。
+> 🤖 一个专为 AI 智能体开发设计的框架，致力于构建高度可组合、自主运行且具备永久记忆能力的 AI 智能体网络。
 
 [![许可证](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE-MIT)
 
@@ -10,7 +10,7 @@
 
 ## 🐼 关于 ICPanda DAO
 
-ICPanda DAO 是在互联网计算机协议（ICP）区块链上建立的 SNS DAO 组织，发行了 `PANDA` 代币。作为 Anda 框架的创造者，ICPanda DAO 致力于探索 Web3 与 AI 融合的未来。
+ICPanda DAO 是在互联网计算机协议（ICP）区块链上建立的 SNS DAO 组织，发行了 `PANDA` 代币。作为 `Anda` 框架的创造者，ICPanda DAO 致力于探索 Web3 与 AI 融合的未来。
 
 - **官方网站**: [https://panda.fans/](https://panda.fans/)
 - **永久链接**: [https://dmsg.net/PANDA](https://dmsg.net/PANDA)
@@ -35,7 +35,7 @@ anda/
 
 ## 🐼 关于 Anda 的介绍
 
-**Anda** 是一个创新的智能体开发框架，旨在构建一个高度可组合、自主性强且具有永久记忆的 AI 智能体网络。通过连接各行各业的智能体，Anda 致力于打造一个超级 AGI 系统，推动人工智能向更高层次发展。
+`Anda` 是一个创新的智能体开发框架，旨在构建一个高度可组合、自主性强且具有永久记忆的 AI 智能体网络。通过连接各行各业的智能体，Anda 致力于打造一个超级 AGI 系统，推动人工智能向更高层次发展。
 
 ### ✨ 核心特性
 

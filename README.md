@@ -1,6 +1,6 @@
-# `Anda` 🐼
+# `Anda`
 
-> A framework for AI agent development, designed to build a highly composable, autonomous, and perpetually memorizing network of AI agents.
+> 🤖 A framework for AI agent development, designed to build a highly composable, autonomous, and perpetually memorizing network of AI agents.
 
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE-MIT)
 
@@ -10,7 +10,7 @@
 
 ## 🐼 About ICPanda DAO
 
-ICPanda DAO is an SNS DAO established on the Internet Computer Protocol (ICP) blockchain, issuing the `PANDA` token. As the creator of the Anda framework, ICPanda DAO is dedicated to exploring the future of Web3 and AI integration.
+ICPanda DAO is an SNS DAO established on the Internet Computer Protocol (ICP) blockchain, issuing the `PANDA` token. As the creator of the `Anda` framework, ICPanda DAO is dedicated to exploring the future of Web3 and AI integration.
 
 - **Website**: [https://panda.fans/](https://panda.fans/)
 - **Permalink**: [https://dmsg.net/PANDA](https://dmsg.net/PANDA)
@@ -33,9 +33,9 @@ anda/
 └── characters/ # characters examples
 ```
 
-## 🐼 Introduction to Anda
+## 🤖 Introduction to Anda
 
-**Anda** is an innovative framework for intelligent agent development, designed to build a highly composable, autonomous, and perpetually memorizing network of AI agents. By connecting agents across various industries, Anda aims to create a super AGI system, advancing artificial intelligence to new heights.
+`Anda` is an innovative framework for intelligent agent development, designed to build a highly composable, autonomous, and perpetually memorizing network of AI agents. By connecting agents across various industries, Anda aims to create a super AGI system, advancing artificial intelligence to new heights.
 
 ### ✨ Key Features
 
