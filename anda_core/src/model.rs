@@ -1,3 +1,16 @@
+//! Core data models and traits for the AI agent system
+//!
+//! This module defines the fundamental data structures and interfaces used throughout the AI agent system.
+//! It includes:
+//! - Core message and conversation structures ([`AgentOutput`], [`Message`], [`ToolCall`])
+//! - Function definition and tooling support ([`FunctionDefinition`])
+//! - Knowledge and document handling ([`Document`], [`Documents`])
+//! - Completion request and response structures ([`CompletionRequest`], [`Embedding`])
+//! - Core AI capabilities traits ([`CompletionFeatures`], [`EmbeddingFeatures`])
+//!
+//! The module provides serialization support through `serde` and implements various conversion traits
+//! for seamless integration between different data representations.
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{collections::BTreeMap, future::Future};

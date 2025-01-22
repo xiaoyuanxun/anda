@@ -1,3 +1,43 @@
+//! # Context Module
+//!
+//! This module defines the core context interfaces and traits that provide the execution environment
+//! for Agents and Tools in the ANDA system. It includes:
+//!
+//! - **AgentContext**: The primary interface combining all core functionality and AI-specific features
+//! - **BaseContext**: Fundamental operations available to all Agents and Tools
+//! - **Feature Traits**: Modular capabilities including state management, cryptographic operations,
+//!   storage, caching, and HTTP communication
+//!
+//! The context system is designed to be:
+//! - **Modular**: Features are separated into distinct traits for better organization and flexibility
+//! - **Asynchronous**: All operations are async to support efficient I/O operations
+//! - **Extensible**: New features can be added as separate traits while maintaining compatibility
+//! - **Secure**: Includes cryptographic operations and verified caller information
+//!
+//! ## Key Components
+//!
+//! ### Core Traits
+//! - [`AgentContext`]: Main interface combining all capabilities
+//! - [`BaseContext`]: Fundamental operations required by all contexts
+//!
+//! ### Feature Sets
+//! - [`StateFeatures`]: Contextual information about the execution environment
+//! - [`KeysFeatures`]: Cryptographic operations and key management
+//! - [`StoreFeatures`]: Persistent storage capabilities
+//! - [`CacheFeatures`]: In-memory caching with expiration policies
+//! - [`HttpFeatures`]: HTTP communication capabilities
+//! - [`VectorSearchFeatures`]: Semantic search functionality
+//! - [`KnowledgeFeatures`]: Knowledge base management and retrieval
+//!
+//! ### Data Structures
+//! - [`Knowledge`]: Represents a knowledge base entry
+//! - [`KnowledgeInput`]: Input structure for adding knowledge
+//! - [`CacheExpiry`]: Defines cache expiration policies
+//!
+//! ## Usage
+//! Implement these traits to create custom execution contexts for Agents and Tools. The `anda_engine` [`context`](https://github.com/ldclabs/anda/blob/main/anda_engine/src/context/mod.rs) module provides
+//! a complete implementation, but custom implementations can be created for specialized environments.
+
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{future::Future, time::Duration};
 

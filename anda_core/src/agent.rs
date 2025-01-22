@@ -1,3 +1,37 @@
+//! Module providing core agent functionality for AI systems
+//!
+//! This module defines the core traits and structures for creating and managing AI agents. It provides:
+//! - The [`Agent`] trait for defining custom agents with specific capabilities
+//! - Dynamic dispatch capabilities through [`AgentDyn`] trait
+//! - An [`AgentSet`] collection for managing multiple agents
+//!
+//! # Key Features
+//! - Type-safe agent definitions with clear interfaces
+//! - Asynchronous execution model
+//! - Dynamic dispatch support for runtime agent selection
+//! - Agent registration and management system
+//! - Tool dependency management
+//!
+//! # Architecture Overview
+//! The module follows a dual-trait pattern:
+//! 1. [`Agent`] - Static trait for defining concrete agent implementations
+//! 2. [`AgentDyn`] - Dynamic trait for runtime polymorphism
+//!
+//! The [`AgentSet`] acts as a registry and execution manager for agents, providing:
+//! - Agent registration and lookup
+//! - Bulk definition retrieval
+//! - Execution routing
+//!
+//! # Usage
+//!
+//! ## Reference Implementations
+//! 1. [`Extractor`](https://github.com/ldclabs/anda/blob/main/anda_engine/src/extension/extractor.rs) -
+//!    An agent for structured data extraction using LLMs
+//! 2. [`DocumentSegmenter`](https://github.com/ldclabs/anda/blob/main/anda_engine/src/extension/segmenter.rs) -
+//!    A document segmentation tool using LLMs
+//! 3. [`CharacterAgent`](https://github.com/ldclabs/anda/blob/main/anda_engine/src/extension/character.rs) -
+//!    A role-playing AI agent, also serving as the core agent for [`anda_bot`](https://github.com/ldclabs/anda/blob/main/agents/anda_bot/README.md)
+
 use serde_json::json;
 use std::{collections::BTreeMap, future::Future, marker::PhantomData, sync::Arc};
 

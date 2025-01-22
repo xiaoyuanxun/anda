@@ -1,3 +1,22 @@
+//! HTTP utilities for making RPC calls to canisters and other services
+//!
+//! This module provides functionality for:
+//! - Making CBOR-encoded RPC calls
+//! - Making Candid-encoded canister calls
+//! - Handling HTTP requests and responses
+//! - Error handling for RPC operations
+//!
+//! The main types are:
+//! - [`RPCRequest`]: Represents a generic RPC request with CBOR-encoded parameters
+//! - [`CanisterRequest`]: Represents a canister-specific request with Candid-encoded parameters
+//! - [`RPCResponse`]: Represents a response from an RPC call
+//! - [`HttpRPCError`]: Represents possible errors during RPC operations
+//!
+//! The main functions are:
+//! - [`http_rpc`]: Makes a generic CBOR-encoded RPC call
+//! - [`canister_rpc`]: Makes a canister-specific RPC call with Candid encoding
+//! - [`cbor_rpc`]: Internal function for making CBOR-encoded HTTP requests
+
 use candid::{decode_args, encode_args, utils::ArgumentEncoder, CandidType, Principal};
 use ciborium::from_reader;
 use http::header;

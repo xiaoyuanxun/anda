@@ -1,3 +1,30 @@
+//! Module providing core tooling functionality for AI Agents
+//!
+//! This module defines the core traits and structures for creating and managing tools
+//! that can be used by AI Agents. It provides:
+//! - The [`Tool`] trait for defining custom tools with typed arguments and outputs
+//! - Dynamic dispatch capabilities through [`ToolDyn`] trait
+//! - A [`ToolSet`] collection for managing multiple tools
+//!
+//! # Key Features
+//! - Type-safe tool definitions with schema validation
+//! - Asynchronous execution model
+//! - Dynamic dispatch support for runtime tool selection
+//! - Tool registration and management system
+//!
+//! # Usage
+//!
+//! ## Reference Implementations
+//! 1. [`SubmitTool`](https://github.com/ldclabs/anda/blob/main/anda_engine/src/extension/extractor.rs) -
+//!    A tool for extracting structured data using LLMs
+//! 2. [`TransferTool`](https://github.com/ldclabs/anda/blob/main/tools/anda_icp/src/ledger/transfer.rs) -
+//!    A tool for handling ICP blockchain transfers
+//! 3. [`BalanceOfTool`](https://github.com/ldclabs/anda/blob/main/tools/anda_icp/src/ledger/balance.rs) -
+//!    A tool for querying ICP blockchain balances
+//!
+//! These reference implementations share a common feature: they automatically generate the JSON Schema
+//! required for LLMs Function Calling.
+
 use ic_cose_types::validate_str;
 use serde::{de::DeserializeOwned, Serialize};
 use std::{collections::BTreeMap, future::Future, marker::PhantomData, sync::Arc};
