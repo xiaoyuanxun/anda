@@ -1,3 +1,28 @@
+//! Trusted Execution Environment (TEE) Client Implementation
+//!
+//! This module provides a client for interacting with Trusted Execution Environment (TEE) services,
+//! offering cryptographic operations and secure communication capabilities. The TEEClient implements
+//! multiple interfaces including CoseSDK, CanisterCaller, and HttpFeatures to provide a comprehensive
+//! set of security features.
+//!
+//! # Key Features
+//! - Cryptographic key derivation and management
+//! - Digital signature generation and verification (Ed25519, Secp256k1)
+//! - Secure communication with canisters
+//! - HTTPS request handling with message authentication
+//! - CBOR-encoded RPC calls with signing
+//!
+//! # Security Considerations
+//! - All cryptographic operations are performed within the TEE
+//! - HTTPS-only communication enforced
+//! - Message authentication for all signed requests
+//! - Timeouts and keep-alive settings configured for secure connections
+//!
+//! # Interfaces Implemented
+//! - [`CoseSDK`]: For COSE (CBOR Object Signing and Encryption) operations
+//! - [`CanisterCaller`]: For secure ICP canisters communication
+//! - [`HttpFeatures`]: For secure HTTP operations with signing capabilities
+
 use anda_core::{
     canister_rpc, cbor_rpc, http_rpc, BoxError, HttpFeatures, HttpRPCError, Path, RPCRequest,
     CONTENT_TYPE_CBOR,
@@ -20,6 +45,11 @@ use std::{collections::HashMap, time::Duration};
 
 use crate::APP_USER_AGENT;
 
+/// Client for interacting with Trusted Execution Environment (TEE) services
+///
+/// Provides cryptographic operations, canister communication, and HTTP features
+/// through a secure TEE interface. Manages both internal and external HTTP clients
+/// with different configurations for secure communication.
 #[derive(Clone)]
 pub struct TEEClient {
     pub http: Client,
@@ -32,6 +62,15 @@ pub struct TEEClient {
 }
 
 impl TEEClient {
+    /// Creates a new TEEClient instance
+    ///
+    /// # Arguments
+    /// * `tee_host` - Base URL of the TEE service
+    /// * `basic_token` - Authentication token for TEE access
+    /// * `cose_canister` - Principal of the COSE canister
+    ///
+    /// # Returns
+    /// Configured TEEClient instance with initialized HTTP clients and endpoints
     pub fn new(tee_host: &str, basic_token: &str, cose_canister: Principal) -> Self {
         let http = reqwest::Client::builder()
             .http2_keep_alive_interval(Some(Duration::from_secs(25)))
@@ -78,6 +117,13 @@ impl TEEClient {
     }
 
     /// Derives a 256-bit AES-GCM key from the given derivation path
+    ///
+    /// # Arguments
+    /// * `path` - Base path for key derivation
+    /// * `derivation_path` - Additional path components for key derivation
+    ///
+    /// # Returns
+    /// Result containing the derived 256-bit key or an error
     pub async fn a256gcm_key(
         &self,
         path: &Path,
@@ -91,7 +137,15 @@ impl TEEClient {
         Ok(res.into_array())
     }
 
-    /// Signs a message using Ed25519 signature scheme from the given derivation path
+    /// Signs a message using Ed25519 signature scheme
+    ///
+    /// # Arguments
+    /// * `path` - Base path for key derivation
+    /// * `derivation_path` - Additional path components for key derivation
+    /// * `message` - Message to be signed
+    ///
+    /// # Returns
+    /// Result containing the 64-byte signature or an error
     pub async fn ed25519_sign_message(
         &self,
         path: &Path,
@@ -111,7 +165,16 @@ impl TEEClient {
         Ok(res.into_array())
     }
 
-    /// Verifies an Ed25519 signature from the given derivation path
+    /// Verifies an Ed25519 signature
+    ///
+    /// # Arguments
+    /// * `path` - Base path for key derivation
+    /// * `derivation_path` - Additional path components for key derivation
+    /// * `message` - Original message that was signed
+    /// * `signature` - Signature to verify
+    ///
+    /// # Returns
+    /// Result indicating success or failure of verification
     pub async fn ed25519_verify(
         &self,
         path: &Path,
@@ -123,7 +186,14 @@ impl TEEClient {
         ed25519_verify(&pk, message, signature).map_err(|e| e.into())
     }
 
-    /// Gets the public key for Ed25519 from the given derivation path
+    /// Gets the public key for Ed25519
+    ///
+    /// # Arguments
+    /// * `path` - Base path for key derivation
+    /// * `derivation_path` - Additional path components for key derivation
+    ///
+    /// # Returns
+    /// Result containing the 32-byte public key or an error
     pub async fn ed25519_public_key(
         &self,
         path: &Path,
@@ -142,7 +212,15 @@ impl TEEClient {
         Ok(res.0.into_array())
     }
 
-    /// Signs a message using Secp256k1 BIP340 Schnorr signature from the given derivation path
+    /// Signs a message using Secp256k1 BIP340 Schnorr signature
+    ///
+    /// # Arguments
+    /// * `path` - Base path for key derivation
+    /// * `derivation_path` - Additional path components for key derivation
+    /// * `message` - Message to be signed
+    ///
+    /// # Returns
+    /// Result containing the 64-byte signature or an error
     pub async fn secp256k1_sign_message_bip340(
         &self,
         path: &Path,
@@ -162,7 +240,16 @@ impl TEEClient {
         Ok(res.into_array())
     }
 
-    /// Verifies a Secp256k1 BIP340 Schnorr signature from the given derivation path
+    /// Verifies a Secp256k1 BIP340 Schnorr signature
+    ///
+    /// # Arguments
+    /// * `path` - Base path for key derivation
+    /// * `derivation_path` - Additional path components for key derivation
+    /// * `message` - Original message that was signed
+    /// * `signature` - Signature to verify
+    ///
+    /// # Returns
+    /// Result indicating success or failure of verification
     pub async fn secp256k1_verify_bip340(
         &self,
         path: &Path,
@@ -174,7 +261,15 @@ impl TEEClient {
         secp256k1_verify_bip340(&pk, message, signature).map_err(|e| e.into())
     }
 
-    /// Signs a message using Secp256k1 ECDSA signature from the given derivation path
+    /// Signs a message using Secp256k1 ECDSA signature
+    ///
+    /// # Arguments
+    /// * `path` - Base path for key derivation
+    /// * `derivation_path` - Additional path components for key derivation
+    /// * `message` - Message to be signed
+    ///
+    /// # Returns
+    /// Result containing the 64-byte signature or an error
     pub async fn secp256k1_sign_message_ecdsa(
         &self,
         path: &Path,
@@ -194,7 +289,16 @@ impl TEEClient {
         Ok(res.into_array())
     }
 
-    /// Verifies a Secp256k1 ECDSA signature from the given derivation path
+    /// Verifies a Secp256k1 ECDSA signature
+    ///
+    /// # Arguments
+    /// * `path` - Base path for key derivation
+    /// * `derivation_path` - Additional path components for key derivation
+    /// * `message` - Original message that was signed
+    /// * `signature` - Signature to verify
+    ///
+    /// # Returns
+    /// Result indicating success or failure of verification
     pub async fn secp256k1_verify_ecdsa(
         &self,
         path: &Path,
@@ -206,7 +310,14 @@ impl TEEClient {
         secp256k1_verify_ecdsa(&pk, message, signature).map_err(|e| e.into())
     }
 
-    /// Gets the compressed SEC1-encoded public key for Secp256k1 from the given derivation path
+    /// Gets the compressed SEC1-encoded public key for Secp256k1
+    ///
+    /// # Arguments
+    /// * `path` - Base path for key derivation
+    /// * `derivation_path` - Additional path components for key derivation
+    ///
+    /// # Returns
+    /// Result containing the 33-byte public key or an error
     pub async fn secp256k1_public_key(
         &self,
         path: &Path,
@@ -226,6 +337,11 @@ impl TEEClient {
     }
 }
 
+/// Implements the `CoseSDK` trait for TEEClient to enable IC-COSE canister API calls
+///
+/// This implementation provides the necessary interface to interact with the
+/// [IC-COSE](https://github.com/ldclabs/ic-cose) canister, allowing cryptographic
+/// operations through the COSE (CBOR Object Signing and Encryption) protocol.
 impl CoseSDK for TEEClient {
     fn canister(&self) -> &Principal {
         &self.cose_canister

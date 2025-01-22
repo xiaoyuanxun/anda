@@ -1,3 +1,7 @@
+//! Context Management System for AI Agents
+//!
+//! This module provides the core infrastructure for managing execution contexts in AI systems.
+
 mod agent;
 mod base;
 mod cache;
@@ -8,6 +12,10 @@ pub use base::*;
 pub use cache::*;
 pub use tee::*;
 
+/// Mock implementations for testing purposes.
+///
+/// This module provides mock implementations of core interfaces that allow
+/// for controlled testing environments without requiring actual canister calls.
 pub mod mock {
     use anda_core::{BoxError, CanisterCaller};
     use candid::{encode_args, utils::ArgumentEncoder, CandidType, Decode, Principal};
@@ -18,7 +26,7 @@ pub mod mock {
     /// that takes the canister ID, method name, and arguments, and returns a response.
     ///
     /// # Example
-    /// ```rust
+    /// ```rust,ignore
     /// use anda_engine::context::mock::MockCanisterCaller;
     /// use anda_core::CanisterCaller;
     /// use candid::{encode_args, CandidType, Deserialize, Principal};

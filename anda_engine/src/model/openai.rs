@@ -1,5 +1,11 @@
-//! OpenAI API client and Anda integration
+//! OpenAI API client implementation for Anda Engine
 //!
+//! This module provides integration with OpenAI's API, including:
+//! - Client configuration and management
+//! - Completion model handling
+//! - Embedding model handling
+//! - Response parsing and conversion to Anda's internal formats
+
 use anda_core::{
     AgentOutput, BoxError, BoxPinFut, CompletionRequest, Embedding, FunctionDefinition, Message,
     ToolCall, CONTENT_TYPE_JSON,
@@ -72,6 +78,7 @@ pub const GPT_35_TURBO_1106: &str = "gpt-3.5-turbo-1106";
 /// `gpt-3.5-turbo-instruct` completion model
 pub const GPT_35_TURBO_INSTRUCT: &str = "gpt-3.5-turbo-instruct";
 
+/// OpenAI API client for handling embeddings and completions
 #[derive(Clone)]
 pub struct Client {
     endpoint: String,
@@ -79,7 +86,10 @@ pub struct Client {
 }
 
 impl Client {
-    /// Create a new OpenAI client with the given API key.
+    /// Creates a new OpenAI client with the given API key
+    /// 
+    /// # Arguments
+    /// * `api_key` - OpenAI API key for authentication
     pub fn new(api_key: &str) -> Self {
         Self {
             endpoint: OPENAI_API_BASE_URL.to_string(),
@@ -110,13 +120,19 @@ impl Client {
         }
     }
 
+    /// Creates a POST request builder for the given API path
     fn post(&self, path: &str) -> reqwest::RequestBuilder {
         let url = format!("{}{}", self.endpoint, path);
         self.http.post(url)
     }
 
-    /// Create an embedding model with the given name.
-    /// Note: default embedding dimension of 0 will be used if model is not known.
+    /// Creates an embedding model with the given name
+    /// 
+    /// # Arguments
+    /// * `model` - Name of the embedding model to use
+    /// 
+    /// # Note
+    /// Default embedding dimension of 0 will be used if model is not known
     pub fn embedding_model(&self, model: &str) -> EmbeddingModel {
         let ndims = match model {
             TEXT_EMBEDDING_3_LARGE => 3072,
@@ -126,12 +142,16 @@ impl Client {
         EmbeddingModel::new(self.clone(), model, ndims)
     }
 
-    /// Create a completion model with the given name.
+    /// Creates a completion model with the given name
+    /// 
+    /// # Arguments
+    /// * `model` - Name of the completion model to use
     pub fn completion_model(&self, model: &str) -> CompletionModel {
         CompletionModel::new(self.clone(), model)
     }
 }
 
+/// Response structure for OpenAI embedding API
 #[derive(Debug, Deserialize)]
 pub struct EmbeddingResponse {
     pub object: String,
@@ -163,6 +183,7 @@ impl EmbeddingResponse {
     }
 }
 
+/// Individual embedding data from OpenAI response
 #[derive(Debug, Deserialize)]
 pub struct EmbeddingData {
     pub object: String,
@@ -170,6 +191,7 @@ pub struct EmbeddingData {
     pub index: usize,
 }
 
+/// Token usage information from OpenAI API
 #[derive(Clone, Debug, Deserialize)]
 pub struct Usage {
     pub prompt_tokens: usize,
@@ -186,6 +208,7 @@ impl std::fmt::Display for Usage {
     }
 }
 
+/// Response structure for OpenAI completion API
 #[derive(Debug, Deserialize)]
 pub struct CompletionResponse {
     pub id: String,
@@ -270,6 +293,7 @@ pub struct Function {
     pub arguments: String,
 }
 
+/// Embedding model implementation for OpenAI API
 #[derive(Clone)]
 pub struct EmbeddingModel {
     pub model: String,
@@ -350,6 +374,12 @@ impl EmbeddingFeaturesDyn for EmbeddingModel {
 }
 
 impl EmbeddingModel {
+    /// Creates a new embedding model instance
+    /// 
+    /// # Arguments
+    /// * `client` - OpenAI client instance
+    /// * `model` - Name of the embedding model
+    /// * `ndims` - Number of dimensions for the embedding
     pub fn new(client: Client, model: &str, ndims: usize) -> Self {
         Self {
             client,
@@ -359,6 +389,7 @@ impl EmbeddingModel {
     }
 }
 
+/// Completion model implementation for OpenAI API
 #[derive(Clone)]
 pub struct CompletionModel {
     client: Client,
@@ -366,6 +397,11 @@ pub struct CompletionModel {
 }
 
 impl CompletionModel {
+    /// Creates a new completion model instance
+    /// 
+    /// # Arguments
+    /// * `client` - OpenAI client instance
+    /// * `model` - Name of the completion model
     pub fn new(client: Client, model: &str) -> Self {
         Self {
             client,
@@ -373,6 +409,7 @@ impl CompletionModel {
         }
     }
 
+    /// Checks if the model is one of the newer OpenAI models
     fn is_new_model(&self) -> bool {
         self.model.starts_with("o1-")
     }

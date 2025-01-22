@@ -1,3 +1,32 @@
+//! Character definition and agent implementation for AI personalities
+//!
+//! This module provides the core structures and implementations for defining and interacting with
+//! AI characters. It includes:
+//! - Character definition structure with personality traits, communication styles, and learning capabilities
+//! - Character agent implementation that handles interactions and maintains state
+//! - Integration with knowledge bases and attention mechanisms
+//!
+//! # Key Components
+//! - [`Character`]: Defines the personality, traits, and capabilities of an AI agent
+//! - [`Style`]: Defines communication patterns and expression characteristics
+//! - [`Learning`]: Configures learning capabilities and tool dependencies
+//! - [`CharacterAgent`]: Implements the Agent trait for character-based interactions
+//!
+//! # Usage
+//! 1. Define a character using the Character structure
+//! 2. Create a CharacterAgent instance with required dependencies
+//! 3. Use the agent to handle user interactions and maintain conversation state
+//!
+//! # Example
+//! ```rust,ignore
+//! let character = Character {
+//!     name: "ExampleBot".to_string(),
+//!     // ... other fields ...
+//! };
+//! let agent = character.build(attention, segmenter, knowledge);
+//! let output = agent.run(ctx, "Hello".to_string(), None).await?;
+//! ```
+
 use anda_core::{
     evaluate_tokens, Agent, AgentContext, AgentOutput, BoxError, CacheExpiry, CacheFeatures,
     CompletionFeatures, CompletionRequest, Documents, Embedding, EmbeddingFeatures, Knowledge,
@@ -18,7 +47,9 @@ use crate::{context::AgentCtx, store::MAX_STORE_OBJECT_SIZE};
 const MAX_CHAT_HISTORY: usize = 42;
 const CHAT_HISTORY_TTI: Duration = Duration::from_secs(3600 * 24 * 7);
 
-/// Character definition structure containing all attributes and behavioral traits
+/// Represents a character definition with attributes, traits, and behaviors
+/// Contains all necessary information to define an AI agent's personality and capabilities.
+///
 /// For a complete, production-level character definition example, see:
 /// https://github.com/ldclabs/anda/blob/main/agents/anda_bot/Character.toml
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -94,16 +125,30 @@ pub struct Learning {
 }
 
 impl Character {
+    /// Creates a Character instance from TOML formatted string
+    /// # Arguments
+    /// * `content` - TOML string containing character definition
+    /// # Returns
+    /// Result with Character instance or error
     pub fn from_toml(content: &str) -> Result<Self, BoxError> {
         let character: Self = toml::from_str(content)?;
         Ok(character)
     }
 
+    /// Serializes the Character instance to TOML format
+    /// # Returns
+    /// Result with TOML string or error
     pub fn to_toml(&self) -> Result<String, BoxError> {
         let content = toml::to_string(&self)?;
         Ok(content)
     }
 
+    /// Converts character definition into a completion request
+    /// # Arguments
+    /// * `prompt` - User input prompt
+    /// * `prompter_name` - Optional name of the user
+    /// # Returns
+    /// CompletionRequest configured with character context
     pub fn to_request(&self, prompt: String, prompter_name: Option<String>) -> CompletionRequest {
         let utc: DateTime<Utc> = Utc::now();
         let system = format!(
@@ -164,6 +209,13 @@ impl Character {
         .context("self_learning_context".to_string(), learning_context)
     }
 
+    /// Builds a CharacterAgent instance with provided dependencies
+    /// # Arguments
+    /// * `attention` - Attention mechanism for content evaluation
+    /// * `segmenter` - Document segmentation component
+    /// * `knowledge` - Knowledge base implementation
+    /// # Returns
+    /// Configured CharacterAgent instance
     pub fn build<K: KnowledgeFeatures + VectorSearchFeatures>(
         self,
         attention: Attention,
@@ -174,15 +226,31 @@ impl Character {
     }
 }
 
+/// Agent implementation for character-based interactions
 #[derive(Debug, Clone)]
 pub struct CharacterAgent<K: KnowledgeFeatures + VectorSearchFeatures> {
+    /// Character definition and attributes
     pub character: Arc<Character>,
+
+    /// Character definition and attributes
     pub attention: Arc<Attention>,
+
+    /// Document segmentation component
     pub segmenter: Arc<DocumentSegmenter>,
+
+    /// Knowledge base implementation
     pub knowledge: Arc<K>,
 }
 
 impl<K: KnowledgeFeatures + VectorSearchFeatures> CharacterAgent<K> {
+    /// Creates a new CharacterAgent instance
+    /// # Arguments
+    /// * `character` - Character definition
+    /// * `attention` - Attention mechanism
+    /// * `segmenter` - Document segmenter
+    /// * `knowledge` - Knowledge base implementation
+    /// # Returns
+    /// New CharacterAgent instance
     pub fn new(
         character: Character,
         attention: Attention,
@@ -197,6 +265,13 @@ impl<K: KnowledgeFeatures + VectorSearchFeatures> CharacterAgent<K> {
         }
     }
 
+    /// Retrieves latest knowledge entries from the knowledge base
+    /// # Arguments
+    /// * `last_seconds` - Time window for recent knowledge
+    /// * `n` - Maximum number of entries to retrieve
+    /// * `user` - Optional user filter
+    /// # Returns
+    /// Result with vector of Knowledge entries or error
     pub async fn latest_knowledge(
         &self,
         last_seconds: u32,
@@ -213,10 +288,12 @@ impl<K> Agent<AgentCtx> for CharacterAgent<K>
 where
     K: KnowledgeFeatures + VectorSearchFeatures + Clone + Send + Sync + 'static,
 {
+    /// Returns the character's unique username as identifier
     fn name(&self) -> String {
         self.character.username.clone()
     }
 
+    /// Returns list of required tools for the character's operation
     fn description(&self) -> String {
         self.character.description.clone()
     }
@@ -225,6 +302,13 @@ where
         self.character.learning.tools.clone()
     }
 
+    /// Main execution method for handling user interactions
+    /// # Arguments
+    /// * `ctx` - Agent context containing environment and state
+    /// * `prompt` - User input message
+    /// * `_attachment` - Optional binary attachment (currently unused)
+    /// # Returns
+    /// Result with AgentOutput containing response or error
     async fn run(
         &self,
         ctx: AgentCtx,

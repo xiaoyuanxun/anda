@@ -1,3 +1,35 @@
+//! # Store Module
+//!
+//! This module provides the core storage functionality for Anda Engine, combining both object storage
+//! and vector search capabilities. It serves as the primary interface for data persistence and retrieval.
+//!
+//! ## Key Components
+//!
+//! - **Store**: Main storage interface that handles object storage operations
+//! - **VectorStore**: Wrapper for vector search functionality
+//! - **VectorSearchFeaturesDyn**: Trait defining vector search capabilities
+//!
+//! ## Features
+//!
+//! - Object storage operations (get, put, list, delete, rename)
+//! - Vector search operations (top_n, top_n_ids)
+//! - Namespace isolation for multi-tenant support
+//! - Mock and placeholder implementations for testing
+//!
+//! ## Implementation Details
+//!
+//! The module uses the [`ObjectStore`] trait from the `object_store` crate as its backend storage,
+//! allowing for various storage implementations to be used interchangeably.
+//!
+//! ## Examples
+//!
+//! Basic usage:
+//! ```rust,ignore
+//! let store = Store::new(Arc::new(InMemory::new()));
+//! store.store_put(&namespace, &path, PutMode::Create, data).await?;
+//! let (content, meta) = store.store_get(&namespace, &path).await?;
+//! ```
+
 use anda_core::{path_lowercase, BoxError, BoxPinFut, ObjectMeta, Path, PutMode, PutResult};
 use futures::TryStreamExt;
 use object_store::{ObjectStore, PutOptions};
@@ -5,7 +37,10 @@ use std::sync::Arc;
 
 pub const MAX_STORE_OBJECT_SIZE: usize = 1024 * 1024 * 2; // 2 MB
 
+/// Trait defining vector search capabilities
 pub trait VectorSearchFeaturesDyn: Send + Sync + 'static {
+    /// Find top N similar items based on query string
+    /// Returns vector of item identifiers
     fn top_n(
         &self,
         namespace: Path,
@@ -13,6 +48,8 @@ pub trait VectorSearchFeaturesDyn: Send + Sync + 'static {
         n: usize,
     ) -> BoxPinFut<Result<Vec<String>, BoxError>>;
 
+    /// Find top N similar items based on query string
+    /// Returns vector of internal IDs
     fn top_n_ids(
         &self,
         namespace: Path,
@@ -21,6 +58,7 @@ pub trait VectorSearchFeaturesDyn: Send + Sync + 'static {
     ) -> BoxPinFut<Result<Vec<String>, BoxError>>;
 }
 
+/// Wrapper for vector search functionality
 #[derive(Clone)]
 pub struct VectorStore {
     inner: Arc<dyn VectorSearchFeaturesDyn>,
@@ -82,6 +120,7 @@ impl VectorSearchFeaturesDyn for NotImplemented {
     }
 }
 
+/// Mock implementation of vector search that returns empty results
 #[derive(Clone, Debug)]
 pub struct MockImplemented;
 
@@ -105,6 +144,19 @@ impl VectorSearchFeaturesDyn for MockImplemented {
     }
 }
 
+/// Main storage interface combining object storage and vector search capabilities
+///
+/// In Anda Engine, the `path` parameter is derived from agents' or tools' `name`,
+/// ensuring isolated object storage for each agent or tool.
+///
+/// Both VectorStore and Store use [`ObjectStore`] as their backend storage.
+/// They can share the same storage instance while maintaining data isolation through `path`.
+///
+/// You can find various implementations of [`ObjectStore`] at:
+/// https://github.com/apache/arrow-rs/tree/main/object_store
+///
+/// Alternatively, you can use [IC-COSE](https://github.com/ldclabs/ic-cose)'s
+/// [`ObjectStore`] implementation, which stores data on the ICP blockchain.
 #[derive(Clone)]
 pub struct Store {
     store: Arc<dyn ObjectStore>,

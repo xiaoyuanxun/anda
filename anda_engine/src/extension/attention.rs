@@ -1,3 +1,25 @@
+//! Attention management system for AI agents
+//!
+//! This module provides functionality for managing an AI agent's attention and response behavior
+//! in various contexts. It includes:
+//! - Content quality evaluation
+//! - Message response decision making
+//! - Social media interaction decisions (likes, retweets, quotes)
+//!
+//! The system uses a combination of token-based filtering and AI-powered evaluation to determine
+//! appropriate actions for different types of content.
+//!
+//! # Key Features
+//! - **Content Evaluation**: Assesses the quality and knowledge value of articles and posts
+//! - **Response Management**: Determines when to respond, ignore, or stop in conversations
+//! - **Social Interaction**: Decides on appropriate social media interactions based on content
+//! - **Customizable Parameters**: Allows configuration of token thresholds and stop phrases
+//!
+//! # Usage
+//! The system is designed to be integrated into AI agents that need to manage their attention
+//! and interactions in complex environments. It provides both automated decision-making and
+//! configurable parameters for fine-tuning behavior.
+
 use anda_core::{evaluate_tokens, AgentOutput, CompletionFeatures, CompletionRequest, Message};
 
 static HIGH_REWARD_COMMAND: &str = "HIGH_REWARD";
@@ -21,26 +43,38 @@ static STOP_PHRASES: [&str; 13] = [
     "can you stop",
 ];
 
+/// Enum representing possible attention commands for message handling
 #[derive(Debug, Default, PartialEq, PartialOrd)]
 pub enum AttentionCommand {
+    /// Stop responding to the conversation
     Stop,
+    /// Default state - ignore the message
     #[default]
     Ignore,
+    /// Respond to the message
     Respond,
 }
 
+/// Enum representing content quality levels
 #[derive(Debug, Default, PartialEq, PartialOrd)]
 pub enum ContentQuality {
+    /// Content should be ignored
     #[default]
     Ignore,
+    /// Content is of good quality
     Good,
+    /// Content is exceptional quality
     Exceptional,
 }
 
+/// Attention management system for handling message responses and content evaluation
 #[derive(Debug, Clone)]
 pub struct Attention {
+    /// List of phrases that should trigger a stop response
     phrases: Vec<String>,
+    /// Minimum number of tokens required for a prompt to be considered
     pub min_prompt_tokens: usize,
+    /// Minimum number of tokens required for content to be evaluated
     pub min_content_tokens: usize,
 }
 
@@ -55,6 +89,12 @@ impl Default for Attention {
 }
 
 impl Attention {
+    /// Creates a new Attention instance with custom parameters
+    ///
+    /// # Arguments
+    /// * `phrases` - List of stop phrases
+    /// * `min_prompt_tokens` - Minimum token count for prompt evaluation
+    /// * `min_content_tokens` - Minimum token count for content evaluation
     pub fn new(phrases: Vec<String>, min_prompt_tokens: usize, min_content_tokens: usize) -> Self {
         Self {
             phrases,
@@ -63,6 +103,14 @@ impl Attention {
         }
     }
 
+    /// Evaluates the quality of content based on knowledge value
+    ///
+    /// # Arguments
+    /// * `ctx` - Completion context implementing CompletionFeatures
+    /// * `content` - Content to evaluate
+    ///
+    /// # Returns
+    /// ContentQuality enum indicating the evaluation result
     pub async fn evaluate_content(
         &self,
         ctx: &impl CompletionFeatures,
@@ -113,6 +161,17 @@ impl Attention {
         }
     }
 
+    /// Determines whether to reply to a message based on context and content
+    ///
+    /// # Arguments
+    /// * `ctx` - Completion context implementing CompletionFeatures
+    /// * `my_name` - Name of the current agent
+    /// * `topics` - List of relevant conversation topics
+    /// * `recent_messages` - Recent messages in the conversation
+    /// * `message` - The message to evaluate
+    ///
+    /// # Returns
+    /// AttentionCommand indicating whether to respond, ignore, or stop
     pub async fn should_reply(
         &self,
         ctx: &impl CompletionFeatures,
@@ -181,6 +240,14 @@ impl Attention {
         }
     }
 
+    /// Determines whether to like a post based on content evaluation
+    ///
+    /// # Arguments
+    /// * `ctx` - Completion context implementing CompletionFeatures
+    /// * `content` - Content to evaluate
+    ///
+    /// # Returns
+    /// Boolean indicating whether to like the post
     pub async fn should_like(&self, ctx: &impl CompletionFeatures, content: &str) -> bool {
         // Ignore very short content
         if evaluate_tokens(content) < self.min_prompt_tokens {
@@ -211,6 +278,14 @@ impl Attention {
         }
     }
 
+    /// Determines whether to retweet a post based on content evaluation
+    ///
+    /// # Arguments
+    /// * `ctx` - Completion context implementing CompletionFeatures
+    /// * `content` - Content to evaluate
+    ///
+    /// # Returns
+    /// Boolean indicating whether to retweet the post
     pub async fn should_retweet(&self, ctx: &impl CompletionFeatures, content: &str) -> bool {
         // Ignore very short content
         if evaluate_tokens(content) < self.min_prompt_tokens {
@@ -241,6 +316,14 @@ impl Attention {
         }
     }
 
+    /// Determines whether to quote a post based on content evaluation
+    ///
+    /// # Arguments
+    /// * `ctx` - Completion context implementing CompletionFeatures
+    /// * `content` - Content to evaluate
+    ///
+    /// # Returns
+    /// Boolean indicating whether to quote the post
     pub async fn should_quote(&self, ctx: &impl CompletionFeatures, content: &str) -> bool {
         // Ignore very short content
         if evaluate_tokens(content) < self.min_prompt_tokens {

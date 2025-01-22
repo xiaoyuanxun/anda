@@ -1,5 +1,10 @@
-//! OpenAI API client and Anda integration
+//! DeepSeek API client implementation for Anda Engine
 //!
+//! This module provides integration with DeepSeek's API, including:
+//! - Client configuration and management
+//! - Completion model handling
+//! - Response parsing and conversion to Anda's internal formats
+
 use anda_core::{
     AgentOutput, BoxError, BoxPinFut, CompletionFeatures, CompletionRequest, FunctionDefinition,
     Message, ToolCall, CONTENT_TYPE_JSON,
@@ -17,6 +22,7 @@ use crate::APP_USER_AGENT;
 const DEEKSEEK_API_BASE_URL: &str = "https://api.deepseek.com";
 static DEEKSEEK_MODEL: &str = "deepseek-chat";
 
+/// DeepSeek API client configuration and HTTP client
 #[derive(Clone)]
 pub struct Client {
     endpoint: String,
@@ -24,7 +30,13 @@ pub struct Client {
 }
 
 impl Client {
-    /// Create a new DeepSeek client with the given API key.
+    /// Creates a new DeepSeek client instance with the provided API key
+    ///
+    /// # Arguments
+    /// * `api_key` - DeepSeek API key for authentication
+    ///
+    /// # Returns
+    /// Configured DeepSeek client instance
     pub fn new(api_key: &str) -> Self {
         Self {
             endpoint: DEEKSEEK_API_BASE_URL.to_string(),
@@ -55,20 +67,24 @@ impl Client {
         }
     }
 
+    /// Creates a POST request builder for the specified API path
     fn post(&self, path: &str) -> reqwest::RequestBuilder {
         let url = format!("{}{}", self.endpoint, path);
         self.http.post(url)
     }
 
-    /// Create a completion model.
+    /// Creates a new completion model instance using the default DeepSeek model
     pub fn completion_model(&self) -> CompletionModel {
         CompletionModel::new(self.clone(), DEEKSEEK_MODEL)
     }
 }
 
+/// Token usage statistics from DeepSeek API responses
 #[derive(Clone, Debug, Deserialize)]
 pub struct Usage {
+    /// Number of tokens used in the prompt
     pub prompt_tokens: usize,
+    /// Total number of tokens used (prompt + completion)
     pub total_tokens: usize,
 }
 
@@ -82,13 +98,20 @@ impl std::fmt::Display for Usage {
     }
 }
 
+/// Completion response from DeepSeek API
 #[derive(Debug, Deserialize)]
 pub struct CompletionResponse {
+    /// Unique identifier for the completion
     pub id: String,
+    /// Object type (typically "chat.completion")
     pub object: String,
+    /// Creation timestamp
     pub created: u64,
+    /// Model used for the completion
     pub model: String,
+    /// List of completion choices
     pub choices: Vec<Choice>,
+    /// Token usage statistics
     pub usage: Option<Usage>,
 }
 
@@ -122,6 +145,7 @@ impl CompletionResponse {
     }
 }
 
+/// Individual completion choice from DeepSeek API
 #[derive(Debug, Deserialize)]
 pub struct Choice {
     pub index: usize,
@@ -129,6 +153,7 @@ pub struct Choice {
     pub finish_reason: String,
 }
 
+/// Output message structure from DeepSeek API
 #[derive(Debug, Deserialize)]
 pub struct MessageOutput {
     pub role: String,
@@ -138,6 +163,7 @@ pub struct MessageOutput {
     pub tool_calls: Option<Vec<ToolCallOutput>>,
 }
 
+/// Tool call output structure from DeepSeek API
 #[derive(Debug, Deserialize)]
 pub struct ToolCallOutput {
     pub id: String,
@@ -166,13 +192,21 @@ pub struct Function {
     pub arguments: String,
 }
 
+/// Completion model wrapper for DeepSeek API
 #[derive(Clone)]
 pub struct CompletionModel {
+    /// DeepSeek client instance
     client: Client,
+    /// Model identifier
     pub model: String,
 }
 
 impl CompletionModel {
+    /// Creates a new completion model instance
+    ///
+    /// # Arguments
+    /// * `client` - DeepSeek client instance
+    /// * `model` - Model identifier string
     pub fn new(client: Client, model: &str) -> Self {
         Self {
             client,

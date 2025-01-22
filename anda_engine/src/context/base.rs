@@ -1,3 +1,28 @@
+//! Base context implementation for the Anda Engine
+//!
+//! This module provides the core context implementation that serves as the foundation
+//! for all operations in the system. The [`BaseCtx`] struct implements various traits
+//! that provide access to:
+//! - [`StateFeatures`]: Context state management
+//! - [`KeysFeatures`]: Cryptographic key operations
+//! - [`StoreFeatures`]: Persistent storage operations
+//! - [`CacheFeatures`]: Caching mechanisms
+//! - [`CanisterCaller`]: Canister interaction capabilities
+//! - [`HttpFeatures`]: HTTPs communication features
+//!
+//! The context is designed to be:
+//! - Thread-safe through Arc-based sharing of resources
+//! - Cloneable with each clone maintaining its own state
+//! - Hierarchical through child context creation
+//! - Cancellable through CancellationToken integration
+//!
+//! Key features:
+//! - Context depth limiting to prevent infinite nesting
+//! - TEE (Trusted Execution Environment) integration for secure operations
+//! - Unified interface for cryptographic operations with multiple algorithms
+//! - Consistent error handling through BoxError
+//! - Time tracking for operation duration
+
 use anda_core::{
     BaseContext, BoxError, CacheExpiry, CacheFeatures, CancellationToken, CanisterCaller,
     HttpFeatures, KeysFeatures, ObjectMeta, Path, PutMode, PutResult, StateFeatures, StoreFeatures,
@@ -30,7 +55,26 @@ pub struct BaseCtx {
     store: Store,
 }
 
+/// Base context implementation providing core functionality for the engine
+///
+/// This struct serves as the foundation for all operations in the system,
+/// providing access to:
+/// - User authentication and authorization
+/// - Cryptographic operations
+/// - Storage operations
+/// - Caching mechanisms
+/// - Canister communication
+/// - HTTP operations
+///
+/// The context is designed to be thread-safe and cloneable, with each clone
+/// maintaining its own state while sharing underlying resources.
 impl BaseCtx {
+    /// Creates a new BaseCtx instance
+    ///
+    /// # Arguments
+    /// * `cancellation_token` - Token for managing operation cancellation
+    /// * `tee` - Trusted Execution Environment client
+    /// * `store` - Storage backend implementation
     pub(crate) fn new(cancellation_token: CancellationToken, tee: TEEClient, store: Store) -> Self {
         Self {
             user: None,
@@ -45,6 +89,19 @@ impl BaseCtx {
         }
     }
 
+    /// Creates a child context with a new path
+    ///
+    /// This is used to create nested contexts while maintaining the parent's state.
+    /// The child context inherits all properties from the parent but with:
+    /// - A new path
+    /// - A child cancellation token
+    /// - Incremented depth
+    ///
+    /// # Arguments
+    /// * `path` - New path for the child context
+    ///
+    /// # Errors
+    /// Returns an error if the context depth exceeds CONTEXT_MAX_DEPTH
     pub(crate) fn child(&self, path: String) -> Result<Self, BoxError> {
         let path = Path::parse(path)?;
         let child = Self {
@@ -60,6 +117,18 @@ impl BaseCtx {
         Ok(child)
     }
 
+    /// Creates a child context with additional user and caller information
+    ///
+    /// Similar to `child()`, but allows specifying user and caller information
+    /// for the new context.
+    ///
+    /// # Arguments
+    /// * `path` - New path for the child context
+    /// * `user` - Optional user identifier
+    /// * `caller` - Optional caller principal
+    ///
+    /// # Errors
+    /// Returns an error if the context depth exceeds CONTEXT_MAX_DEPTH
     pub(crate) fn child_with(
         &self,
         path: String,

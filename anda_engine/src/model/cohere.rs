@@ -1,5 +1,10 @@
 //! Cohere API client and Anda integration
 //!
+//! This module provides a client for interacting with Cohere's API, specifically
+//! focused on text embedding functionality. It includes support for various
+//! Cohere embedding models and handles API communication, error handling,
+//! and response parsing.
+
 use anda_core::{BoxError, BoxPinFut, Embedding, CONTENT_TYPE_JSON};
 use serde::Deserialize;
 use serde_json::json;
@@ -25,6 +30,7 @@ pub const EMBED_MULTILINGUAL_V3: &str = "embed-multilingual-v3.0";
 /// `embed-multilingual-light-v3.0` embedding model
 pub const EMBED_MULTILINGUAL_LIGHT_V3: &str = "embed-multilingual-light-v3.0";
 
+/// Cohere API client configuration and HTTP client
 #[derive(Clone)]
 pub struct Client {
     endpoint: String,
@@ -32,6 +38,10 @@ pub struct Client {
 }
 
 impl Client {
+    /// Creates a new Cohere API client with the provided API key
+    /// 
+    /// # Arguments
+    /// * `api_key` - Cohere API key for authentication
     pub fn new(api_key: &str) -> Self {
         Self {
             endpoint: COHERE_API_BASE_URL.to_string(),
@@ -62,13 +72,22 @@ impl Client {
         }
     }
 
+    /// Creates a POST request builder for the specified API path
+    /// 
+    /// # Arguments
+    /// * `path` - API endpoint path (e.g., "/v1/embed")
     pub fn post(&self, path: &str) -> reqwest::RequestBuilder {
         let url = format!("{}{}", self.endpoint, path);
         self.http.post(url)
     }
 
-    /// Note: default embedding dimension of 0 will be used if model is not known.
-    /// If this is the case, it's better to use function `embedding_model_with_ndims`
+    /// Creates an embedding model instance with default dimensions
+    /// 
+    /// # Arguments
+    /// * `model` - Model identifier (e.g., EMBED_MULTILINGUAL_V3)
+    /// 
+    /// # Returns
+    /// EmbeddingModel instance with appropriate dimensions
     pub fn embedding_model(&self, model: &str) -> EmbeddingModel {
         let ndims = match model {
             EMBED_ENGLISH_V3 | EMBED_MULTILINGUAL_V3 => 1024,
@@ -79,11 +98,16 @@ impl Client {
     }
 }
 
+/// Response structure for Cohere's embedding API
 #[derive(Debug, Deserialize)]
 pub struct EmbeddingResponse {
+    /// Unique identifier for the request
     pub id: String,
+    /// Contains the actual embedding vectors
     pub embeddings: Embeddings,
+    /// Original texts that were embedded
     pub texts: Vec<String>,
+    /// Metadata about the API response
     #[serde(default)]
     pub meta: Option<Meta>,
 }
@@ -109,6 +133,7 @@ impl EmbeddingResponse {
     }
 }
 
+/// Container for different types of embedding vectors
 #[derive(Debug, Deserialize)]
 pub struct Embeddings {
     #[serde(default)]
@@ -123,6 +148,7 @@ pub struct Embeddings {
     pub ubinary: Vec<Vec<u8>>,
 }
 
+/// Metadata about the API response
 #[derive(Debug, Deserialize)]
 pub struct Meta {
     pub api_version: ApiVersion,
@@ -162,14 +188,24 @@ impl std::fmt::Display for BilledUnits {
     }
 }
 
+/// Cohere embedding model wrapper
 #[derive(Clone)]
 pub struct EmbeddingModel {
+    /// Model identifier
     pub model: String,
+    /// Client instance for API communication
     client: Client,
+    /// Number of dimensions in the embedding vectors
     ndims: usize,
 }
 
 impl EmbeddingModel {
+    /// Creates a new embedding model instance
+    /// 
+    /// # Arguments
+    /// * `client` - Cohere API client
+    /// * `model` - Model identifier
+    /// * `ndims` - Number of dimensions in the embedding vectors
     pub fn new(client: Client, model: &str, ndims: usize) -> Self {
         Self {
             client,
@@ -181,13 +217,22 @@ impl EmbeddingModel {
 
 const MAX_DOCUMENTS: usize = 96;
 impl EmbeddingFeaturesDyn for EmbeddingModel {
+    /// Returns the number of dimensions for this embedding model
     fn ndims(&self) -> usize {
         self.ndims
     }
 
-    // https://docs.cohere.com/reference/embed
-    // An array of strings for the model to embed. Maximum number of texts per call is 96.
-    // Tecommend reducing the length of each text to be under 512 tokens for optimal quality.
+    /// Generates embeddings for a batch of texts
+    /// 
+    /// # Arguments
+    /// * `texts` - Vector of text strings to embed
+    /// 
+    /// # Returns
+    /// Future resolving to a vector of Embedding structs
+    /// 
+    /// https://docs.cohere.com/reference/embed
+    /// Maximum number of texts per call is 96.
+    /// Tecommend reducing the length of each text to be under 512 tokens for optimal quality.
     fn embed(&self, texts: Vec<String>) -> BoxPinFut<Result<Vec<Embedding>, BoxError>> {
         let model = self.model.clone();
         let client = self.client.clone();
@@ -219,6 +264,13 @@ impl EmbeddingFeaturesDyn for EmbeddingModel {
         })
     }
 
+    /// Generates an embedding for a single query text
+    /// 
+    /// # Arguments
+    /// * `text` - Query text to embed
+    /// 
+    /// # Returns
+    /// Future resolving to a single Embedding struct
     fn embed_query(&self, text: String) -> BoxPinFut<Result<Embedding, BoxError>> {
         let model = self.model.clone();
         let client = self.client.clone();

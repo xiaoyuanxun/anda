@@ -1,4 +1,4 @@
-# `anda_core` Anda Core Library
+# `anda_core`: Anda Core Library
 
 ![License](https://img.shields.io/crates/l/anda_core.svg)
 [![Crates.io](https://img.shields.io/crates/d/anda_core.svg)](https://crates.io/crates/anda_core)

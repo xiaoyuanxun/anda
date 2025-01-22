@@ -1,3 +1,19 @@
+//! Model integration module for Anda Engine
+//!
+//! This module provides implementations for various AI model providers, including:
+//! - OpenAI (completion and embedding models)
+//! - DeepSeek (completion models)
+//! - Cohere (embedding models)
+//!
+//! Each provider implementation includes:
+//! - Client configuration and management
+//! - API request/response handling
+//! - Conversion to Anda's internal data structures
+//!
+//! The module is designed to be extensible, allowing easy addition of new model providers
+//! while maintaining a consistent interface through the `CompletionFeaturesDyn` and
+//! `EmbeddingFeaturesDyn` traits.
+
 use anda_core::{
     AgentOutput, BoxError, BoxPinFut, CompletionFeatures, CompletionRequest, Embedding,
     EmbeddingFeatures, ToolCall,
@@ -8,19 +24,25 @@ pub mod cohere;
 pub mod deepseek;
 pub mod openai;
 
+/// Trait for dynamic completion features that can be used across threads
 pub trait CompletionFeaturesDyn: Send + Sync + 'static {
+    /// Performs a completion request and returns a future with the agent's output
     fn completion(&self, req: CompletionRequest) -> BoxPinFut<Result<AgentOutput, BoxError>>;
 }
 
+/// Trait for dynamic embedding features that can be used across threads
 pub trait EmbeddingFeaturesDyn: Send + Sync + 'static {
+    /// Returns the number of dimensions for the embedding model
     fn ndims(&self) -> usize;
 
+    /// Embeds multiple texts and returns a future with the resulting embeddings
     fn embed(&self, texts: Vec<String>) -> BoxPinFut<Result<Vec<Embedding>, BoxError>>;
 
+    /// Embeds a single query text and returns a future with the resulting embedding
     fn embed_query(&self, text: String) -> BoxPinFut<Result<Embedding, BoxError>>;
 }
 
-/// A placeholder for not implemented features.
+/// A placeholder implementation for unimplemented features
 #[derive(Clone, Debug)]
 pub struct NotImplemented;
 
@@ -44,6 +66,7 @@ impl EmbeddingFeaturesDyn for NotImplemented {
     }
 }
 
+/// A mock implementation for testing purposes
 #[derive(Clone, Debug)]
 pub struct MockImplemented;
 
@@ -94,13 +117,17 @@ impl EmbeddingFeaturesDyn for MockImplemented {
     }
 }
 
+/// Main model struct that combines embedding and completion capabilities
 #[derive(Clone)]
 pub struct Model {
+    /// Embedding feature implementation
     pub embedder: Arc<dyn EmbeddingFeaturesDyn>,
+    /// Completion feature implementation
     pub completer: Arc<dyn CompletionFeaturesDyn>,
 }
 
 impl Model {
+    /// Creates a new Model with specified embedder and completer
     pub fn new(
         embedder: Arc<dyn EmbeddingFeaturesDyn>,
         completer: Arc<dyn CompletionFeaturesDyn>,
@@ -111,6 +138,7 @@ impl Model {
         }
     }
 
+    /// Creates a Model with unimplemented features (returns errors for all operations)
     pub fn not_implemented() -> Self {
         Self {
             embedder: Arc::new(NotImplemented),
@@ -118,6 +146,7 @@ impl Model {
         }
     }
 
+    /// Creates a Model with mock implementations for testing
     pub fn mock_implemented() -> Self {
         Self {
             embedder: Arc::new(MockImplemented),

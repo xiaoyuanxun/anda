@@ -1,3 +1,31 @@
+//! Document Segmentation Module
+//!
+//! This module provides intelligent document segmentation capabilities using LLMs.
+//! It breaks down long documents into smaller, semantically complete chunks while
+//! respecting token limits and preserving the original meaning.
+//!
+//! # Key Features
+//! - Semantic-aware segmentation preserving document integrity
+//! - Configurable token limits for both individual segments and total output
+//! - LLM-powered extraction for intelligent boundary detection
+//! - Integration with the Extractor framework for structured output
+//!
+//! # Main Components
+//! - [`DocumentSegmenter`]: The core segmentation tool implementing the Agent trait
+//! - [`SegmentOutput`]: The structured output format containing segmented text
+//!
+//! # Usage
+//! The module is typically used through the DocumentSegmenter struct which provides:
+//! - Initialization with custom token limits
+//! - Direct segmentation via the `segment()` method
+//! - Agent interface implementation for integration with the broader system
+//!
+//! # Example
+//! ```rust,ignore
+//! let segmenter = DocumentSegmenter::new(500, 8000);
+//! let segments = segmenter.segment(&ctx, long_document).await?;
+//! ```
+
 use anda_core::{
     evaluate_tokens, Agent, AgentOutput, BoxError, CompletionFeatures, Tool, ToolCall,
 };
@@ -5,11 +33,17 @@ use anda_core::{
 use super::extractor::{Deserialize, Extractor, JsonSchema, Serialize, SubmitTool};
 use crate::context::AgentCtx;
 
+/// Represents the output of document segmentation containing multiple text segments
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
 pub struct SegmentOutput {
     pub segments: Vec<String>,
 }
 
+/// A document segmentation tool that breaks long documents into smaller, semantically complete chunks
+/// using LLMs while respecting token limits.
+///
+/// Implementation Details:
+/// Built on top of the [`Extractor`] for structured output generation.
 #[derive(Debug, Clone)]
 pub struct DocumentSegmenter {
     extractor: Extractor<SegmentOutput>,
@@ -25,6 +59,11 @@ impl Default for DocumentSegmenter {
 }
 
 impl DocumentSegmenter {
+    /// Creates a new DocumentSegmenter with specified token limits
+    ///
+    /// # Arguments
+    /// * `segment_tokens` - Maximum tokens allowed per individual segment
+    /// * `max_tokens` - Maximum total tokens allowed for all segments combined
     pub fn new(segment_tokens: usize, max_tokens: usize) -> Self {
         let tool = SubmitTool::<SegmentOutput>::new();
         let tool_name = tool.name();
@@ -49,6 +88,14 @@ impl DocumentSegmenter {
         }
     }
 
+    /// Segments a document into smaller chunks while preserving semantic meaning
+    ///
+    /// # Arguments
+    /// * `ctx` - Context implementing CompletionFeatures
+    /// * `content` - The document content to be segmented
+    ///
+    /// # Returns
+    /// Result containing the segmented output and agent output
     pub async fn segment(
         &self,
         ctx: &impl CompletionFeatures,
@@ -91,15 +138,23 @@ impl DocumentSegmenter {
 }
 
 impl Agent<AgentCtx> for DocumentSegmenter {
+    /// Returns the name "document_segmenter" of the segmenter tool
     fn name(&self) -> String {
         "document_segmenter".to_string()
     }
 
+    /// Returns the description of the segmenter tool
     fn description(&self) -> String {
         "Take a lengthy knowledge document and break it into multiple concise segments using LLMs."
             .to_string()
     }
 
+    /// Executes the document segmentation process
+    ///
+    /// # Arguments
+    /// * `ctx` - Agent context
+    /// * `prompt` - Input document content
+    /// * `_attachment` - Optional binary attachment (not used in this implementation)
     async fn run(
         &self,
         ctx: AgentCtx,

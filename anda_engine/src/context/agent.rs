@@ -1,3 +1,30 @@
+//! Agent Context Implementation
+//!
+//! This module provides the core implementation of the Agent context ([`AgentCtx`]) which serves as
+//! the primary execution environment for agents in the Anda system. The context provides:
+//! 
+//! - Access to AI models for completions and embeddings
+//! - Tool execution capabilities
+//! - Agent-to-agent communication
+//! - Cryptographic operations
+//! - Storage and caching facilities
+//! - Canister interaction capabilities
+//! - HTTP communication features
+//!
+//! The [`AgentCtx`] implements multiple traits that provide different sets of functionality:
+//! - [`AgentContext`]: Core agent operations and tool/agent management
+//! - [`CompletionFeatures`]: AI model completion capabilities
+//! - [`EmbeddingFeatures`]: Text embedding generation
+//! - [`StateFeatures`]: Context state management
+//! - [`KeysFeatures`]: Cryptographic key operations
+//! - [`StoreFeatures`]: Persistent storage operations
+//! - [`CacheFeatures`]: Caching mechanisms
+//! - [`CanisterCaller`]: Canister interaction capabilities
+//! - [`HttpFeatures`]: HTTPs communication features
+//!
+//! The context is designed to be hierarchical, allowing creation of child contexts for specific
+//! agents or tools while maintaining access to the core functionality.
+
 use anda_core::{
     AgentContext, AgentOutput, AgentSet, BaseContext, BoxError, CacheExpiry, CacheFeatures,
     CancellationToken, CanisterCaller, CompletionFeatures, CompletionRequest, Embedding,
@@ -11,15 +38,27 @@ use std::{future::Future, sync::Arc, time::Duration};
 use super::base::BaseCtx;
 use crate::model::Model;
 
+/// Context for agent operations, providing access to models, tools, and other agents
 #[derive(Clone)]
 pub struct AgentCtx {
+    /// Base context providing fundamental operations
     pub base: BaseCtx,
+    /// AI model used for completions and embeddings
     pub(crate) model: Model,
+    /// Set of available tools that can be called
     pub(crate) tools: Arc<ToolSet<BaseCtx>>,
+    /// Set of available agents that can be invoked
     pub(crate) agents: Arc<AgentSet<AgentCtx>>,
 }
 
 impl AgentCtx {
+    /// Creates a new AgentCtx instance
+    ///
+    /// # Arguments
+    /// * `base` - Base context
+    /// * `model` - AI model instance
+    /// * `tools` - Set of available tools
+    /// * `agents` - Set of available agents
     pub(crate) fn new(
         base: BaseCtx,
         model: Model,
@@ -34,6 +73,10 @@ impl AgentCtx {
         }
     }
 
+    /// Creates a child context for a specific agent
+    ///
+    /// # Arguments
+    /// * `agent_name` - Name of the agent to create context for
     pub(crate) fn child(&self, agent_name: &str) -> Result<Self, BoxError> {
         Ok(Self {
             base: self.base.child(format!("A:{}", agent_name))?,
@@ -43,10 +86,20 @@ impl AgentCtx {
         })
     }
 
+    /// Creates a child base context for a specific tool
+    ///
+    /// # Arguments
+    /// * `tool_name` - Name of the tool to create context for
     pub(crate) fn child_base(&self, tool_name: &str) -> Result<BaseCtx, BoxError> {
         self.base.child(format!("T:{}", tool_name))
     }
 
+    /// Creates a child context with additional user and caller information
+    ///
+    /// # Arguments
+    /// * `agent_name` - Name of the agent
+    /// * `user` - Optional user identifier
+    /// * `caller` - Optional caller principal
     pub(crate) fn child_with(
         &self,
         agent_name: &str,
@@ -63,6 +116,12 @@ impl AgentCtx {
         })
     }
 
+    /// Creates a child base context with additional user and caller information
+    ///
+    /// # Arguments
+    /// * `tool_name` - Name of the tool
+    /// * `user` - Optional user identifier
+    /// * `caller` - Optional caller principal
     pub(crate) fn child_base_with(
         &self,
         tool_name: &str,
@@ -75,16 +134,36 @@ impl AgentCtx {
 }
 
 impl AgentContext for AgentCtx {
-    /// Gets definitions for multiple tools, optionally filtered by names
+    /// Retrieves definitions for available tools
+    ///
+    /// # Arguments
+    /// * `names` - Optional filter for specific tool names
+    ///
+    /// # Returns
+    /// Vector of function definitions for the requested tools
     fn tool_definitions(&self, names: Option<&[&str]>) -> Vec<FunctionDefinition> {
         self.tools.definitions(names)
     }
 
-    /// Gets definitions for multiple agents, optionally filtered by names
+    /// Retrieves definitions for available agents
+    ///
+    /// # Arguments
+    /// * `names` - Optional filter for specific agent names
+    ///
+    /// # Returns
+    /// Vector of function definitions for the requested agents
     fn agent_definitions(&self, names: Option<&[&str]>) -> Vec<FunctionDefinition> {
         self.agents.definitions(names)
     }
 
+    /// Executes a tool call with the given arguments
+    ///
+    /// # Arguments
+    /// * `name` - Name of the tool to call
+    /// * `args` - Arguments for the tool call as a JSON string
+    ///
+    /// # Returns
+    /// Tuple containing the result string and a boolean indicating if further processing is needed
     async fn tool_call(&self, name: &str, args: String) -> Result<(String, bool), BoxError> {
         if !self.tools.contains(name) {
             return Err(format!("tool {} not found", name).into());
@@ -94,6 +173,12 @@ impl AgentContext for AgentCtx {
         self.tools.call(name, ctx, args).await
     }
 
+    /// Executes a remote tool call via HTTP RPC
+    ///
+    /// # Arguments
+    /// * `endpoint` - Remote endpoint URL
+    /// * `tool_name` - Name of the tool to call
+    /// * `args` - Arguments for the tool call as a JSON string
     async fn remote_tool_call(
         &self,
         endpoint: &str,
@@ -104,6 +189,15 @@ impl AgentContext for AgentCtx {
             .await
     }
 
+    /// Runs an agent with the given prompt and optional attachment
+    ///
+    /// # Arguments
+    /// * `name` - Name of the agent to run
+    /// * `prompt` - Input prompt for the agent
+    /// * `attachment` - Optional binary attachment
+    ///
+    /// # Returns
+    /// [`AgentOutput`] containing the result of the agent execution
     async fn agent_run(
         &self,
         name: &str,
@@ -118,6 +212,13 @@ impl AgentContext for AgentCtx {
         self.agents.run(name, ctx, prompt, attachment).await
     }
 
+    /// Runs a remote agent via HTTP RPC
+    ///
+    /// # Arguments
+    /// * `endpoint` - Remote endpoint URL
+    /// * `agent_name` - Name of the agent to run
+    /// * `prompt` - Input prompt for the agent
+    /// * `attachment` - Optional binary attachment
     async fn remote_agent_run(
         &self,
         endpoint: &str,
@@ -131,6 +232,25 @@ impl AgentContext for AgentCtx {
 }
 
 impl CompletionFeatures for AgentCtx {
+    /// Executes a completion request with automatic tool call handling
+    ///
+    /// This method handles the completion request in a loop, automatically executing
+    /// any tool calls that are returned by the model and feeding their results back
+    /// into the model until no more tool calls need to be processed.
+    ///
+    /// # Arguments
+    /// * `req` - [`CompletionRequest`] containing the input parameters
+    ///
+    /// # Returns
+    /// [`AgentOutput`] containing the final completion result
+    ///
+    /// # Process Flow
+    /// 1. Makes initial completion request to the model
+    /// 2. If tool calls are returned:
+    ///    - Executes each tool call
+    ///    - Adds tool results to the chat history
+    ///    - Repeats the completion with updated history
+    /// 3. Returns final result when no more tool calls need processing
     async fn completion(&self, mut req: CompletionRequest) -> Result<AgentOutput, BoxError> {
         let mut tool_calls_result: Vec<ToolCall> = Vec::new();
         loop {
@@ -183,10 +303,18 @@ impl CompletionFeatures for AgentCtx {
 }
 
 impl EmbeddingFeatures for AgentCtx {
+    /// Gets the number of dimensions for the embedding model
     fn ndims(&self) -> usize {
         self.model.ndims()
     }
 
+    /// Generates embeddings for a collection of texts
+    ///
+    /// # Arguments
+    /// * `texts` - Collection of text strings to embed
+    ///
+    /// # Returns
+    /// Vector of embeddings, one for each input text
     async fn embed(
         &self,
         texts: impl IntoIterator<Item = String> + Send,
@@ -194,6 +322,13 @@ impl EmbeddingFeatures for AgentCtx {
         self.model.embed(texts).await
     }
 
+    /// Generates an embedding for a single query text
+    ///
+    /// # Arguments
+    /// * `text` - Input text to embed
+    ///
+    /// # Returns
+    /// Embedding vector for the input text
     async fn embed_query(&self, text: &str) -> Result<Embedding, BoxError> {
         self.model.embed_query(text).await
     }
@@ -202,18 +337,22 @@ impl EmbeddingFeatures for AgentCtx {
 impl BaseContext for AgentCtx {}
 
 impl StateFeatures for AgentCtx {
+    /// Gets the current user identifier, if available
     fn user(&self) -> Option<String> {
         self.base.user()
     }
 
+    /// Gets the current caller principal, if available
     fn caller(&self) -> Option<Principal> {
         self.base.caller()
     }
 
+    /// Gets the cancellation token for the current context
     fn cancellation_token(&self) -> CancellationToken {
         self.base.cancellation_token()
     }
 
+    /// Gets the elapsed time since the context was created
     fn time_elapsed(&self) -> Duration {
         self.base.time_elapsed()
     }

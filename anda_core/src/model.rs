@@ -189,6 +189,7 @@ pub struct CompletionRequest {
     /// The system message to be sent to the completion model provider, as the "system" role
     pub system: Option<String>,
 
+    /// The name of system role
     pub system_name: Option<String>,
 
     /// The chat history to be sent to the completion model provider

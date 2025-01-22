@@ -1,7 +1,7 @@
 //! Enables AI Agent to query the balance of an account for a ICP token
 //!
 //! This module provides functionality for querying account balances on the ICP network.
-//! It implements the `Tool` trait to enable AI agents to interact with ICP ledgers.
+//! It implements the [`Tool`] trait to enable AI agents to interact with ICP ledgers.
 
 use anda_core::{BoxError, FunctionDefinition, Tool};
 use anda_engine::context::BaseCtx;
@@ -42,7 +42,7 @@ impl BalanceOfTool {
     }
 }
 
-/// Implementation of the Tool trait for BalanceOfTool
+/// Implementation of the [`Tool`]` trait for BalanceOfTool
 /// Enables AI Agent to query the balance of an account for a ICP token
 impl Tool<BaseCtx> for BalanceOfTool {
     const CONTINUE: bool = true;

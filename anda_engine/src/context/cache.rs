@@ -1,3 +1,30 @@
+//! In-memory caching system for AI Agent components
+//!
+//! This module provides a thread-safe, in-memory LRU cache implementation with expiration policies
+//! for storing serialized data. The cache is primarily used by AI Agents and Tools to store
+//! frequently accessed data with configurable expiration policies.
+//!
+//! # Key Features
+//! - LRU (Least Recently Used) eviction policy
+//! - Configurable maximum capacity
+//! - Time-to-Idle (TTI) and Time-to-Live (TTL) expiration policies
+//! - Thread-safe operations
+//! - Automatic serialization/deserialization using CBOR format
+//!
+//! # Usage
+//! The cache is isolated per agent/tool using path-based namespacing. Each agent/tool has its own
+//! isolated cache storage within the shared cache instance.
+//!
+//! # Performance Characteristics
+//! - O(1) time complexity for get/set operations
+//! - Memory usage scales with cache capacity and item sizes
+//! - Automatic eviction of expired items
+//!
+//! # Limitations
+//! - Data is not persisted across system restarts
+//! - Maximum cache size is limited by available memory
+//! - Serialization/deserialization overhead for large objects
+
 use anda_core::BoxError;
 use anda_core::{context::CacheExpiry, path_lowercase};
 use bytes::Bytes;
@@ -17,7 +44,22 @@ pub struct CacheService {
     cache: Cache<String, Arc<(Bytes, Option<CacheExpiry>)>>,
 }
 
+/// CacheService provides an in-memory LRU cache with expiration for AI Agent system's agents and tools.
+/// 
+/// In the Anda Engine implementation, the `path` parameter is derived from agents' or tools' `name`,
+/// ensuring that each agent or tool has isolated cache storage.
+/// 
+/// Note: Data is cached only in memory and will be lost upon system restart. 
+/// For persistent storage, use `StoreFeatures`.
 impl CacheService {
+    /// Creates a new CacheService instance with specified maximum capacity
+    ///
+    /// # Arguments
+    /// * `max_capacity` - Maximum number of items the cache can hold (u64)
+    ///
+    /// # Default Behavior
+    /// - Maximum time-to-idle (TTI): 7 days
+    /// - Uses custom expiration policy based on CacheExpiry
     pub fn new(max_capacity: u64) -> Self {
         let expire = CacheServiceExpiry;
         Self {
@@ -33,12 +75,26 @@ impl CacheService {
 
 impl CacheService {
     /// Checks if a key exists in the cache
+    ///
+    /// # Arguments
+    /// * `path` - The base path for the key
+    /// * `key` - The key to check
+    ///
+    /// # Returns
+    /// `true` if key exists, `false` otherwise
     pub fn contains(&self, path: &Path, key: &str) -> bool {
         self.cache
             .contains_key(path_lowercase(&path.child(key)).as_ref())
     }
 
-    /// Gets a cached value by key, returns error if not found or deserialization fails
+    /// Retrieves a cached value by key
+    ///
+    /// # Arguments
+    /// * `path` - The base path for the key
+    /// * `key` - The key to retrieve
+    ///
+    /// # Returns
+    /// Result containing deserialized value if successful, error otherwise
     pub async fn get<T>(&self, path: &Path, key: &str) -> Result<T, BoxError>
     where
         T: DeserializeOwned,
@@ -57,6 +113,14 @@ impl CacheService {
     /// Gets a cached value or initializes it if missing
     ///
     /// If key doesn't exist, calls init function to create value and cache it
+    ///
+    /// # Arguments
+    /// * `path` - The base path for the key
+    /// * `key` - The key to retrieve or initialize
+    /// * `init` - Async function that returns the value and optional expiry
+    ///
+    /// # Returns
+    /// Result containing deserialized value if successful, error otherwise
     pub async fn get_with<T, F>(&self, path: &Path, key: &str, init: F) -> Result<T, BoxError>
     where
         T: Sized + DeserializeOwned + Serialize + Send,
@@ -82,6 +146,11 @@ impl CacheService {
     }
 
     /// Sets a value in cache with optional expiration policy
+    ///
+    /// # Arguments
+    /// * `path` - The base path for the key
+    /// * `key` - The key to set
+    /// * `val` - Tuple containing value and optional expiry policy
     pub async fn set<T>(&self, path: &Path, key: &str, val: (T, Option<CacheExpiry>))
     where
         T: Sized + Serialize + Send,
@@ -95,7 +164,14 @@ impl CacheService {
             .await;
     }
 
-    /// Deletes a cached value by key, returns true if key existed
+    /// Deletes a cached value by key
+    ///
+    /// # Arguments
+    /// * `path` - The base path for the key
+    /// * `key` - The key to delete
+    ///
+    /// # Returns
+    /// `true` if key existed and was deleted, `false` otherwise
     pub async fn delete(&self, path: &Path, key: &str) -> bool {
         self.cache
             .remove(path_lowercase(&path.child(key)).as_ref())

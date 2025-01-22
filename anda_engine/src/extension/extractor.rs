@@ -1,7 +1,45 @@
-//! This module provides high-level abstractions for extracting structured data from text using LLMs.
+//! A module for extracting structured data from unstructured text using Language Models (LLMs).
 //!
-//! Note: The target structure must implement the `serde::Deserialize`, `serde::Serialize`,
-//! and `schemars::JsonSchema` traits. Those can be easily derived using the `derive` macro.
+//! This module provides high-level abstractions for:
+//! - Defining structured data schemas using Rust types
+//! - Extracting data from text using LLMs
+//! - Validating and processing extracted data
+//!
+//! # Key Components
+//!
+//! ## [`SubmitTool`]
+//! - Wraps a type `T` that defines the JSON schema for structured data
+//! - Provides functionality to submit and validate data
+//! - Implements the [`Tool`] trait for integration with the LLM system
+//!
+//! ## [`Extractor`]
+//! - Main interface for extracting structured data from text
+//! - Uses LLMs to process unstructured input
+//! - Implements the [`Agent`] trait for integration with the agent system
+//!
+//! # Usage
+//!
+//! 1. Define your data structure with `#[derive(JsonSchema, Serialize, Deserialize)]`
+//! 2. Create an `Extractor` instance with your type
+//! 3. Use the `extract()` method to process text
+//!
+//! # Example
+//!
+//! ```rust,ignore
+//! #[derive(JsonSchema, Serialize, Deserialize)]
+//! struct ContactInfo {
+//!     name: String,
+//!     phone: Option<String>,
+//! }
+//!
+//! let extractor = Extractor::<ContactInfo>::default();
+//! let (data, _) = extractor.extract(&ctx, "John Doe, phone: 123-456-7890").await?;
+//! ```
+//!
+//! # Notes
+//! - The target structure must implement `serde::Deserialize`, `serde::Serialize`,
+//!   and `schemars::JsonSchema` traits
+//! - These traits can be easily derived using the `derive` macro
 
 use anda_core::{
     Agent, AgentOutput, BoxError, CompletionFeatures, CompletionRequest, FunctionDefinition, Tool,
@@ -14,6 +52,10 @@ pub use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::context::{AgentCtx, BaseCtx};
 
+/// A tool for submitting structured data extracted from text
+///
+/// Wraps a type `T` that defines the JSON schema for the structured data
+/// and provides functionality to submit and validate the data
 #[derive(Debug, Clone)]
 pub struct SubmitTool<T: JsonSchema + DeserializeOwned + Send + Sync> {
     name: String,
@@ -35,6 +77,10 @@ impl<T> SubmitTool<T>
 where
     T: JsonSchema + DeserializeOwned + Serialize + Send + Sync,
 {
+    /// Creates a new SubmitTool instance
+    ///
+    /// Automatically generates a JSON schema from the type `T` and
+    /// uses the type's title (if available) as the tool name
     pub fn new() -> SubmitTool<T> {
         let mut schema = schema_for!(T);
         schema.meta_schema = None; // Remove the $schema field
@@ -52,6 +98,13 @@ where
         }
     }
 
+    /// Validates and deserializes the submitted arguments
+    ///
+    /// # Arguments
+    /// * `args` - JSON string containing the structured data
+    ///
+    /// # Returns
+    /// Deserialized instance of type `T` or an error if validation fails
     pub fn submit(&self, args: String) -> Result<T, BoxError> {
         serde_json::from_str(&args).map_err(|err| format!("invalid args: {}", err).into())
     }
@@ -87,7 +140,10 @@ where
     }
 }
 
-/// Extractor for structured data from text
+/// Extractor for structured data from text using LLMs
+///
+/// Provides functionality to extract structured data from unstructured text
+/// using a language model and a defined schema
 #[derive(Debug, Clone)]
 pub struct Extractor<T: JsonSchema + DeserializeOwned + Serialize + Send + Sync> {
     tool: SubmitTool<T>,
@@ -102,11 +158,22 @@ impl<T: JsonSchema + DeserializeOwned + Serialize + Send + Sync> Default for Ext
 }
 
 impl<T: JsonSchema + DeserializeOwned + Serialize + Send + Sync> Extractor<T> {
+    /// Creates a new Extractor instance with default system prompt
+    ///
+    /// # Arguments
+    /// * `max_tokens` - Optional maximum number of tokens for the completion
+    /// * `system_prompt` - Optional custom system prompt
     pub fn new(max_tokens: Option<usize>, system_prompt: Option<String>) -> Self {
         let tool = SubmitTool::new();
         Self::new_with_tool(tool, max_tokens, system_prompt)
     }
 
+    /// Creates a new Extractor instance with a custom SubmitTool
+    ///
+    /// # Arguments
+    /// * `tool` - Pre-configured SubmitTool instance
+    /// * `max_tokens` - Optional maximum number of tokens for the completion
+    /// * `system_prompt` - Optional custom system prompt
     pub fn new_with_tool(
         tool: SubmitTool<T>,
         max_tokens: Option<usize>,
@@ -125,6 +192,14 @@ impl<T: JsonSchema + DeserializeOwned + Serialize + Send + Sync> Extractor<T> {
         }
     }
 
+    /// Extracts structured data from the provided text
+    ///
+    /// # Arguments
+    /// * `ctx` - Context implementing CompletionFeatures
+    /// * `prompt` - Input text to extract data from
+    ///
+    /// # Returns
+    /// Tuple containing the extracted data and the full agent output
     pub async fn extract(
         &self,
         ctx: &impl CompletionFeatures,

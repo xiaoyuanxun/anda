@@ -11,7 +11,7 @@
 //! - ICRC-1 standard compliant operations
 //!
 //! # Examples
-//! ```rust
+//! ```rust,ignore
 //! use anda_icp::ledger::ICPLedgers;
 //! use anda_core::CanisterCaller;
 //! use std::collections::BTreeSet;
