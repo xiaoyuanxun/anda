@@ -1,7 +1,10 @@
-# `anda_icp`
+# `anda_icp` - Enables AI Agent to interact with ICP blockchain
 
-[![Crates.io](https://img.shields.io/crates/v/anda_icp)](https://crates.io/crates/anda_icp)
-[![Documentation](https://docs.rs/anda_icp/badge.svg)](https://docs.rs/anda_icp)
+![License](https://img.shields.io/crates/l/anda_icp.svg)
+[![Crates.io](https://img.shields.io/crates/d/anda_icp.svg)](https://crates.io/crates/anda_icp)
+[![Test](https://github.com/ldclabs/anda/actions/workflows/test.yml/badge.svg)](https://github.com/ldclabs/anda/actions/workflows/test.yml)
+[![Docs.rs](https://docs.rs/anda_icp/badge.svg)](https://docs.rs/anda_icp)
+[![Latest Version](https://img.shields.io/crates/v/anda_icp.svg)](https://crates.io/crates/anda_icp)
 
 `anda_icp` provides integration between the Anda agent framework and the Internet Computer (ICP) blockchain, enabling AI Agents to directly interact with ICP blockchain functionalities. Current features include:
 

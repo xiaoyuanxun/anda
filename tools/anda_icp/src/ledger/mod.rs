@@ -1,3 +1,28 @@
+//! Module for interacting with ICP Ledgers using ICRC-1 standard
+//!
+//! This module provides functionality for:
+//! - Loading and managing multiple ICP ledger canisters
+//! - Transferring tokens between accounts
+//! - Querying account balances
+//!
+//! The implementation supports:
+//! - Multiple token symbols (though primarily designed for ICP)
+//! - Configurable subaccount usage for transfers
+//! - ICRC-1 standard compliant operations
+//!
+//! # Examples
+//! ```rust
+//! use anda_icp::ledger::ICPLedgers;
+//! use anda_core::CanisterCaller;
+//! use std::collections::BTreeSet;
+//!
+//! async fn example(ctx: &impl CanisterCaller) {
+//!     let canisters = BTreeSet::from([Principal::from_text("ryjl3-tyaaa-aaaaa-aaaba-cai").unwrap()]);
+//!     let ledgers = ICPLedgers::load(ctx, canisters, false).await.unwrap();
+//!     // Use ledgers for transfers or balance queries
+//! }
+//! ```
+
 use anda_core::{BoxError, CanisterCaller};
 use candid::{Nat, Principal};
 use icrc_ledger_types::{
@@ -27,7 +52,7 @@ pub struct ICPLedgers {
 
 impl ICPLedgers {
     /// Creates a new ICPLedgerTransfer instance
-    /// 
+    ///
     /// # Arguments
     /// * `ctx` - Canister caller context
     /// * `ledger_canisters` - Set of 1 to N ICP token ledger canister IDs

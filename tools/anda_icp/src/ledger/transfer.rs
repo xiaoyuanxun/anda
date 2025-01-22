@@ -1,3 +1,12 @@
+//! Enables AI Agent to perform ICP token transfers
+//!
+//! Provides functionality for transferring tokens between accounts on the Internet Computer Protocol (ICP) network.
+//! Supports:
+//! - Multiple token types (e.g., ICP, PANDA)
+//! - Memo fields for transaction identification
+//! - Integration with ICP ledger standards
+//! - Atomic transfers with proper error handling
+
 use anda_core::{BoxError, FunctionDefinition, Tool};
 use anda_engine::context::BaseCtx;
 use candid::Nat;
@@ -21,7 +30,7 @@ pub struct TransferToArgs {
     pub memo: Option<String>,
 }
 
-/// ICP Ledger Transfer tool implementation
+/// Implementation of the ICP Ledger Transfer tool
 #[derive(Debug, Clone)]
 pub struct TransferTool {
     ledgers: Arc<ICPLedgers>,
@@ -40,6 +49,8 @@ impl TransferTool {
     }
 }
 
+/// Implementation of the Tool trait for TransferTool
+/// Enables AI Agent to perform ICP token transfers
 impl Tool<BaseCtx> for TransferTool {
     const CONTINUE: bool = true;
     type Args = TransferToArgs;
