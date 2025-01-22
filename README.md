@@ -2,40 +2,15 @@
 
 > 🤖 A framework for AI agent development, designed to build a highly composable, autonomous, and perpetually memorizing network of AI agents.
 
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE-MIT)
-
 ## 🌍 README Translations
 
 [English readme](./README.md) | [中文说明](./README_CN.md)
 
-## 🐼 About ICPanda DAO
-
-ICPanda DAO is an SNS DAO established on the Internet Computer Protocol (ICP) blockchain, issuing the `PANDA` token. As the creator of the `Anda` framework, ICPanda DAO is dedicated to exploring the future of Web3 and AI integration.
-
-- **Website**: [https://panda.fans/](https://panda.fans/)
-- **Permalink**: [https://dmsg.net/PANDA](https://dmsg.net/PANDA)
-- **ICP SNS**: [https://dashboard.internetcomputer.org/sns/d7wvo-iiaaa-aaaaq-aacsq-cai](https://dashboard.internetcomputer.org/sns/d7wvo-iiaaa-aaaaq-aacsq-cai)
-- **Token**: PANDA on ICP network, [https://www.coingecko.com/en/coins/icpanda-dao](https://www.coingecko.com/en/coins/icpanda-dao)
-
-## 🔎 Project Structure
-
-```sh
-anda/
-├── anda_core/ # Core library containing base types and interfaces
-├── anda_engine/ # Engine implementation for agent runtime and management
-├── anda_lancedb/ # LanceDB integration for vector storage and retrieval
-├── agents/ # Various AI agent implementations
-│ ├── anda_bot/ # Example agent: Anda ICP
-│ └── .../ # More agents in future releases
-├── tools/ # Tool libraries
-│ ├── anda_icp/ # Anda agent tools offers integration with the Internet Computer (ICP).
-│ └── .../ # More agents in future releases
-└── characters/ # characters examples
-```
-
-## 🤖 Introduction to Anda
+## 🤖 Introduction
 
 `Anda` is an innovative framework for intelligent agent development, designed to build a highly composable, autonomous, and perpetually memorizing network of AI agents. By connecting agents across various industries, Anda aims to create a super AGI system, advancing artificial intelligence to new heights.
+
+![Anda Diagram](./anda_diagram.webp)
 
 ### ✨ Key Features
 
@@ -58,7 +33,53 @@ anda/
 
 Anda's goal is to create and connect countless agents, building an open, secure, trustworthy, and highly collaborative network of agents, ultimately realizing a super AGI system. We believe Anda will bring revolutionary changes across industries, driving the widespread application of AI technology and creating greater value for human society.
 
+## 🐼 About ICPanda DAO
+
+ICPanda DAO is an SNS DAO established on the Internet Computer Protocol (ICP) blockchain, issuing the `PANDA` token. As the creator of the `Anda` framework, ICPanda DAO is dedicated to exploring the future of Web3 and AI integration.
+
+- **Website**: [https://panda.fans/](https://panda.fans/)
+- **Permalink**: [https://dmsg.net/PANDA](https://dmsg.net/PANDA)
+- **ICP SNS**: [https://dashboard.internetcomputer.org/sns/d7wvo-iiaaa-aaaaq-aacsq-cai](https://dashboard.internetcomputer.org/sns/d7wvo-iiaaa-aaaaq-aacsq-cai)
+- **Token**: PANDA on ICP network, [https://www.coingecko.com/en/coins/icpanda-dao](https://www.coingecko.com/en/coins/icpanda-dao)
+
+## 🔎 Project
+
+### Project Structure
+
+```sh
+anda/
+├── anda_core/ # Core library containing base types and interfaces
+├── anda_engine/ # Engine implementation for agent runtime and management
+├── anda_lancedb/ # LanceDB integration for vector storage and retrieval
+├── agents/ # Various AI agent implementations
+│ ├── anda_bot/ # Example agent: Anda ICP
+│ └── .../ # More agents in future releases
+├── tools/ # Tool libraries
+│ ├── anda_icp/ # Anda agent tools offers integration with the Internet Computer (ICP).
+│ └── .../ # More agents in future releases
+└── characters/ # characters examples
+```
+
+### How to Use and Contribute
+
+#### For Non-Developers:
+
+You can follow the agents in the `agents` directory. For example, [`anda_bot`](https://github.com/ldclabs/anda/tree/main/agents/anda_bot)—simply copy the [nitro_enclave](https://github.com/ldclabs/anda/tree/main/agents/anda_bot/nitro_enclave) folder, modify the `Character.toml` role definition and `Config.toml` runtime parameters, and deploy according to the tutorial.  
+The deployment process is currently complex, but we plan to launch a cloud service for one-click deployment in the future.
+
+#### For Developers:
+
+- Add more integration tools with external services in `tools`;  
+- Create more agent applications in `agents`;  
+- Or enhance the core engines `anda_core` and `anda_engine`.
+
+### Related Projects
+
+- [IC-TEE](https://github.com/ldclabs/ic-tee): 🔐 Make Trusted Execution Environments (TEEs) work with the Internet Computer.
+- [IC-COSE](https://github.com/ldclabs/ic-cose): ⚙️ A decentralized COnfiguration service with Signing and Encryption on the Internet Computer.
+
 ## 📝 License
+
 Copyright © 2025 [LDC Labs](https://github.com/ldclabs).
 
 `ldclabs/anda` is licensed under the MIT License. See [LICENSE](./LICENSE-MIT) for the full license text.

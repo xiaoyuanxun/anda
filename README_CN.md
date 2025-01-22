@@ -2,40 +2,15 @@
 
 > 🤖 一个专为 AI 智能体开发设计的框架，致力于构建高度可组合、自主运行且具备永久记忆能力的 AI 智能体网络。
 
-[![许可证](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE-MIT)
-
 ## 🌍 说明文档翻译
 
 [English readme](./README.md) | [中文说明](./README_CN.md)
 
-## 🐼 关于 ICPanda DAO
-
-ICPanda DAO 是在互联网计算机协议（ICP）区块链上建立的 SNS DAO 组织，发行了 `PANDA` 代币。作为 `Anda` 框架的创造者，ICPanda DAO 致力于探索 Web3 与 AI 融合的未来。
-
-- **官方网站**: [https://panda.fans/](https://panda.fans/)
-- **永久链接**: [https://dmsg.net/PANDA](https://dmsg.net/PANDA)
-- **ICP SNS**: [https://dashboard.internetcomputer.org/sns/d7wvo-iiaaa-aaaaq-aacsq-cai](https://dashboard.internetcomputer.org/sns/d7wvo-iiaaa-aaaaq-aacsq-cai)
-- **代币**: ICP 网络上的 PANDA，[https://www.coingecko.com/en/coins/icpanda-dao](https://www.coingecko.com/en/coins/icpanda-dao)
-
-## 🔎 项目结构
-
-```sh
-anda/
-├── anda_core/        # 核心库，包含基础类型与接口
-├── anda_engine/      # 智能体运行时与管理引擎实现
-├── anda_lancedb/     # LanceDB集成模块，支持向量存储与检索
-├── agents/           # 各类AI智能体实现
-│   ├── anda_bot/     # 示例智能体：Anda ICP
-│   └── .../          # 更多智能体将在后续版本推出
-├── tools/            # 工具库集合
-│   ├── anda_icp/     # 提供与互联网计算机（ICP）的集成工具
-│   └── .../          # 更多工具将在后续版本推出
-└── characters/       # 角色设定示例库
-```
-
-## 🐼 关于 Anda 的介绍
+## 🐼 简介
 
 `Anda` 是一个创新的智能体开发框架，旨在构建一个高度可组合、自主性强且具有永久记忆的 AI 智能体网络。通过连接各行各业的智能体，Anda 致力于打造一个超级 AGI 系统，推动人工智能向更高层次发展。
+
+![Anda Diagram](./anda_diagram.webp)
 
 ### ✨ 核心特性
 
@@ -58,7 +33,53 @@ anda/
 
 Anda 的目标是通过创建和连接无数智能体，构建一个开放、安全、可信、高度协同的智能体网络，最终实现超级 AGI 系统。我们相信，Anda 将为各行各业带来革命性的变革，推动人工智能技术在更广泛的领域中落地应用，为人类社会创造更大的价值。
 
+## 🐼 关于 ICPanda DAO
+
+ICPanda DAO 是在互联网计算机协议（ICP）区块链上建立的 SNS DAO 组织，发行了 `PANDA` 代币。作为 `Anda` 框架的创造者，ICPanda DAO 致力于探索 Web3 与 AI 融合的未来。
+
+- **官方网站**: [https://panda.fans/](https://panda.fans/)
+- **永久链接**: [https://dmsg.net/PANDA](https://dmsg.net/PANDA)
+- **ICP SNS**: [https://dashboard.internetcomputer.org/sns/d7wvo-iiaaa-aaaaq-aacsq-cai](https://dashboard.internetcomputer.org/sns/d7wvo-iiaaa-aaaaq-aacsq-cai)
+- **代币**: ICP 网络上的 PANDA，[https://www.coingecko.com/en/coins/icpanda-dao](https://www.coingecko.com/en/coins/icpanda-dao)
+
+## 🔎 项目说明
+
+### 项目结构
+
+```sh
+anda/
+├── anda_core/        # 核心库，包含基础类型与接口
+├── anda_engine/      # 智能体运行时与管理引擎实现
+├── anda_lancedb/     # LanceDB集成模块，支持向量存储与检索
+├── agents/           # 各类AI智能体实现
+│   ├── anda_bot/     # 示例智能体：Anda ICP
+│   └── .../          # 更多智能体将在后续版本推出
+├── tools/            # 工具库集合
+│   ├── anda_icp/     # 提供与互联网计算机（ICP）的集成工具
+│   └── .../          # 更多工具将在后续版本推出
+└── characters/       # 角色设定示例库
+```
+
+### 如何使用和参与贡献
+
+#### 非开发者：
+
+可以关注 `agents` 目录下的智能体。比如 [`anda_bot`](https://github.com/ldclabs/anda/tree/main/agents/anda_bot)，只需复制其中的 [nitro_enclave](https://github.com/ldclabs/anda/tree/main/agents/anda_bot/nitro_enclave) 文件夹，修改 `Character.toml` 角色定义和 `Config.toml` 运行参数并按照教程部署。
+目前部署流程还比较复杂，未来我们会推出云服务，实现一键部署。
+
+#### 开发者：
+
+- 可以在 `tools` 添加更多与外界其它服务的集成工具；
+- 也可以在 `agents` 添加更多智能体应用；
+- 或者完善 `anda_core` 和 `anda_engine` 核心引擎。
+
+### 关联项目
+
+- [IC-TEE](https://github.com/ldclabs/ic-tee): 🔐 Make Trusted Execution Environments (TEEs) work with the Internet Computer.
+- [IC-COSE](https://github.com/ldclabs/ic-cose): ⚙️ A decentralized COnfiguration service with Signing and Encryption on the Internet Computer.
+
 ## 📝 License
+
 Copyright © 2025 [LDC Labs](https://github.com/ldclabs).
 
 `ldclabs/anda` is licensed under the MIT License. See [LICENSE](./LICENSE-MIT) for the full license text.
