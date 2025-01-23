@@ -4,7 +4,6 @@ use anda_engine::{
     context::AgentCtx, engine::Engine, extension::character::CharacterAgent, rand_number,
 };
 use anda_lancedb::knowledge::KnowledgeStore;
-use log::{debug, error, info};
 use std::sync::Arc;
 use tokio::{
     sync::RwLock,
@@ -42,13 +41,13 @@ impl TwitterDaemon {
     }
 
     pub async fn run(&self, cancel_token: CancellationToken) -> Result<(), BoxError> {
-        info!(target: LOG_TARGET, "starting Twitter bot");
+        log::info!(target: LOG_TARGET, "starting Twitter bot");
 
         loop {
             {
                 let status = self.status.read().await;
                 if *status == ServiceStatus::Stopped {
-                    info!(target: LOG_TARGET, "Twitter task stopped");
+                    log::info!(target: LOG_TARGET, "Twitter task stopped");
                     tokio::select! {
                         _ = cancel_token.cancelled() => {
                             return Ok(());
@@ -57,52 +56,47 @@ impl TwitterDaemon {
                     }
                     continue;
                 }
-                info!(target: LOG_TARGET, "run a Twitter task");
+                log::info!(target: LOG_TARGET, "run a Twitter task");
                 // release read lock
             }
 
-            match rand_number(0..=2) {
-                0 => {
-                    if let Err(err) = self.post_new_tweet().await {
-                        error!(target: LOG_TARGET, "post_new_tweet error: {err:?}");
-                    }
-                }
-                1 => {
-                    if let Err(err) = self.handle_home_timeline().await {
-                        error!(target: LOG_TARGET, "handle_home_timeline error: {err:?}");
-                    }
-                }
-                2 => {
-                    match self
-                        .scraper
-                        .search_tweets(
-                            &format!("@{}", self.agent.character.username.clone()),
-                            5,
-                            SearchMode::Latest,
-                            None,
-                        )
-                        .await
-                    {
-                        Ok(mentions) => {
-                            for tweet in mentions.tweets {
-                                if let Err(err) = self.handle_mention(tweet).await {
-                                    error!(target: LOG_TARGET, "handle mention error: {err:?}");
-                                }
+            if let Err(err) = self.handle_home_timeline().await {
+                log::error!(target: LOG_TARGET, "handle_home_timeline error: {err:?}");
+            }
 
-                                tokio::select! {
-                                    _ = cancel_token.cancelled() => {
-                                        return Ok(());
-                                    },
-                                    _ = sleep(Duration::from_secs(rand_number(3..=10))) => {},
-                                }
-                            }
+            match self
+                .scraper
+                .search_tweets(
+                    &format!("@{}", self.agent.character.username.clone()),
+                    5,
+                    SearchMode::Latest,
+                    None,
+                )
+                .await
+            {
+                Ok(mentions) => {
+                    for tweet in mentions.tweets {
+                        if let Err(err) = self.handle_mention(tweet).await {
+                            log::error!(target: LOG_TARGET, "handle mention error: {err:?}");
                         }
-                        Err(err) => {
-                            error!(target: LOG_TARGET, "fetch mentions error: {err:?}");
+
+                        tokio::select! {
+                            _ = cancel_token.cancelled() => {
+                                return Ok(());
+                            },
+                            _ = sleep(Duration::from_secs(rand_number(3..=10))) => {},
                         }
                     }
                 }
-                _ => unreachable!(),
+                Err(err) => {
+                    log::error!(target: LOG_TARGET, "fetch mentions error: {err:?}");
+                }
+            }
+
+            if rand_number(0..=9) == 0 {
+                if let Err(err) = self.post_new_tweet().await {
+                    log::error!(target: LOG_TARGET, "post_new_tweet error: {err:?}");
+                }
             }
 
             // Sleep between tasks
@@ -120,6 +114,8 @@ impl TwitterDaemon {
         if knowledges.is_empty() {
             return Ok(());
         }
+
+        log::info!(target: LOG_TARGET, "post new tweet with {} knowledges", knowledges.len());
         let ctx = self.engine.ctx_with(
             self.agent.as_ref(),
             Some(self.agent.character.username.clone()),
@@ -143,6 +139,10 @@ impl TwitterDaemon {
             Some(reason) => Err(format!("Failed to generate response for tweet: {reason}").into()),
             None => {
                 let _ = self.scraper.send_tweet(&res.content, None, None).await?;
+                log::info!(target: LOG_TARGET,
+                    "post new tweet: {}",
+                    res.content.chars().take(100).collect::<String>()
+                );
                 Ok(())
             }
         }
@@ -155,8 +155,11 @@ impl TwitterDaemon {
             Some(self.agent.character.username.clone()),
             None,
         )?;
-        debug!(target: LOG_TARGET, "process home timeline, {} tweets", tweets.len());
+        log::info!(target: LOG_TARGET, "process home timeline, {} tweets", tweets.len());
 
+        let mut likes = 0;
+        let mut retweets = 0;
+        let mut quotes = 0;
         for tweet in tweets {
             let tweet_user = tweet["core"]["user_results"]["result"]["legacy"]["screen_name"]
                 .as_str()
@@ -192,15 +195,19 @@ impl TwitterDaemon {
             .await;
 
             if self.handle_like(&ctx, &tweet_content, &tweet_id).await? {
+                likes += 1;
                 if self.handle_quote(&ctx, &tweet_content, &tweet_id).await? {
                     // TODO: save tweet to knowledge store
+                    quotes += 1;
                 } else {
                     self.handle_retweet(&ctx, &tweet_content, &tweet_id).await?;
+                    retweets += 1;
                 }
             }
 
             sleep(Duration::from_secs(rand_number(1..=10))).await;
         }
+        log::info!(target: LOG_TARGET, "home timeline: likes {}, retweets {}, quotes {}", likes, retweets, quotes);
         Ok(())
     }
 
@@ -217,12 +224,13 @@ impl TwitterDaemon {
         }
         let ctx = self
             .engine
-            .ctx_with(self.agent.as_ref(), Some(tweet_user), None)?;
+            .ctx_with(self.agent.as_ref(), Some(tweet_user.clone()), None)?;
 
         let handle_key = format!("D_{}", tweet_id);
         if ctx.cache_contains(&handle_key) {
             return Ok(());
         }
+
         ctx.cache_set(
             &handle_key,
             (
@@ -266,15 +274,13 @@ impl TwitterDaemon {
             .collect();
 
         // Reply to the original tweet
-        let tweet_id: Option<&str> = tweet.id.as_deref();
+        let tweet: Option<&str> = tweet.id.as_deref();
         for chunk in &chunks {
-            let _ = self
-                .scraper
-                .send_tweet(chunk.as_str(), tweet_id, None)
-                .await?;
+            let _ = self.scraper.send_tweet(chunk.as_str(), tweet, None).await?;
             sleep(Duration::from_secs(rand_number(1..=3))).await;
         }
 
+        log::info!(target: LOG_TARGET, "handle mention: {} - {}, {} chunks", tweet_user, tweet_id, chunks.len());
         Ok(())
     }
 
