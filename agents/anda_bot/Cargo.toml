@@ -45,5 +45,8 @@ ed25519-consensus = { workspace = true }
 agent-twitter-client = "0.1"
 config = "0.15"
 
+[patch.crates-io]
+candid = { git = "https://github.com/ldclabs/candid.git", rev = "70b72a66576c010235bfa6f1adb0672944497523" }
+
 [dev-dependencies]
 dotenv = { workspace = true }
