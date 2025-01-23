@@ -48,6 +48,7 @@ COPY agents/anda_bot/nitro_enclave/Config.toml agents/anda_bot/nitro_enclave/Cha
 RUN chmod +x setup.sh && ls -la
 
 ENV LOG_LEVEL=info
+ENV RUST_MIN_STACK=8388608
 
 # entry point
 ENTRYPOINT [ "/app/setup.sh" ]
