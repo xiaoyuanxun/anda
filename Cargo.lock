@@ -1371,14 +1371,15 @@ dependencies = [
 [[package]]
 name = "candid"
 version = "0.10.13"
-source = "git+https://github.com/ldclabs/candid.git?rev=70b72a66576c010235bfa6f1adb0672944497523#70b72a66576c010235bfa6f1adb0672944497523"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a253bab4a9be502c82332b60cbeee6202ad0692834efeec95fae9f29db33d692"
 dependencies = [
  "anyhow",
  "binread",
  "byteorder",
  "candid_derive",
  "hex",
- "ic_principal 0.1.1 (git+https://github.com/ldclabs/candid.git?rev=70b72a66576c010235bfa6f1adb0672944497523)",
+ "ic_principal",
  "leb128",
  "num-bigint",
  "num-traits",
@@ -1393,7 +1394,8 @@ dependencies = [
 [[package]]
 name = "candid_derive"
 version = "0.6.6"
-source = "git+https://github.com/ldclabs/candid.git?rev=70b72a66576c010235bfa6f1adb0672944497523#70b72a66576c010235bfa6f1adb0672944497523"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3de398570c386726e7a59d9887b68763c481477f9a043fb998a2e09d428df1a9"
 dependencies = [
  "lazy_static",
  "proc-macro2",
@@ -3558,7 +3560,7 @@ version = "0.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b492c5a16455ae78623eaa12ead96dda6c69a83c535b1b00789f19b381c8a24c"
 dependencies = [
- "ic_principal 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ic_principal",
 ]
 
 [[package]]
@@ -3656,9 +3658,9 @@ dependencies = [
 
 [[package]]
 name = "ic_object_store"
-version = "0.6.9-patch1"
+version = "0.6.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "defbbe5d19de3b92faa4353ad566b32fb953759f103ec0c54f15d6b6b807beeb"
+checksum = "dc1e4291f2e731f7caf1a9d37a4e124bf3a6ce5624f8ce27d9850010fb689898"
 dependencies = [
  "aes-gcm",
  "async-trait",
@@ -3678,11 +3680,6 @@ name = "ic_principal"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1762deb6f7c8d8c2bdee4b6c5a47b60195b74e9b5280faa5ba29692f8e17429c"
-
-[[package]]
-name = "ic_principal"
-version = "0.1.1"
-source = "git+https://github.com/ldclabs/candid.git?rev=70b72a66576c010235bfa6f1adb0672944497523#70b72a66576c010235bfa6f1adb0672944497523"
 dependencies = [
  "crc32fast",
  "data-encoding",
