@@ -70,30 +70,41 @@ struct Cli {
 }
 
 // cargo run -p anda_bot -- --port 8042 --config agents/anda_bot/nitro_enclave/Config.toml --character agents/anda_bot/nitro_enclave/Character.toml
-#[tokio::main]
-async fn main() -> Result<(), BoxError> {
-    let cli = Cli::parse();
+fn main() -> Result<(), BoxError> {
+    let default_stack_size = 2 * 1024 * 1024;
+    let stack_size = std::env::var("RUST_MIN_STACK")
+        .map(|s| s.parse().expect("RUST_MIN_STACK must be a valid number"))
+        .unwrap_or(default_stack_size);
 
-    let writer = if let Some(logtail) = &cli.logtail {
-        let stream = TcpStream::connect(logtail).await?;
-        stream.writable().await?;
-        new_writer(stream)
-    } else {
-        new_writer(tokio::io::stdout())
-    };
-    Builder::with_level(&get_env_level().to_string())
-        .with_target_writer("*", writer)
-        .init();
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .thread_stack_size(stack_size)
+        .build()
+        .unwrap()
+        .block_on(async {
+            let cli = Cli::parse();
 
-    log::info!(target: LOG_TARGET, "bootstrap {}@{}", APP_NAME, APP_VERSION);
-    match bootstrap(cli).await {
-        Ok(_) => Ok(()),
-        Err(err) => {
-            log::error!(target: LOG_TARGET, "bootstrap error: {:?}", err);
-            tokio::time::sleep(Duration::from_secs(3)).await;
-            Err(err)
-        }
-    }
+            let writer = if let Some(logtail) = &cli.logtail {
+                let stream = TcpStream::connect(logtail).await?;
+                stream.writable().await?;
+                new_writer(stream)
+            } else {
+                new_writer(tokio::io::stdout())
+            };
+            Builder::with_level(&get_env_level().to_string())
+                .with_target_writer("*", writer)
+                .init();
+
+            log::info!(target: LOG_TARGET, "bootstrap {}@{}", APP_NAME, APP_VERSION);
+            match bootstrap(cli).await {
+                Ok(_) => Ok(()),
+                Err(err) => {
+                    log::error!(target: LOG_TARGET, "bootstrap error: {:?}", err);
+                    tokio::time::sleep(Duration::from_secs(3)).await;
+                    Err(err)
+                }
+            }
+        })
 }
 
 async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
