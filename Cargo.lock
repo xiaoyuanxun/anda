@@ -745,9 +745,9 @@ dependencies = [
 
 [[package]]
 name = "aws-lc-rs"
-version = "1.12.1"
+version = "1.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ea835662a0af02443aa1396d39be523bbf8f11ee6fad20329607c480bea48c3"
+checksum = "4c2b7ddaa2c56a367ad27a094ad8ef4faacf8a617c2575acb2ba88949df999ca"
 dependencies = [
  "aws-lc-sys",
  "paste",
@@ -795,9 +795,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-dynamodb"
-version = "1.60.0"
+version = "1.61.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "54f34babaece1c08facb64116253f1965b53cf0d279531c539bfabdd1176e2ac"
+checksum = "822deb729d56924c4c97427cb7fbe2f2e168face2c61d1b2b769b16befd23b6b"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",
@@ -818,9 +818,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-sso"
-version = "1.54.0"
+version = "1.55.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "921a13ed6aabe2d1258f65ef7804946255c799224440774c30e1a2c65cdf983a"
+checksum = "33993c0b054f4251ff2946941b56c26b582677303eeca34087594eb901ece022"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",
@@ -840,9 +840,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-ssooidc"
-version = "1.55.0"
+version = "1.56.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "196c952738b05dfc917d82a3e9b5ba850822a6d6a86d677afda2a156cc172ceb"
+checksum = "3bd3ceba74a584337a8f3839c818f14f1a2288bfd24235120ff22d7e17a0dd54"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",
@@ -862,9 +862,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-sts"
-version = "1.55.0"
+version = "1.56.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33ef5b73a927ed80b44096f8c20fb4abae65469af15198367e179ae267256e9d"
+checksum = "07835598e52dd354368429cb2abf447ce523ea446d0a533a63cb42cd0d2d9280"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",
@@ -1370,16 +1370,15 @@ dependencies = [
 
 [[package]]
 name = "candid"
-version = "0.10.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51e129c4051c57daf943586e01ef72faae48b04a8f692d5f646febf17a264c38"
+version = "0.10.13"
+source = "git+https://github.com/ldclabs/candid.git?rev=70b72a66576c010235bfa6f1adb0672944497523#70b72a66576c010235bfa6f1adb0672944497523"
 dependencies = [
  "anyhow",
  "binread",
  "byteorder",
  "candid_derive",
  "hex",
- "ic_principal",
+ "ic_principal 0.1.1 (git+https://github.com/ldclabs/candid.git?rev=70b72a66576c010235bfa6f1adb0672944497523)",
  "leb128",
  "num-bigint",
  "num-traits",
@@ -1394,8 +1393,7 @@ dependencies = [
 [[package]]
 name = "candid_derive"
 version = "0.6.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3de398570c386726e7a59d9887b68763c481477f9a043fb998a2e09d428df1a9"
+source = "git+https://github.com/ldclabs/candid.git?rev=70b72a66576c010235bfa6f1adb0672944497523#70b72a66576c010235bfa6f1adb0672944497523"
 dependencies = [
  "lazy_static",
  "proc-macro2",
@@ -1832,9 +1830,9 @@ checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
 
 [[package]]
 name = "crunchy"
-version = "0.2.2"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a81dae078cea95a014a339291cec439d2f232ebe854a9d672b796c6afafa9b7"
+checksum = "43da5946c66ffcc7745f48db692ffbb10a83bfe0afd96235c5c2a4fb23994929"
 
 [[package]]
 name = "crypto-bigint"
@@ -2804,7 +2802,7 @@ version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f7e180ac76c23b45e767bd7ae9579bc0bb458618c4bc71835926e098e61d15f8"
 dependencies = [
- "rustix 0.38.43",
+ "rustix 0.38.44",
  "windows-sys 0.52.0",
 ]
 
@@ -3401,9 +3399,9 @@ dependencies = [
 
 [[package]]
 name = "ic-agent"
-version = "0.39.2"
+version = "0.39.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ba408987ca48fc3eee6a613e760d076a9046cccbbb5ba29efbada339ab28ed9"
+checksum = "820d65a05258f2fdff326c65561b1ddc7ec54e5d43a4b1203b25eb83075c83d4"
 dependencies = [
  "arc-swap",
  "async-channel",
@@ -3560,14 +3558,14 @@ version = "0.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b492c5a16455ae78623eaa12ead96dda6c69a83c535b1b00789f19b381c8a24c"
 dependencies = [
- "ic_principal",
+ "ic_principal 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
 name = "ic-transport-types"
-version = "0.39.2"
+version = "0.39.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21e2418868dd5857d2a5bac3f1cb6de1aecf2316d380997ef842aec3d8a79d4e"
+checksum = "979ee7bee5a67150a4c090fb012c93c294a528b4a867bad9a15cc6d01cb4227f"
 dependencies = [
  "candid",
  "hex",
@@ -3658,9 +3656,9 @@ dependencies = [
 
 [[package]]
 name = "ic_object_store"
-version = "0.6.8"
+version = "0.6.9-patch1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc1e4291f2e731f7caf1a9d37a4e124bf3a6ce5624f8ce27d9850010fb689898"
+checksum = "defbbe5d19de3b92faa4353ad566b32fb953759f103ec0c54f15d6b6b807beeb"
 dependencies = [
  "aes-gcm",
  "async-trait",
@@ -3680,6 +3678,11 @@ name = "ic_principal"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1762deb6f7c8d8c2bdee4b6c5a47b60195b74e9b5280faa5ba29692f8e17429c"
+
+[[package]]
+name = "ic_principal"
+version = "0.1.1"
+source = "git+https://github.com/ldclabs/candid.git?rev=70b72a66576c010235bfa6f1adb0672944497523#70b72a66576c010235bfa6f1adb0672944497523"
 dependencies = [
  "crc32fast",
  "data-encoding",
@@ -6079,9 +6082,9 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "0.38.43"
+version = "0.38.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a78891ee6bf2340288408954ac787aa063d8e8817e9f53abb37c695c6d834ef6"
+checksum = "fdb5bc1ae2baa591800df16c9ca78619bf65c0488b41b96ccec5d11220d8c154"
 dependencies = [
  "bitflags 2.8.0",
  "errno",
@@ -7186,7 +7189,7 @@ dependencies = [
  "fastrand 2.3.0",
  "getrandom",
  "once_cell",
- "rustix 0.38.43",
+ "rustix 0.38.44",
  "windows-sys 0.59.0",
 ]
 
@@ -7923,7 +7926,7 @@ dependencies = [
  "either",
  "home",
  "once_cell",
- "rustix 0.38.43",
+ "rustix 0.38.44",
 ]
 
 [[package]]
