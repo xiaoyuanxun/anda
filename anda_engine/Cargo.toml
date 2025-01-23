@@ -33,6 +33,7 @@ tokio = { workspace = true }
 log = { workspace = true }
 chrono = { workspace = true }
 schemars = { workspace = true }
+url = { workspace = true }
 
 [dev-dependencies]
 dotenv = { workspace = true }

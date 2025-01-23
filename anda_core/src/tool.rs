@@ -15,11 +15,13 @@
 //! # Usage
 //!
 //! ## Reference Implementations
-//! 1. [`SubmitTool`](https://github.com/ldclabs/anda/blob/main/anda_engine/src/extension/extractor.rs) -
+//! 1. [`GoogleSearchTool`](https://github.com/ldclabs/anda/blob/main/anda_engine/src/extension/google.rs) -
+//!    A tool for performing web searches and retrieve results
+//! 2. [`SubmitTool`](https://github.com/ldclabs/anda/blob/main/anda_engine/src/extension/extractor.rs) -
 //!    A tool for extracting structured data using LLMs
-//! 2. [`TransferTool`](https://github.com/ldclabs/anda/blob/main/tools/anda_icp/src/ledger/transfer.rs) -
+//! 3. [`TransferTool`](https://github.com/ldclabs/anda/blob/main/tools/anda_icp/src/ledger/transfer.rs) -
 //!    A tool for handling ICP blockchain transfers
-//! 3. [`BalanceOfTool`](https://github.com/ldclabs/anda/blob/main/tools/anda_icp/src/ledger/balance.rs) -
+//! 4. [`BalanceOfTool`](https://github.com/ldclabs/anda/blob/main/tools/anda_icp/src/ledger/balance.rs) -
 //!    A tool for querying ICP blockchain balances
 //!
 //! These reference implementations share a common feature: they automatically generate the JSON Schema

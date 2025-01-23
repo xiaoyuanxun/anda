@@ -9,6 +9,7 @@
 //! - **Attention Management**: Controls how agents focus on and respond to content
 //! - **Character System**: Defines agent personalities and communication styles
 //! - **Extraction Tools**: Enables structured data extraction from unstructured text
+//! - **Google Web Search Tool**: Enables web searches and retrieve results.
 //! - **Document Segmentation**: Breaks down large documents into manageable chunks
 //!
 //! # Usage
@@ -19,22 +20,9 @@
 //! 3. Use extraction tools for structured data processing
 //! 4. Apply document segmentation for large content processing
 //!
-//! # Example
-//! ```rust,ignore
-//! use anda_engine::extension::{
-//!     Attention,
-//!     Character,
-//!     DocumentSegmenter,
-//!     Extractor
-//! };
-//!
-//! // Create a basic agent configuration
-//! let attention = Attention::default();
-//! let character = Character::default();
-//! let segmenter = DocumentSegmenter::new(500, 8000);
-//! ```
 
 pub mod attention;
 pub mod character;
 pub mod extractor;
+pub mod google;
 pub mod segmenter;
