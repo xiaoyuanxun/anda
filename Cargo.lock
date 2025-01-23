@@ -1371,14 +1371,14 @@ dependencies = [
 [[package]]
 name = "candid"
 version = "0.10.13"
-source = "git+https://github.com/ldclabs/candid.git?rev=70b72a66576c010235bfa6f1adb0672944497523#70b72a66576c010235bfa6f1adb0672944497523"
+source = "git+https://github.com/ldclabs/candid.git?rev=4cf7d02bad9530172cb4cafe733cb1e80689b793#4cf7d02bad9530172cb4cafe733cb1e80689b793"
 dependencies = [
  "anyhow",
  "binread",
  "byteorder",
  "candid_derive",
  "hex",
- "ic_principal 0.1.1 (git+https://github.com/ldclabs/candid.git?rev=70b72a66576c010235bfa6f1adb0672944497523)",
+ "ic_principal 0.1.1 (git+https://github.com/ldclabs/candid.git?rev=4cf7d02bad9530172cb4cafe733cb1e80689b793)",
  "leb128",
  "num-bigint",
  "num-traits",
@@ -1393,7 +1393,7 @@ dependencies = [
 [[package]]
 name = "candid_derive"
 version = "0.6.6"
-source = "git+https://github.com/ldclabs/candid.git?rev=70b72a66576c010235bfa6f1adb0672944497523#70b72a66576c010235bfa6f1adb0672944497523"
+source = "git+https://github.com/ldclabs/candid.git?rev=4cf7d02bad9530172cb4cafe733cb1e80689b793#4cf7d02bad9530172cb4cafe733cb1e80689b793"
 dependencies = [
  "lazy_static",
  "proc-macro2",
@@ -3682,7 +3682,7 @@ checksum = "1762deb6f7c8d8c2bdee4b6c5a47b60195b74e9b5280faa5ba29692f8e17429c"
 [[package]]
 name = "ic_principal"
 version = "0.1.1"
-source = "git+https://github.com/ldclabs/candid.git?rev=70b72a66576c010235bfa6f1adb0672944497523#70b72a66576c010235bfa6f1adb0672944497523"
+source = "git+https://github.com/ldclabs/candid.git?rev=4cf7d02bad9530172cb4cafe733cb1e80689b793#4cf7d02bad9530172cb4cafe733cb1e80689b793"
 dependencies = [
  "crc32fast",
  "data-encoding",

@@ -73,7 +73,7 @@ idna = "1.0" # https://github.com/ldclabs/anda/security/dependabot/1
 url = "2.5"
 
 [patch.crates-io]
-candid = { git = "https://github.com/ldclabs/candid.git", rev = "70b72a66576c010235bfa6f1adb0672944497523" } # remove check_recursion on stack for TEE
+candid = { git = "https://github.com/ldclabs/candid.git", rev = "4cf7d02bad9530172cb4cafe733cb1e80689b793" } # remove check_recursion on stack for TEE
 
 [workspace.metadata.cargo-shear]
 ignored = ["idna"]
