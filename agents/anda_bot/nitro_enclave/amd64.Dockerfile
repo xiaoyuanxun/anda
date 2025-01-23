@@ -26,7 +26,7 @@ RUN mv linux-amd64/dnsproxy ./ && chmod +x dnsproxy
 RUN wget -O ic_tee_nitro_gateway https://github.com/ldclabs/ic-tee/releases/download/v0.2.11/ic_tee_nitro_gateway
 RUN chmod +x ic_tee_nitro_gateway
 
-RUN wget -O anda_bot https://github.com/ldclabs/anda/releases/download/v0.2.12/anda_bot
+RUN wget -O anda_bot https://github.com/ldclabs/anda/releases/download/v0.2.13/anda_bot
 RUN chmod +x anda_bot
 
 FROM --platform=linux/amd64 debian:bookworm-slim AS runtime
