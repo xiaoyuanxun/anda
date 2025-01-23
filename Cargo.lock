@@ -55,8 +55,7 @@ dependencies = [
 [[package]]
 name = "agent-twitter-client"
 version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9eaafaf428beb79f140b73c7d71855a1d599bdd18c9ae971e4d01ec0493e8eca"
+source = "git+https://github.com/ldclabs/agent-twitter-client.git?rev=717bd0d8dc4febfece0065c972801924ecae2639#717bd0d8dc4febfece0065c972801924ecae2639"
 dependencies = [
  "async-trait",
  "chrono",

@@ -4,7 +4,7 @@ use anda_engine::{
     context::AgentCtx, engine::Engine, extension::character::CharacterAgent, rand_number,
 };
 use anda_lancedb::knowledge::KnowledgeStore;
-use std::sync::Arc;
+use std::{collections::BTreeSet, sync::Arc};
 use tokio::{
     sync::RwLock,
     time::{sleep, Duration},
@@ -60,10 +60,6 @@ impl TwitterDaemon {
                 // release read lock
             }
 
-            if let Err(err) = self.handle_home_timeline().await {
-                log::error!(target: LOG_TARGET, "handle_home_timeline error: {err:?}");
-            }
-
             match self
                 .scraper
                 .search_tweets(
@@ -93,6 +89,12 @@ impl TwitterDaemon {
                 }
             }
 
+            if rand_number(0..=7) == 0 {
+                if let Err(err) = self.handle_home_timeline().await {
+                    log::error!(target: LOG_TARGET, "handle_home_timeline error: {err:?}");
+                }
+            }
+
             if rand_number(0..=9) == 0 {
                 if let Err(err) = self.post_new_tweet().await {
                     log::error!(target: LOG_TARGET, "post_new_tweet error: {err:?}");
@@ -104,7 +106,7 @@ impl TwitterDaemon {
                 _ = cancel_token.cancelled() => {
                     return Ok(());
                 },
-                _ = sleep(Duration::from_secs(rand_number(30 * 60..=60 * 60))) => {},
+                _ = sleep(Duration::from_secs(rand_number(5 * 60..=15 * 60))) => {},
             }
         }
     }
@@ -149,12 +151,16 @@ impl TwitterDaemon {
     }
 
     async fn handle_home_timeline(&self) -> Result<(), BoxError> {
-        let tweets = self.scraper.get_home_timeline(1, Vec::new()).await?;
         let ctx = self.engine.ctx_with(
             self.agent.as_ref(),
             Some(self.agent.character.username.clone()),
             None,
         )?;
+
+        let mut seen_tweet_ids: BTreeSet<String> =
+            ctx.cache_get("seen_tweet_ids").await.unwrap_or_default();
+        let seen: Vec<String> = seen_tweet_ids.iter().cloned().collect();
+        let tweets = self.scraper.get_home_timeline(1, seen).await?;
         log::info!(target: LOG_TARGET, "process home timeline, {} tweets", tweets.len());
 
         let mut likes = 0;
@@ -176,37 +182,41 @@ impl TwitterDaemon {
             if tweet_content.is_empty() || tweet_id.is_empty() {
                 continue;
             }
+
             if tweet_user.to_lowercase() == self.agent.character.username.to_lowercase() {
                 // not replying to bot itself
-                return Ok(());
-            }
-
-            let handle_key = format!("D_{}", tweet_id);
-            if ctx.cache_contains(&handle_key) {
                 continue;
             }
-            ctx.cache_set(
-                &handle_key,
-                (
-                    true,
-                    Some(CacheExpiry::TTL(Duration::from_secs(3600 * 24 * 7))),
-                ),
-            )
+
+            if seen_tweet_ids.contains(&tweet_id) {
+                continue;
+            }
+            seen_tweet_ids.insert(tweet_id.clone());
+
+            let res: Result<(), BoxError> = async {
+                if self.handle_like(&ctx, &tweet_content, &tweet_id).await? {
+                    likes += 1;
+                    if self.handle_quote(&ctx, &tweet_content, &tweet_id).await? {
+                        // TODO: save tweet to knowledge store
+                        quotes += 1;
+                    } else {
+                        self.handle_retweet(&ctx, &tweet_content, &tweet_id).await?;
+                        retweets += 1;
+                    }
+                }
+                Ok(())
+            }
             .await;
 
-            if self.handle_like(&ctx, &tweet_content, &tweet_id).await? {
-                likes += 1;
-                if self.handle_quote(&ctx, &tweet_content, &tweet_id).await? {
-                    // TODO: save tweet to knowledge store
-                    quotes += 1;
-                } else {
-                    self.handle_retweet(&ctx, &tweet_content, &tweet_id).await?;
-                    retweets += 1;
-                }
+            if let Err(err) = res {
+                log::error!(target: LOG_TARGET, "handle home timeline {tweet_id} error: {err:?}");
             }
 
-            sleep(Duration::from_secs(rand_number(1..=10))).await;
+            sleep(Duration::from_secs(rand_number(3..=10))).await;
         }
+
+        ctx.cache_set("seen_tweet_ids", (seen_tweet_ids, None))
+            .await;
         log::info!(target: LOG_TARGET, "home timeline: likes {}, retweets {}, quotes {}", likes, retweets, quotes);
         Ok(())
     }
@@ -235,7 +245,7 @@ impl TwitterDaemon {
             &handle_key,
             (
                 true,
-                Some(CacheExpiry::TTL(Duration::from_secs(3600 * 24 * 7))),
+                Some(CacheExpiry::TTL(Duration::from_secs(3600 * 24 * 3))),
             ),
         )
         .await;

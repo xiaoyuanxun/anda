@@ -42,7 +42,7 @@ tokio = { workspace = true }
 log = { workspace = true }
 chrono = { workspace = true }
 ed25519-consensus = { workspace = true }
-agent-twitter-client = "0.1"
+agent-twitter-client = { git = "https://github.com/ldclabs/agent-twitter-client.git", rev = "717bd0d8dc4febfece0065c972801924ecae2639" }
 config = "0.15"
 
 [dev-dependencies]
