@@ -91,7 +91,7 @@ pub async fn add_proposal(
     ct: Content<RPCRequest>,
 ) -> impl IntoResponse {
     match ct {
-        Content::CBOR(req, _) => {
+        Content::CBOR(req, _) | Content::JSON(req, _) => {
             let is_manager = app.is_manager(&headers).await;
             if !is_manager {
                 return StatusCode::FORBIDDEN.into_response();
