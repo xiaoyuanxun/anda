@@ -110,6 +110,8 @@ pub trait BaseContext:
 
 /// StateFeatures is one of the context feature sets available when calling Agent or Tool.
 pub trait StateFeatures: Sized {
+    /// Gets the engine ID, which comes from the TEE host
+    fn id(&self) -> Principal;
     /// Gets the username from request context.
     /// Note: This is not verified and should not be used as a trusted identifier.
     /// For example, if triggered by a bot of X platform, this might be the username

@@ -246,14 +246,6 @@ impl CompletionRequest {
         self.tools.extend(tools);
         self
     }
-
-    pub fn prompt_with_context(&self) -> String {
-        if self.documents.is_empty() {
-            self.prompt.clone()
-        } else {
-            format!("{}\n\n{}", self.documents, self.prompt)
-        }
-    }
 }
 
 /// Represents a text embedding with its original text and vector representation
@@ -302,7 +294,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_prompt_with_context() {
+    fn test_prompt() {
         let req = CompletionRequest {
             prompt: "This is a test prompt.".to_string(),
             documents: vec![
@@ -323,7 +315,7 @@ mod tests {
             .into(),
             ..Default::default()
         };
-        let prompt = req.prompt_with_context();
+        let prompt = format!("{}\n\n{}", req.documents, req.prompt);
         println!("{}", prompt);
         assert_eq!(
             prompt,

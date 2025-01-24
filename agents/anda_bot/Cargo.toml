@@ -13,6 +13,7 @@ license.workspace = true
 anda_core = { path = "../../anda_core", version = "0.3" }
 anda_engine = { path = "../../anda_engine", version = "0.3" }
 anda_lancedb = { path = "../../anda_lancedb", version = "0.1" }
+anda_icp = { path = "../../tools/anda_icp", version = "0.2" }
 axum = { workspace = true }
 axum-server = { workspace = true }
 candid = { workspace = true }

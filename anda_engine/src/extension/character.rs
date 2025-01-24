@@ -32,7 +32,6 @@ use anda_core::{
     CompletionFeatures, CompletionRequest, Documents, Embedding, EmbeddingFeatures, Knowledge,
     KnowledgeFeatures, KnowledgeInput, Message, StateFeatures, VectorSearchFeatures,
 };
-use chrono::prelude::*;
 use ic_cose_types::to_cbor_bytes;
 use serde::{Deserialize, Serialize};
 use std::{sync::Arc, time::Duration};
@@ -150,7 +149,6 @@ impl Character {
     /// # Returns
     /// CompletionRequest configured with character context
     pub fn to_request(&self, prompt: String, prompter_name: Option<String>) -> CompletionRequest {
-        let utc: DateTime<Utc> = Utc::now();
         let system = format!(
             "Character Definition:\n\
             Your name: {}\n\
@@ -159,8 +157,7 @@ impl Character {
             Background: {}\n\
             Personality traits: {}\n\
             Motivations and goals: {}\n\
-            Topics of expertise: {}\n\
-            The current time is {}.\
+            Topics of expertise: {}\
             ",
             self.name,
             self.username,
@@ -168,8 +165,7 @@ impl Character {
             self.description,
             self.traits.join(", "),
             self.goals.join(", "),
-            self.topics.join(", "),
-            utc.to_rfc3339_opts(SecondsFormat::Secs, true)
+            self.topics.join(", ")
         );
 
         let style_context = format!(
@@ -182,7 +178,8 @@ impl Character {
             - Common adjectives: {}\n\n\
             Personal elements:\n\
             - Key interests: {}\n\
-            - Meme-related phrases: {}\
+            - Meme-related phrases: {}\n\n\
+            Keep responses concise and under 280 characters.\
             ",
             self.style.tone.join(", "),
             self.style.chat.join("\n"),
@@ -400,8 +397,9 @@ where
                     })
                     .collect();
                 let total = docs.len();
-                if let Err(err) = knowledge.knowledge_add(docs).await {
-                    log::error!("failed to add {} knowledges: {}", total, err);
+                match knowledge.knowledge_add(docs).await {
+                    Ok(_) => log::info!("added {} knowledges", total),
+                    Err(err) => log::error!("failed to add {} knowledges: {}", total, err),
                 }
 
                 Ok::<(), BoxError>(())
@@ -525,7 +523,7 @@ mod tests {
         };
         let req = character.to_request("Who are you?".to_string(), None);
         println!("{}\n", req.system.as_ref().unwrap());
-        println!("{}\n", req.prompt_with_context());
+        println!("{}\n", req.documents);
         println!("{:?}", req.tools);
     }
 }

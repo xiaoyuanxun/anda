@@ -248,7 +248,12 @@ impl Attention {
     ///
     /// # Returns
     /// Boolean indicating whether to like the post
-    pub async fn should_like(&self, ctx: &impl CompletionFeatures, content: &str) -> bool {
+    pub async fn should_like(
+        &self,
+        ctx: &impl CompletionFeatures,
+        interests: &[String],
+        content: &str,
+    ) -> bool {
         // Ignore very short content
         if evaluate_tokens(content) < self.min_prompt_tokens {
             return false;
@@ -258,16 +263,18 @@ impl Attention {
             system: Some("\
             You are tasked with deciding whether to like a post. Your decision should be based on the following criteria:\n\
             - Positivity: Does the post convey a positive or uplifting tone?\n\
-            - Interest: Is the post engaging, thought-provoking, or entertaining?\n\
-            - Relevance: Is the post aligned with your assigned interests or context?\n\n\
-            If the post meets at least one of these criteria, respond with 'true'. Otherwise, respond with 'false'.
+            - Interest: Is the tweet engaging, thought-provoking, or entertaining, and does it align with the user's specified interests?\n\
+            - Relevance: Is the tweet aligned with your assigned context or the user's preferences?\n\n\
+            If the post meets at least two of these criteria, respond with 'true'. Otherwise, respond with 'false'.
             ".to_string()),
             prompt: format!("\
                 ## Post Content:\n{:?}\n\n\
+                ## User Interests:\n{:?}\n\n\
                 ## Decision Task:\n\
                 Evaluate the post based on the criteria above and respond with only 'true' or 'false'.\
                 ",
-                content
+                content,
+                interests.join(", "),
             ),
             ..Default::default()
         };
@@ -372,6 +379,7 @@ mod tests {
         let res = attention
             .should_like(
                 &model,
+                &[],
                 "#ICP offers permanent memory storage, #TEE ensures absolute security, and #LLM delivers intelligent computation—#Anda is set to become an immortal AI Agent!",
             )
             .await;

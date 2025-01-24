@@ -1,13 +1,9 @@
 use agent_twitter_client::{models::Tweet, scraper::Scraper, search::SearchMode};
 use anda_core::{
-    Agent, BoxError, CacheFeatures, CompletionFeatures, Path, PutMode, StateFeatures,
-    StoreFeatures,
+    Agent, BoxError, CacheFeatures, CompletionFeatures, Path, PutMode, StateFeatures, StoreFeatures,
 };
 use anda_engine::{
-    context::AgentCtx,
-    engine::Engine,
-    extension::character::CharacterAgent,
-    rand_number,
+    context::AgentCtx, engine::Engine, extension::character::CharacterAgent, rand_number,
 };
 use anda_lancedb::knowledge::KnowledgeStore;
 use ciborium::from_reader;
@@ -48,7 +44,7 @@ impl TwitterDaemon {
         }
     }
 
-    async fn init_seen_tweet_ids<F>(&self, ctx: &F)
+    async fn init_seen_tweet_ids<F>(&self, ctx: &F) -> usize
     where
         F: CacheFeatures + StoreFeatures,
     {
@@ -58,9 +54,10 @@ impl TwitterDaemon {
             .await
             .map(|(v, _)| from_reader(&v[..]).unwrap_or_default())
             .unwrap_or_default();
-
+        let count = seen_tweet_ids.len();
         ctx.cache_set("seen_tweet_ids", (seen_tweet_ids, None))
             .await;
+        count
     }
 
     async fn get_seen_tweet_ids<F>(&self, ctx: &F) -> Vec<String>
@@ -87,12 +84,13 @@ impl TwitterDaemon {
     }
 
     pub async fn run(&self, cancel_token: CancellationToken) -> Result<(), BoxError> {
-        let ctx = self.engine.ctx_with(self.agent.as_ref(), None, None)?;
+        {
+            let ctx = self.engine.ctx_with(self.agent.as_ref(), None, None)?;
+            // load seen_tweet_ids from store
+            let count = self.init_seen_tweet_ids(&ctx).await;
 
-        // load seen_tweet_ids from store
-        self.init_seen_tweet_ids(&ctx).await;
-
-        log::info!(target: LOG_TARGET, "starting Twitter bot");
+            log::info!(target: LOG_TARGET, "starting Twitter bot with {} seen tweets", count);
+        }
 
         loop {
             {
@@ -115,13 +113,14 @@ impl TwitterDaemon {
                 .scraper
                 .search_tweets(
                     &format!("@{}", self.agent.character.username.clone()),
-                    5,
+                    20,
                     SearchMode::Latest,
                     None,
                 )
                 .await
             {
                 Ok(mentions) => {
+                    log::info!(target: LOG_TARGET, "fetch mentions: {} tweets", mentions.tweets.len());
                     for tweet in mentions.tweets {
                         if let Err(err) = self.handle_mention(tweet).await {
                             log::error!(target: LOG_TARGET, "handle mention error: {err:?}");
@@ -140,15 +139,25 @@ impl TwitterDaemon {
                 }
             }
 
-            if rand_number(0..=5) == 0 {
-                if let Err(err) = self.handle_home_timeline().await {
-                    log::error!(target: LOG_TARGET, "handle_home_timeline error: {err:?}");
+            match rand_number(0..=5) {
+                0 => {
+                    if let Err(err) = self.handle_home_timeline().await {
+                        log::error!(target: LOG_TARGET, "handle_home_timeline error: {err:?}");
+                    }
+                }
+                n => {
+                    log::info!(target: LOG_TARGET, "skip home timeline task by random {n}");
                 }
             }
 
-            if rand_number(0..=9) == 0 {
-                if let Err(err) = self.post_new_tweet().await {
-                    log::error!(target: LOG_TARGET, "post_new_tweet error: {err:?}");
+            match rand_number(0..=9) {
+                0 => {
+                    if let Err(err) = self.post_new_tweet().await {
+                        log::error!(target: LOG_TARGET, "post_new_tweet error: {err:?}");
+                    }
+                }
+                n => {
+                    log::info!(target: LOG_TARGET, "skip post new tweet task by random {n}");
                 }
             }
 
@@ -181,7 +190,6 @@ impl TwitterDaemon {
                 "\
                 Share a single brief thought or observation in one short sentence.\
                 Be direct and concise. No questions, hashtags, or emojis.\
-                Keep responses concise and under 280 characters.\n\
                 "
                 .to_string(),
                 ctx.user(),
@@ -365,7 +373,12 @@ impl TwitterDaemon {
         tweet_content: &str,
         tweet_id: &str,
     ) -> Result<bool, BoxError> {
-        if self.agent.attention.should_like(ctx, tweet_content).await {
+        if self
+            .agent
+            .attention
+            .should_like(ctx, &self.agent.character.style.interests, tweet_content)
+            .await
+        {
             let _ = self.scraper.like_tweet(tweet_id).await?;
             return Ok(true);
         }
@@ -403,8 +416,7 @@ impl TwitterDaemon {
                 .to_request(
                     "\
                     Reply with a single clear, natural sentence.\
-                    If the tweet contains ASCII art or stylized text formatting, respond with similar creative formatting.\n\
-                    Keep responses concise and under 280 characters.\
+                    If the tweet contains ASCII art or stylized text formatting, respond with similar creative formatting.\
                     "
                     .to_string(),
                     ctx.user(),

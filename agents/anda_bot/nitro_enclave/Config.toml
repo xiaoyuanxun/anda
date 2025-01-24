@@ -7,6 +7,7 @@ api_host = "https://icp-api.io"
 cose_namespace = "anda"
 cose_canister = "53cyg-yyaaa-aaaap-ahpua-cai"
 object_store_canister = "6at64-oyaaa-aaaap-anvza-cai"
+token_ledgers = []
 
 [llm]
 deepseek_api_key = ""
@@ -22,3 +23,7 @@ password = ""
 email = ""
 two_factor_auth = ""
 cookie_string = ""
+
+[google]
+api_key = ""
+search_engine_id = ""

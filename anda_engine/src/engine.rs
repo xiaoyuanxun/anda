@@ -165,6 +165,7 @@ impl Engine {
 /// Builder pattern implementation for constructing an Engine.
 /// Allows for step-by-step configuration of the engine's components.
 pub struct EngineBuilder {
+    id: Principal,
     name: String,
     tools: ToolSet<BaseCtx>,
     agents: AgentSet<AgentCtx>,
@@ -185,6 +186,7 @@ impl EngineBuilder {
     pub fn new() -> Self {
         let mstore = Arc::new(InMemory::new());
         EngineBuilder {
+            id: Principal::anonymous(),
             name: "Anda".to_string(),
             tools: ToolSet::new(),
             agents: AgentSet::new(),
@@ -193,6 +195,12 @@ impl EngineBuilder {
             tee_client: TEEClient::new(TEE_LOCAL_SERVER, "", Principal::anonymous()),
             cancellation_token: CancellationToken::new(),
         }
+    }
+
+    /// Sets the engine ID, which comes from the TEE.
+    pub fn with_id(mut self, id: Principal) -> Self {
+        self.id = id;
+        self
     }
 
     /// Sets the engine name.
@@ -293,7 +301,12 @@ impl EngineBuilder {
             return Err(format!("default agent {} not found", default_agent).into());
         }
 
-        let ctx = BaseCtx::new(self.cancellation_token, self.tee_client, self.store);
+        let ctx = BaseCtx::new(
+            self.id,
+            self.cancellation_token,
+            self.tee_client,
+            self.store,
+        );
         let ctx = AgentCtx::new(ctx, self.model, Arc::new(self.tools), Arc::new(self.agents));
 
         Ok(Engine {
@@ -306,7 +319,12 @@ impl EngineBuilder {
     /// Creates a mock context for testing purposes.
     #[cfg(test)]
     pub fn mock_ctx(self) -> AgentCtx {
-        let ctx = BaseCtx::new(self.cancellation_token, self.tee_client, self.store);
+        let ctx = BaseCtx::new(
+            Principal::anonymous(),
+            self.cancellation_token,
+            self.tee_client,
+            self.store,
+        );
         AgentCtx::new(ctx, self.model, Arc::new(self.tools), Arc::new(self.agents))
     }
 }

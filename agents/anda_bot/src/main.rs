@@ -6,11 +6,13 @@ use anda_engine::{
     extension::{
         attention::Attention,
         character::{Character, CharacterAgent},
+        google::GoogleSearchTool,
         segmenter::DocumentSegmenter,
     },
     model::{cohere, deepseek, openai, Model},
     store::Store,
 };
+use anda_icp::ledger::{BalanceOfTool, ICPLedgers};
 use anda_lancedb::{knowledge::KnowledgeStore, lancedb::LanceVectorStore};
 use axum::{routing, Router};
 use candid::Principal;
@@ -32,6 +34,7 @@ use ic_object_store::{
 };
 use ic_tee_agent::setting::decrypt_payload;
 use ic_tee_cdk::TEEAppInformation;
+use std::collections::BTreeSet;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use structured_logger::{async_json::new_writer, get_env_level, unix_ms, Builder};
 use tokio::{net::TcpStream, signal, sync::RwLock, time::sleep};
@@ -205,13 +208,35 @@ async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
         knowledge_store,
     );
 
-    let engine = EngineBuilder::new()
+    let mut engine = EngineBuilder::new()
+        .with_id(tee_info.id)
         .with_name(engine_name.clone())
         .with_cancellation_token(global_cancel_token.clone())
         .with_tee_client(tee.clone())
         .with_model(model)
-        .with_store(Store::new(object_store))
-        .register_agent(agent.clone())?;
+        .with_store(Store::new(object_store));
+
+    if !encrypted_cfg.google.api_key.is_empty() {
+        engine = engine.register_tool(GoogleSearchTool::new(
+            encrypted_cfg.google.api_key.clone(),
+            encrypted_cfg.google.search_engine_id.clone(),
+            None,
+        ))?;
+    }
+    if !cfg.icp.token_ledgers.is_empty() {
+        let token_ledgers: BTreeSet<Principal> = cfg
+            .icp
+            .token_ledgers
+            .iter()
+            .flat_map(|t| Principal::from_text(t).map_err(|_| format!("invalid token: {}", t)))
+            .collect();
+
+        let ledgers = ICPLedgers::load(&tee, token_ledgers, false).await?;
+        let ledgers = Arc::new(ledgers);
+        engine = engine.register_tool(BalanceOfTool::new(ledgers.clone()))?;
+    }
+
+    engine = engine.register_agent(agent.clone())?;
 
     let agent = Arc::new(agent);
     let engine = Arc::new(engine.build(default_agent.clone())?);

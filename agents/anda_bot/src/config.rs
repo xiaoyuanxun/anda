@@ -14,6 +14,7 @@ pub struct Icp {
     pub cose_namespace: String,
     pub cose_canister: String,
     pub object_store_canister: String,
+    pub token_ledgers: Vec<String>,
 }
 
 /// Configuration for the LLM should be encrypted and stored in the ICP COSE canister.
@@ -43,12 +44,20 @@ pub struct X {
     pub cookie_string: Option<String>,
 }
 
+/// Configuration for the Google search should be encrypted and stored in the ICP COSE canister.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct Google {
+    pub api_key: String,
+    pub search_engine_id: String,
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Conf {
     pub llm: Llm,
     pub tee: Tee,
     pub icp: Icp,
     pub x: X,
+    pub google: Google,
 }
 
 impl Conf {

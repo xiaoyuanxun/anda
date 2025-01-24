@@ -7,7 +7,7 @@
 //! - Integration with ICP ledger standards
 //! - Atomic transfers with proper error handling
 
-use anda_core::{BoxError, FunctionDefinition, Tool};
+use anda_core::{BoxError, FunctionDefinition, StateFeatures, Tool};
 use anda_engine::context::BaseCtx;
 use candid::Nat;
 use schemars::{schema_for, JsonSchema};
@@ -90,7 +90,7 @@ impl Tool<BaseCtx> for TransferTool {
     }
 
     async fn call(&self, ctx: BaseCtx, data: Self::Args) -> Result<Self::Output, BoxError> {
-        self.ledgers.transfer(&ctx, data).await
+        self.ledgers.transfer(&ctx, ctx.id(), data).await
     }
 }
 
@@ -173,6 +173,9 @@ mod tests {
             memo: Some("test memo".to_string()),
         };
         let mocker = mock::MockCanisterCaller::new(|canister, method, args| {
+            if method == "icrc1_balance_of" {
+                return encode_args((Nat::from(999900001234u64),)).unwrap();
+            }
             assert_eq!(canister, &panda_ledger);
             assert_eq!(method, "icrc1_transfer");
             let (args,): (TransferArg,) = decode_args(&args).unwrap();
@@ -189,7 +192,10 @@ mod tests {
             encode_args((res,)).unwrap()
         });
 
-        let res = ledgers.transfer(&mocker, args).await.unwrap();
+        let res = ledgers
+            .transfer(&mocker, Principal::anonymous(), args)
+            .await
+            .unwrap();
         assert_eq!(res, Nat::from(321u64));
     }
 }

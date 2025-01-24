@@ -39,6 +39,9 @@ use std::collections::{BTreeMap, BTreeSet};
 pub mod balance;
 pub mod transfer;
 
+pub use balance::*;
+pub use transfer::*;
+
 const MAX_MEMO_LEN: usize = 32;
 
 /// ICP Ledger Transfer tool implementation
@@ -112,6 +115,7 @@ impl ICPLedgers {
     async fn transfer(
         &self,
         ctx: &impl CanisterCaller,
+        me: Principal,
         args: transfer::TransferToArgs,
     ) -> Result<Nat, BoxError> {
         let owner = Principal::from_text(&args.account)?;
@@ -126,6 +130,21 @@ impl ICPLedgers {
             .ok_or_else(|| format!("Token {} is not supported", args.symbol))?;
 
         let amount = (args.amount * 10u64.pow(*decimals as u32) as f64) as u64;
+        let balance: Nat = ctx
+            .canister_query(
+                canister,
+                "icrc1_balance_of",
+                (Account {
+                    owner: me,
+                    subaccount: from_subaccount,
+                },),
+            )
+            .await?;
+
+        if balance < amount {
+            return Err("insufficient balance".into());
+        }
+
         let res: Result<Nat, TransferError> = ctx
             .canister_update(
                 canister,
@@ -162,15 +181,15 @@ impl ICPLedgers {
     /// * `args` - Balance query arguments containing account and token symbol
     ///
     /// # Returns
-    /// Result containing the balance (Nat) or an error
+    /// Result containing the token balance (f64) or an error
     async fn balance_of(
         &self,
         ctx: &impl CanisterCaller,
         args: balance::BalanceOfArgs,
-    ) -> Result<Nat, BoxError> {
+    ) -> Result<f64, BoxError> {
         let owner = Principal::from_text(&args.account)?;
 
-        let (canister, _) = self
+        let (canister, decimals) = self
             .ledgers
             .get(&args.symbol)
             .ok_or_else(|| format!("Token {} is not supported", args.symbol))?;
@@ -182,6 +201,8 @@ impl ICPLedgers {
         let res: Nat = ctx
             .canister_query(canister, "icrc1_balance_of", (account,))
             .await?;
-        Ok(res)
+
+        let amount = res.0.to_f64().unwrap_or_default() / 10u64.pow(*decimals as u32) as f64;
+        Ok(amount)
     }
 }

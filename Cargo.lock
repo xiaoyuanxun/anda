@@ -110,6 +110,7 @@ dependencies = [
  "agent-twitter-client",
  "anda_core",
  "anda_engine",
+ "anda_icp",
  "anda_lancedb",
  "axum",
  "axum-server",
@@ -146,7 +147,7 @@ dependencies = [
 
 [[package]]
 name = "anda_core"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "bytes",
  "candid",
@@ -165,7 +166,7 @@ dependencies = [
 
 [[package]]
 name = "anda_engine"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "anda_core",
  "bytes",
@@ -196,7 +197,7 @@ dependencies = [
 
 [[package]]
 name = "anda_icp"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anda_core",
  "anda_engine",

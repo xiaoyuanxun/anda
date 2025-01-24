@@ -5,7 +5,6 @@
 
 use anda_core::{BoxError, FunctionDefinition, Tool};
 use anda_engine::context::BaseCtx;
-use candid::Nat;
 use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -47,7 +46,7 @@ impl BalanceOfTool {
 impl Tool<BaseCtx> for BalanceOfTool {
     const CONTINUE: bool = true;
     type Args = BalanceOfArgs;
-    type Output = Nat;
+    type Output = f64;
 
     fn name(&self) -> String {
         "icp_ledger_balance_of".to_string()

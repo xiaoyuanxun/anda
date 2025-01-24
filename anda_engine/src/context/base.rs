@@ -43,6 +43,7 @@ use crate::store::Store;
 
 #[derive(Clone)]
 pub struct BaseCtx {
+    pub(crate) id: Principal,
     pub(crate) user: Option<String>,
     pub(crate) caller: Option<Principal>,
     pub(crate) path: Path,
@@ -75,8 +76,14 @@ impl BaseCtx {
     /// * `cancellation_token` - Token for managing operation cancellation
     /// * `tee` - Trusted Execution Environment client
     /// * `store` - Storage backend implementation
-    pub(crate) fn new(cancellation_token: CancellationToken, tee: TEEClient, store: Store) -> Self {
+    pub(crate) fn new(
+        id: Principal,
+        cancellation_token: CancellationToken,
+        tee: TEEClient,
+        store: Store,
+    ) -> Self {
         Self {
+            id,
             user: None,
             caller: None,
             path: Path::default(),
@@ -156,6 +163,10 @@ impl BaseCtx {
 impl BaseContext for BaseCtx {}
 
 impl StateFeatures for BaseCtx {
+    fn id(&self) -> Principal {
+        self.id
+    }
+
     fn user(&self) -> Option<String> {
         self.user.clone()
     }

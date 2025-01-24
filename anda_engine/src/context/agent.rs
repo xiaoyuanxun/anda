@@ -2,7 +2,7 @@
 //!
 //! This module provides the core implementation of the Agent context ([`AgentCtx`]) which serves as
 //! the primary execution environment for agents in the Anda system. The context provides:
-//! 
+//!
 //! - Access to AI models for completions and embeddings
 //! - Tool execution capabilities
 //! - Agent-to-agent communication
@@ -337,6 +337,9 @@ impl EmbeddingFeatures for AgentCtx {
 impl BaseContext for AgentCtx {}
 
 impl StateFeatures for AgentCtx {
+    fn id(&self) -> Principal {
+        self.base.id()
+    }
     /// Gets the current user identifier, if available
     fn user(&self) -> Option<String> {
         self.base.user()

@@ -87,7 +87,7 @@ pub struct Client {
 
 impl Client {
     /// Creates a new OpenAI client with the given API key
-    /// 
+    ///
     /// # Arguments
     /// * `api_key` - OpenAI API key for authentication
     pub fn new(api_key: &str) -> Self {
@@ -127,10 +127,10 @@ impl Client {
     }
 
     /// Creates an embedding model with the given name
-    /// 
+    ///
     /// # Arguments
     /// * `model` - Name of the embedding model to use
-    /// 
+    ///
     /// # Note
     /// Default embedding dimension of 0 will be used if model is not known
     pub fn embedding_model(&self, model: &str) -> EmbeddingModel {
@@ -143,7 +143,7 @@ impl Client {
     }
 
     /// Creates a completion model with the given name
-    /// 
+    ///
     /// # Arguments
     /// * `model` - Name of the completion model to use
     pub fn completion_model(&self, model: &str) -> CompletionModel {
@@ -375,7 +375,7 @@ impl EmbeddingFeaturesDyn for EmbeddingModel {
 
 impl EmbeddingModel {
     /// Creates a new embedding model instance
-    /// 
+    ///
     /// # Arguments
     /// * `client` - OpenAI client instance
     /// * `model` - Name of the embedding model
@@ -398,7 +398,7 @@ pub struct CompletionModel {
 
 impl CompletionModel {
     /// Creates a new completion model instance
-    /// 
+    ///
     /// # Arguments
     /// * `client` - OpenAI client instance
     /// * `model` - Name of the completion model
@@ -438,14 +438,22 @@ impl CompletionFeaturesDyn for CompletionModel {
                 vec![]
             };
 
+            // Add context documents to chat history
+            if !req.documents.is_empty() {
+                full_history.push(Message {
+                    role: "user".into(),
+                    content: format!("{}", req.documents).into(),
+                    name: req.system_name.clone(),
+                    ..Default::default()
+                });
+            }
+
             // Extend existing chat history
             full_history.append(&mut req.chat_history);
 
-            // Add context documents to chat history
-            let prompt_with_context = req.prompt_with_context();
             full_history.push(Message {
                 role: "user".into(),
-                content: prompt_with_context.into(),
+                content: req.prompt.into(),
                 name: req.prompter_name,
                 ..Default::default()
             });
