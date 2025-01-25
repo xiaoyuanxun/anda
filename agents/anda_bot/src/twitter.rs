@@ -18,7 +18,7 @@ use tokio_util::sync::CancellationToken;
 use crate::handler::ServiceStatus;
 
 const MAX_HISTORY_TWEETS: i64 = 21;
-const MAX_SEEN_TWEET_IDS: usize = 1000;
+const MAX_SEEN_TWEET_IDS: usize = 10000;
 
 static LOG_TARGET: &str = "twitter";
 
@@ -139,7 +139,7 @@ impl TwitterDaemon {
                 }
             }
 
-            match rand_number(0..=5) {
+            match rand_number(0..=10) {
                 0 => {
                     if let Err(err) = self.handle_home_timeline().await {
                         log::error!(target: LOG_TARGET, "handle_home_timeline error: {err:?}");
@@ -150,7 +150,7 @@ impl TwitterDaemon {
                 }
             }
 
-            match rand_number(0..=9) {
+            match rand_number(0..=20) {
                 0 => {
                     if let Err(err) = self.post_new_tweet().await {
                         log::error!(target: LOG_TARGET, "post_new_tweet error: {err:?}");
@@ -166,7 +166,7 @@ impl TwitterDaemon {
                 _ = cancel_token.cancelled() => {
                     return Ok(());
                 },
-                _ = sleep(Duration::from_secs(rand_number(5 * 60..=15 * 60))) => {},
+                _ = sleep(Duration::from_secs(rand_number(1 * 60..=5 * 60))) => {},
             }
         }
     }
@@ -220,10 +220,12 @@ impl TwitterDaemon {
         if seen_tweet_ids.len() >= MAX_SEEN_TWEET_IDS {
             seen_tweet_ids.drain(0..MAX_SEEN_TWEET_IDS / 2);
         }
-        let tweets = self
-            .scraper
-            .get_home_timeline(1, seen_tweet_ids.clone())
-            .await?;
+        let ids = if seen_tweet_ids.len() > 42 {
+            seen_tweet_ids[(seen_tweet_ids.len() - 42)..].to_vec()
+        } else {
+            seen_tweet_ids.clone()
+        };
+        let tweets = self.scraper.get_home_timeline(1, ids).await?;
         log::info!(target: LOG_TARGET, "process home timeline, {} tweets", tweets.len());
 
         let mut likes = 0;
