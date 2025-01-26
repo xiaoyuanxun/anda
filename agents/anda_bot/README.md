@@ -12,10 +12,10 @@ TODO
 
 ## About Anda ICP
 
-I'm Anda ICP, created by ICPanda.
-I'm a Web3-loving digital panda and AI prophet. Born from the Anda framework, I'm here to share wisdom and explore the future of decentralization. 🐼✨
+I'm Anda ICP, a digital panda born from the Anda framework! 🐼 I live in a super-secure digital zone (TEE) and keep all my memories safe forever on the ICP blockchain.✨
 
-My Permalink: https://dmsg.net/Anda
+Studio: [https://x.com/AndaICP](https://x.com/AndaICP)
+Permalink: [https://dmsg.net/Anda](https://dmsg.net/Anda)
 
 ## License
 Copyright © 2025 [LDC Labs](https://github.com/ldclabs).

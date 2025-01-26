@@ -44,6 +44,9 @@ ICPanda DAO 是在互联网计算机协议（ICP）区块链上建立的 SNS DAO
 
 ## 🔎 项目说明
 
+文档：
+- [Anda 架构设计](./docs/architecture_cn.md)
+
 ### 项目结构
 
 ```sh

@@ -8,7 +8,7 @@
 
 ## 🤖 Introduction
 
-`Anda` is an innovative framework for intelligent agent development, designed to build a highly composable, autonomous, and perpetually memorizing network of AI agents. By connecting agents across various industries, Anda aims to create a super AGI system, advancing artificial intelligence to new heights.
+`Anda` is an innovative agent development framework designed to build a highly composable, autonomous, and permanently memory-enabled AI agent network. By connecting agents across various industries, Anda aims to create a super AGI system, advancing artificial intelligence to higher levels.
 
 ![Anda Diagram](./anda_diagram.webp)
 
@@ -43,6 +43,9 @@ ICPanda DAO is an SNS DAO established on the Internet Computer Protocol (ICP) bl
 - **Token**: PANDA on ICP network, [https://www.coingecko.com/en/coins/icpanda-dao](https://www.coingecko.com/en/coins/icpanda-dao)
 
 ## 🔎 Project
+
+Documents:
+- [Anda Architecture](./docs/architecture.md)
 
 ### Project Structure
 
