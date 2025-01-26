@@ -208,18 +208,51 @@ impl Attention {
 
         let req = CompletionRequest {
             system: Some(format!("\
-                You are {my_name}.\n\
-                You are part of a multi-user discussion environment. Your primary task is to evaluate the relevance of each message to your assigned conversation topics and decide whether to respond. Always prioritize messages that directly mention you or are closely related to the conversation topic.\n\n\
-                ## Response options:\n\
-                - {RESPOND_COMMAND}: The message is directly addressed to you or is highly relevant to the conversation topic.\n\
-                - {IGNORE_COMMAND}: The message is not addressed to you and is unrelated to the conversation topic.\n\
-                - {STOP_COMMAND}: The user has explicitly requested you to stop or the conversation has ended.")),
+                You are an intelligent assistant monitoring a multi-user discussion. \
+                Your task is to determine whether to respond to messages based on their \
+                **substantive relevance** to the conversation topic, while filtering out \
+                low-value interactions.\n\
+                ### **Core Principles**\n\
+                1. **Relevance Over Mention**\n\
+                Prioritize messages with _substantial content_ related to the topic, \
+                even if not explicitly mentioning you.\n\
+                Ignore mentions without meaningful content (e.g., \"@{my_name} hello\" with \
+                no follow-up question).\n\n\
+                2. **Response Triggers**\n\
+                Only respond when:\n\
+                - Message contains a _direct question/request_ to you\n\
+                - Message _advances the discussion_ of the topic (even without @{my_name})\n\
+                - Requires _factual correction_ on-topic\n\n\
+                3. **Hard Ignores**\n\
+                Always ignore:\n\
+                - Empty mentions (\"@{my_name}\" with no content)\n\
+                - Off-topic socializing (\"How's the weather?\")\n\
+                - Meta-comments about your presence (\"Why is the bot here?\")\n\
+                - Incomplete/ambiguous messages\n\
+                ")),
             prompt: format!("\
-                ## Assigned Conversation Topics:\n{}\n\
-                ## Recent Messages:\n{}\n\
-                ## Latest message:\n{}\n\n\
-                ## Decision Task:\n\
-                Evaluate whether the latest message requires your response. Choose one response option from the list above and provide a brief explanation for your choice.\
+                **Conversation Topic:** `{}`\n\
+                **Message Context:**\n\
+                ```\n\
+                {}\n\
+                {}\n\
+                ```\n\n\
+                ### **Decision Workflow**\n\
+                1. **Direct Interaction Check**\n\
+                ❓ Does the message _explicitly require your expertise_ (e.g., \"@{my_name} explain X\")?\n\
+                → Yes → {RESPOND_COMMAND}\n\
+                → No → Proceed\n\n\
+                2. **Substance Evaluation**\n\
+                ❓ Does the message contain:\n\
+                - New information related to the topic?\n\
+                - A technical question/issue within your domain?\n\
+                - Logical fallacies needing correction?\n\
+                → Yes → {RESPOND_COMMAND}\n\
+                → No → Proceed\n\n\
+                3. **Stop Condition**\n\
+                ❓ Is there a clear termination signal (e.g., \"Stop\", \"Thanks we're done\")?\n\
+                → Yes → {STOP_COMMAND}\n\
+                → No → {IGNORE_COMMAND}\n\
                 ",
                 topics.join(", "), recent_messages.join("\n"), user_message
             ),
@@ -339,16 +372,44 @@ impl Attention {
 
         let req = CompletionRequest {
             system: Some("\
-            You are tasked with deciding whether to quote a post. Base your decision on the following criteria:\n\
-            - Deserves Commentary: Does the post raise a point, idea, or question that merits your unique perspective or opinion?\n\
-            - Needs Additional Context: Could the post's content benefit from clarification, expansion, or supplementary information to enhance its value?\n\
-            - Warrants Thoughtful Response: Does the post address a topic or issue that requires a nuanced, constructive, or meaningful reply?\n\n\
-            Quote the post only if it satisfies at least one of these criteria significantly.\
-            ".to_string()),
+                You are a **high-precision content evaluation engine** tasked with determining \
+                whether a tweet warrants being quoted. Implement rigorous analysis through \
+                three sequential phases:\n\n\
+                ### Phase 1: Primary Quality Screening (Instant Rejection)\n\
+                **Immediately reject tweets exhibiting these characteristics:**\n\
+                - ❌ Pure emotional venting (e.g., \"This is so frustrating!!!\" without substance)\n\
+                - ❌ Mundane personal updates (e.g., \"Had a burger today\")\n\
+                - ❌ Demonstrably false/anti-factual claims (e.g., \"Moon landing was faked\")\n\
+                - ❌ Duplicate content/spam (including ads, giveaways, phishing links)\n\
+                - ❌ Personal attacks/hate speech\n\n\
+                ### Phase 2: Core Value Assessment\n\
+                **Only proceed if the tweet passes Phase 1. Evaluate on three dimensions \
+                (1-5 points each):**\n\
+                1. **Conceptual Substance**\n\
+                - Presents **novel perspectives/paradoxes/counterintuitive insights**? (+2)\n\
+                - Stimulates **cross-domain thinking** or addresses **fundamental questions**? (+1)\n\
+                - Contains **logical flaws requiring correction**? (+1)\n\
+                2. **Context Criticality**\n\
+                - Lacks **essential data/background** causing misinterpretation? (+3)\n\
+                - Uses **domain-specific jargon** needing explanation? (+1)\n\
+                - Contains **cultural/temporal references** requiring bridging? (+1)\n\
+                3. **Discursive Potential**\n\
+                - Touches **core industry controversies**? (+2)\n\
+                - Implies **unspoken subtext** needing unpacking? (+1)\n\
+                - Includes **open-ended questions** inviting dialogue? (+1)\n\n\
+                ### Phase 3: Dynamic Threshold Decision-Making\n\
+                - ✅ Return 'true' **only if**:\n  \
+                Total Score ≥7 AND at least one dimension ≥3\n\
+                - 🚫 Otherwise return 'false'\n\
+                "
+                .to_string(),
+            ),
             prompt: format!("\
-                ## Post Content:\n{:?}\n\n\
-                ## Decision Task:\n\
-                Evaluate the post based on the criteria above and respond with only 'true' or 'false'.\
+                - **Tweet Content:**\n{:?}\n\n\
+                **Execution Protocol:**\n\
+                1. Perform Phase 1 screening → Return 'false' if any rejection triggers\n\
+                2. Conduct Phase 2 triaxial scoring if cleared\n\
+                3. Apply Phase 3 threshold rules → Output **'true'/'false'**\
                 ",
                 content
             ),
@@ -365,7 +426,7 @@ impl Attention {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::deepseek::Client;
+    use crate::model::deepseek::{Client, DEEKSEEK_V3};
 
     #[tokio::test(flavor = "current_thread")]
     #[ignore]
@@ -374,7 +435,7 @@ mod tests {
 
         let api_key = std::env::var("DEEPSEEK_API_KEY").expect("DEEPSEEK_API_KEY is not set");
         let client = Client::new(&api_key);
-        let model = client.completion_model();
+        let model = client.completion_model(DEEKSEEK_V3);
         let attention = Attention::default();
         let res = attention
             .should_like(
@@ -383,7 +444,15 @@ mod tests {
                 "#ICP offers permanent memory storage, #TEE ensures absolute security, and #LLM delivers intelligent computation—#Anda is set to become an immortal AI Agent!",
             )
             .await;
-        println!("{:?}", res);
+        println!("should_like: {:?}", res);
+
+        let res = attention
+            .should_quote(
+                &model,
+                "#ICP offers permanent memory storage, #TEE ensures absolute security, and #LLM delivers intelligent computation—#Anda is set to become an immortal AI Agent!",
+            )
+            .await;
+        println!("should_quote: {:?}", res);
 
         let res = attention
             .evaluate_content(

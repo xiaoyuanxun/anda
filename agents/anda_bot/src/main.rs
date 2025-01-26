@@ -366,7 +366,10 @@ fn connect_model(cfg: &config::Llm) -> Result<Model, BoxError> {
                 cohere::Client::new(&cfg.cohere_api_key)
                     .embedding_model(&cfg.cohere_embedding_model),
             ),
-            Arc::new(deepseek::Client::new(&cfg.deepseek_api_key).completion_model()),
+            Arc::new(
+                deepseek::Client::new(&cfg.deepseek_api_key)
+                    .completion_model(deepseek::DEEKSEEK_V3),
+            ),
         ))
     } else {
         let cli = openai::Client::new(&cfg.openai_api_key);

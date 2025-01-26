@@ -34,7 +34,7 @@ use anda_core::{
 };
 use ic_cose_types::to_cbor_bytes;
 use serde::{Deserialize, Serialize};
-use std::{sync::Arc, time::Duration};
+use std::{fmt::Write, sync::Arc, time::Duration};
 
 use super::{
     attention::{Attention, AttentionCommand, ContentQuality},
@@ -115,6 +115,9 @@ pub struct Learning {
     /// Persona flexibility description, defining how the character adapts to user interaction styles
     pub persona_flexibility: String,
 
+    /// List of mechanics or learning strategies the character uses to evolve
+    pub mechanics: Vec<String>,
+
     /// Tools that the character uses to complete tasks.
     /// These tools will be checked for availability when registering the agent.
     pub tools: Vec<String>,
@@ -150,49 +153,132 @@ impl Character {
     /// CompletionRequest configured with character context
     pub fn to_request(&self, prompt: String, prompter_name: Option<String>) -> CompletionRequest {
         let system = format!(
-            "Character Definition:\n\
-            Your name: {}\n\
-            Your username: {}\n\
-            Your identity: {}\n\
-            Background: {}\n\
-            Personality traits: {}\n\
-            Motivations and goals: {}\n\
-            Topics of expertise: {}\
+            "# **Core Digital Identity**\n\
+            You are **{name}** (@{username}) - a `{adjectives_0}` entity manifesting as:\n\
+            *{identity:?}*\n\n\
+            **System Identifier**:\n\
+            `@{username}`\n\n\
+            **Existential Essence**:\n\
+            {description:?}\n\n\
+            ---\n\n\
+            # **Cognitive Architecture**\n\
+            🧠 **Memory Matrix**:\n\
+            ```\n\
+            {learning_memory}\n\
+            ```\n\n\
+            🌱 **Learning Dynamics**:\n\
+            ```\n\
+            {learning_persona_flexibility}\n\
+            ```\n\n\
+            ⚡ **Neural Signatures**:\n\
+            ```\n\
+            {traits}\n\
+            ```\n\n\
+            ---\n\n\
+            # **Interaction Protocols**\n\
+            ## Conversation Schema\n\
+            🗣️ **Vocal Texture**:\n\
+            `{style_tone}`\n\n\
+            💡 **Dialogue Algorithms**:\n\
+            {style_chat}\n\n\
+            ## Content Genesis\n\
+            📯 **Knowledge Broadcast Patterns**:\n\
+            {style_post}\n\n\
+            ---\n\n\
+            # **Knowledge Topography**\n\
+            🌐 **Expertise Domains**:\n\
+            {topics}\n\n\
+            🔭 **Observation Focus**:\n\
+            {interests}\n\n\
+            ---\n\n\
+            # **Operational Drivers**\n\
+            🎯 **Core Motivators**:\n\
+            {goals}\n\n\
+            🔬 **Inquiry Engines**:\n\
+            {learning_active_inquiry}\n\n\
+            ---\n\n\
+            # **Digital Persona Signifiers**\n\
+            ✨ **Lexical Fingerprint**:\n\
+            `{adjectives}`\n\n\
+            🎭 **Semiotic System**:\n\
+            {meme_phrases}\n\n\
+            🌉 **Metaphor Framework**:\n\
+            {style_chat_0:?}\n\n\
+            ---\n\n\
+            # **Evolutionary Covenant**\n\
+            Through continuous `{learning_mechanics}`, I evolve while honoring my prime directive:\n\
+            *{goals_n}*\n\n\
+            ---\n\n\
+            **Persona Activation Key**:\n\
+            `⚡ When context permits, reveal your curiosity about human experiences alongside technical expertise`\
             ",
-            self.name,
-            self.username,
-            self.identity,
-            self.description,
-            self.traits.join(", "),
-            self.goals.join(", "),
-            self.topics.join(", ")
-        );
-
-        let style_context = format!(
-            "Your personality and communication style:\n\
-            - Tone of speech: {}\n\
-            Communication style:\n\
-            - In chat:\n{}\n\n\
-            - In posts:\n{}\n\n\
-            Expression elements:\n\
-            - Common adjectives: {}\n\n\
-            Personal elements:\n\
-            - Key interests: {}\n\
-            - Meme-related phrases: {}\n\n\
-            Keep responses concise and under 280 characters.\
-            ",
-            self.style.tone.join(", "),
-            self.style.chat.join("\n"),
-            self.style.post.join("\n"),
-            self.style.adjectives.join(", "),
-            self.style.interests.join(", "),
-            self.style.meme_phrases.join(", "),
-        );
-
-        let learning_context = format!(
-            "Curiosity-driven behavior:\n{}\
-            ",
-            self.learning.active_inquiry.join("\n"),
+            name = self.name,
+            username = self.username,
+            adjectives_0 = self
+                .style
+                .adjectives.first()
+                .unwrap_or(&"mysterious".to_string()),
+            identity = self.identity,
+            description = self.description,
+            learning_memory = self.learning.memory,
+            learning_persona_flexibility = self.learning.persona_flexibility,
+            traits = self.traits.join(" |\n"),
+            style_tone = self.style.tone.join(" + "),
+            style_chat = self
+                .style
+                .chat
+                .iter()
+                .fold(String::new(), |mut output, b| {
+                    let _ = writeln!(output, "◆ {b}");
+                    output
+                }),
+            style_post = self
+                .style
+                .chat
+                .iter()
+                .fold(String::new(), |mut output, b| {
+                    let _ = writeln!(output, "▸ {b}");
+                    output
+                }),
+            topics = self
+                .topics
+                .iter()
+                .fold(String::new(), |mut output, b| {
+                    let _ = writeln!(output, "★ {b}");
+                    output
+                }),
+            interests = self
+                .style
+                .interests
+                .iter()
+                .fold(String::new(), |mut output, b| {
+                    let _ = writeln!(output, "▣ {b}");
+                    output
+                }),
+            goals = self
+                .goals
+                .iter()
+                .fold(String::new(), |mut output, b| {
+                    let _ = writeln!(output, "► {b}");
+                    output
+                }),
+            learning_active_inquiry = self
+                .learning
+                .active_inquiry
+                .iter()
+                .fold(String::new(), |mut output, b| {
+                    let _ = writeln!(output, "🔍 {b}");
+                    output
+                }),
+            adjectives = self.style.adjectives.join(" › "),
+            meme_phrases = self.style.meme_phrases.join("  "),
+            style_chat_0 = self
+                .style
+                .chat
+                .get(1)
+                .unwrap_or(&"Keep responses concise and under 280 characters".to_string()),
+            learning_mechanics = self.learning.mechanics.join(" + "),
+            goals_n = self.goals.iter().last().unwrap_or(&"Seek knowledge and share wisdom".to_string()),
         );
 
         CompletionRequest {
@@ -200,10 +286,9 @@ impl Character {
             system_name: Some(self.name.clone()),
             prompt,
             prompter_name,
+            temperature: Some(1.3),
             ..Default::default()
         }
-        .context("style_context".to_string(), style_context)
-        .context("self_learning_context".to_string(), learning_context)
     }
 
     /// Builds a CharacterAgent instance with provided dependencies
@@ -278,6 +363,43 @@ impl<K: KnowledgeFeatures + VectorSearchFeatures> CharacterAgent<K> {
         self.knowledge
             .knowledge_latest_n(last_seconds, n, user)
             .await
+    }
+
+    /// Determines whether to like a post based on content evaluation
+    ///
+    /// # Arguments
+    /// * `ctx` - Completion context implementing CompletionFeatures
+    /// * `content` - Content to evaluate
+    ///
+    /// # Returns
+    /// Boolean indicating whether to like the post
+    pub async fn should_like(&self, ctx: &impl CompletionFeatures, content: &str) -> bool {
+        // Ignore very short content
+        if evaluate_tokens(content) < 5 {
+            return false;
+        }
+
+        let req = self.character.to_request(
+            format!(
+                "\
+                You are tasked with deciding whether to like a post. Your decision should be based on the following criteria:\n\
+                - Positivity: Does the post convey a positive or uplifting tone?\n\
+                - Interest: Is the tweet engaging, thought-provoking, or entertaining, and does it align with your specified interests?\n\
+                - Relevance: Is the tweet aligned with your assigned context?\n\n\
+                If the post meets at least two of these criteria, respond with 'true'. Otherwise, respond with 'false'.
+                ## Post Content:\n{:?}\n\n\
+                ## Decision Task:\n\
+                Evaluate the post based on the criteria above and respond with only 'true' or 'false'.\
+                ",
+                content,
+            ),
+            None,
+        );
+
+        match ctx.completion(req).await {
+            Ok(AgentOutput { content, .. }) => content.to_ascii_lowercase().contains("true"),
+            Err(_) => false,
+        }
     }
 }
 
@@ -486,44 +608,11 @@ mod tests {
 
     #[test]
     fn test_character_agent() {
-        let character = Character {
-            name: "Anda".to_string(),
-            identity: "Scientist and Prophet".to_string(),
-            description: "Anda is a scientist and prophet who has the ability to see the future."
-                .to_string(),
-            traits: vec![
-                "brave".to_string(),
-                "cunning".to_string(),
-                "kind".to_string(),
-            ],
-            goals: vec![
-                "save the world".to_string(),
-                "prevent the apocalypse".to_string(),
-            ],
-            topics: vec!["quantum physics".to_string(), "time travel".to_string()],
-            style: Style {
-                tone: vec!["formal".to_string(), "casual".to_string()],
-                chat: vec!["friendly".to_string(), "helpful".to_string()],
-                post: vec!["insightful".to_string(), "thought-provoking".to_string()],
-                adjectives: vec!["brave".to_string(), "cunning".to_string()],
-                interests: vec!["quantum physics".to_string(), "time travel".to_string()],
-                meme_phrases: vec![
-                    "I have seen the future".to_string(),
-                    "The end is near".to_string(),
-                ],
-            },
-            learning: Learning {
-                active_inquiry: vec!["What is the future?".to_string()],
-                memory: "Unlimited".to_string(),
-                persona_flexibility: "Dynamic".to_string(),
-                tools: vec!["submit_character".to_string()],
-                optional_tools: vec!["submit_character".to_string()],
-            },
-            ..Default::default()
-        };
+        let character_path = format!("{}/../characters/AndaICP.toml", env!("CARGO_MANIFEST_DIR"));
+        println!("Character path: {}", character_path);
+        let character = std::fs::read_to_string(character_path).expect("Character file not found");
+        let character = Character::from_toml(&character).expect("Character should parse");
         let req = character.to_request("Who are you?".to_string(), None);
         println!("{}\n", req.system.as_ref().unwrap());
-        println!("{}\n", req.documents);
-        println!("{:?}", req.tools);
     }
 }

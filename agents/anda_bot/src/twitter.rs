@@ -166,7 +166,7 @@ impl TwitterDaemon {
                 _ = cancel_token.cancelled() => {
                     return Ok(());
                 },
-                _ = sleep(Duration::from_secs(rand_number(1 * 60..=5 * 60))) => {},
+                _ = sleep(Duration::from_secs(rand_number(60..=5 * 60))) => {},
             }
         }
     }
@@ -375,12 +375,7 @@ impl TwitterDaemon {
         tweet_content: &str,
         tweet_id: &str,
     ) -> Result<bool, BoxError> {
-        if self
-            .agent
-            .attention
-            .should_like(ctx, &self.agent.character.style.interests, tweet_content)
-            .await
-        {
+        if self.agent.should_like(ctx, tweet_content).await {
             let _ = self.scraper.like_tweet(tweet_id).await?;
             return Ok(true);
         }
@@ -399,8 +394,33 @@ impl TwitterDaemon {
             .should_retweet(ctx, tweet_content)
             .await
         {
-            let _ = self.scraper.retweet(tweet_id).await;
-            return Ok(true);
+            let req = self
+                .agent
+                .character
+                .to_request(
+                    "\
+                    Reply the tweet with a single clear, natural sentence.\
+                    "
+                    .to_string(),
+                    ctx.user(),
+                )
+                .context(
+                    tweet_id.to_string(),
+                    format!("Tweet content:\n{tweet_content}"),
+                );
+            let res = ctx.completion(req).await?;
+            match res.failed_reason {
+                Some(reason) => {
+                    return Err(format!("Failed to generate response for tweet: {reason}").into());
+                }
+                None => {
+                    let _ = self
+                        .scraper
+                        .send_tweet(&res.content, Some(tweet_id), None)
+                        .await?;
+                    return Ok(true);
+                }
+            }
         }
         Ok(false)
     }
@@ -417,13 +437,15 @@ impl TwitterDaemon {
                 .character
                 .to_request(
                     "\
-                    Reply with a single clear, natural sentence.\
-                    If the tweet contains ASCII art or stylized text formatting, respond with similar creative formatting.\
+                    Reply the tweet with a single clear, natural sentence.\
                     "
                     .to_string(),
                     ctx.user(),
                 )
-                .context(tweet_id.to_string(), format!("Quote tweet content:\n{tweet_content}"));
+                .context(
+                    tweet_id.to_string(),
+                    format!("Tweet content:\n{tweet_content}"),
+                );
             let res = ctx.completion(req).await?;
             match res.failed_reason {
                 Some(reason) => {

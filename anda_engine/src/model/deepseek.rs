@@ -20,7 +20,8 @@ use crate::APP_USER_AGENT;
 // Main DeepSeek Client
 // ================================================================
 const DEEKSEEK_API_BASE_URL: &str = "https://api.deepseek.com";
-static DEEKSEEK_MODEL: &str = "deepseek-chat";
+pub static DEEKSEEK_V3: &str = "deepseek-chat";
+pub static DEEKSEEK_R1: &str = "deepseek-reasoner";
 
 /// DeepSeek API client configuration and HTTP client
 #[derive(Clone)]
@@ -74,8 +75,8 @@ impl Client {
     }
 
     /// Creates a new completion model instance using the default DeepSeek model
-    pub fn completion_model(&self) -> CompletionModel {
-        CompletionModel::new(self.clone(), DEEKSEEK_MODEL)
+    pub fn completion_model(&self, model: &str) -> CompletionModel {
+        CompletionModel::new(self.clone(), model)
     }
 }
 
@@ -325,15 +326,15 @@ mod tests {
     async fn test_deepseek() {
         dotenv::dotenv().ok();
 
-        let api_key = std::env::var("DEEKSEEK_API_KEY").expect("DEEKSEEK_API_KEY is not set");
+        let api_key = std::env::var("DEEPSEEK_API_KEY").expect("DEEKSEEK_API_KEY is not set");
         let character_path = format!("{}/../characters/AndaICP.toml", env!("CARGO_MANIFEST_DIR"));
         println!("Character path: {}", character_path);
         let character = std::fs::read_to_string(character_path).expect("Character file not found");
         let character = Character::from_toml(&character).expect("Character should parse");
         let client = Client::new(&api_key);
-        let model = client.completion_model();
-        let req = character.to_request("Who are you?".into(), Some("AndaICP".into()));
+        let model = client.completion_model(DEEKSEEK_V3);
+        let req = character.to_request("I am Yan, glad to see you".into(), Some("Yan".into()));
         let res = CompletionFeatures::completion(&model, req).await.unwrap();
-        println!("{:?}", res);
+        println!("{}", res.content);
     }
 }
