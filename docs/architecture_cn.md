@@ -54,6 +54,8 @@ TEE 启动后，IC-TEE Gateway 会做如下工作：
    - 代理 ICP canisters 请求，所以 Anda 调用 canisters 都会用同一个永久身份，当然应用层也可以从密钥服务派生确定性的子身份与 ICP canisters 交互；
    - 代理外界到 Anda Engine 的 HTTPs 请求。
 
+![Anda 启动时序图](./anda_sequence_diagram.webp)
+
 ## Anda 引擎架构
 
 ### 核心库

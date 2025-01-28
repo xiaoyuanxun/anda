@@ -71,6 +71,8 @@ The Anda Engine is the core scheduling engine of Anda. An Anda application can i
    - Proxies ICP canister requests, ensuring Anda uses the same permanent identity when calling canisters.
    - Proxies external HTTPS requests to the Anda Engine.
 
+![Anda Sequence Diagram](./anda_sequence_diagram.webp)
+
 ## Anda Engine Architecture
 
 ### Core Crates
