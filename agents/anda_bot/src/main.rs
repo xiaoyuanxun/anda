@@ -355,7 +355,6 @@ async fn connect_knowledge_store(
     let ks =
         KnowledgeStore::init(&mut store, namespace, model.ndims() as u16, Some(1024 * 10)).await?;
     log::info!(target: LOG_TARGET, "knowledge_store ks: {:?}", ks.name());
-    ks.optimize().await?;
     Ok(ks)
 }
 
