@@ -201,6 +201,7 @@ impl TwitterDaemon {
             None => {
                 let _ = self.scraper.send_tweet(&res.content, None, None).await?;
                 log::info!(target: LOG_TARGET,
+                    time_elapsed = ctx.time_elapsed().as_millis() as u64;
                     "post new tweet: {}",
                     res.content.chars().take(100).collect::<String>()
                 );
@@ -331,7 +332,12 @@ impl TwitterDaemon {
             let tweet: Option<&str> = tweet.id.as_deref();
             let _ = self.scraper.send_tweet(&res.content, tweet, None).await?;
 
-            log::info!(target: LOG_TARGET, "handle mention: {} - {}, {} chars", tweet_user, tweet_id, res.content.chars().count());
+            log::info!(target: LOG_TARGET,
+                tweet_user = tweet_user,
+                tweet_id = tweet_id,
+                chars = res.content.chars().count(),
+                time_elapsed = ctx.time_elapsed().as_millis() as u64;
+                "handle mention");
         }
 
         self.set_seen_tweet_ids(ctx, seen_tweet_ids.clone()).await;

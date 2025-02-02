@@ -320,6 +320,7 @@ impl CompletionFeaturesDyn for CompletionModel {
 mod tests {
     use super::*;
     use crate::extension::character::Character;
+    use std::time::Instant;
 
     #[tokio::test(flavor = "current_thread")]
     #[ignore]
@@ -332,9 +333,11 @@ mod tests {
         let character = std::fs::read_to_string(character_path).expect("Character file not found");
         let character = Character::from_toml(&character).expect("Character should parse");
         let client = Client::new(&api_key);
+        let now = Instant::now();
         let model = client.completion_model(DEEKSEEK_V3);
         let req = character.to_request("I am Yan, glad to see you".into(), Some("Yan".into()));
         let res = CompletionFeatures::completion(&model, req).await.unwrap();
         println!("{}", res.content);
+        println!("Took: {:?}", now.elapsed());
     }
 }
