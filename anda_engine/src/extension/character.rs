@@ -300,11 +300,11 @@ impl Character {
     /// Configured CharacterAgent instance
     pub fn build<K: KnowledgeFeatures + VectorSearchFeatures>(
         self,
-        attention: Attention,
-        segmenter: DocumentSegmenter,
-        knowledge: K,
+        attention: Arc<Attention>,
+        segmenter: Arc<DocumentSegmenter>,
+        knowledge: Arc<K>,
     ) -> CharacterAgent<K> {
-        CharacterAgent::new(self, attention, segmenter, knowledge)
+        CharacterAgent::new(Arc::new(self), attention, segmenter, knowledge)
     }
 }
 
@@ -334,16 +334,16 @@ impl<K: KnowledgeFeatures + VectorSearchFeatures> CharacterAgent<K> {
     /// # Returns
     /// New CharacterAgent instance
     pub fn new(
-        character: Character,
-        attention: Attention,
-        segmenter: DocumentSegmenter,
-        knowledge: K,
+        character: Arc<Character>,
+        attention: Arc<Attention>,
+        segmenter: Arc<DocumentSegmenter>,
+        knowledge: Arc<K>,
     ) -> Self {
         Self {
-            character: Arc::new(character),
-            attention: Arc::new(attention),
-            segmenter: Arc::new(segmenter),
-            knowledge: Arc::new(knowledge),
+            character,
+            attention,
+            segmenter,
+            knowledge,
         }
     }
 

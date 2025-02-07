@@ -25,7 +25,7 @@ RUN chmod +x ic_tee_daemon
 RUN wget -O ic_tee_nitro_gateway https://github.com/ldclabs/ic-tee/releases/download/v0.2.14/ic_tee_nitro_gateway
 RUN chmod +x ic_tee_nitro_gateway
 
-RUN wget -O anda_bot https://github.com/ldclabs/anda/releases/download/v0.3.6/anda_bot
+RUN wget -O anda_bot https://github.com/ldclabs/anda/releases/download/v0.3.7/anda_bot
 RUN chmod +x anda_bot
 
 FROM debian:bookworm-slim AS runtime

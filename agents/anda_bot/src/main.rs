@@ -201,11 +201,12 @@ async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
     let knowledge_store =
         connect_knowledge_store(object_store.clone(), knowledge_table, &model).await?;
 
+    let knowledge_store = Arc::new(knowledge_store);
     log::info!(target: LOG_TARGET, "start to build engine");
     let agent = character.build(
-        Attention::default(),
-        DocumentSegmenter::default(),
-        knowledge_store,
+        Arc::new(Attention::default()),
+        Arc::new(DocumentSegmenter::default()),
+        knowledge_store.clone(),
     );
 
     let mut engine = EngineBuilder::new()
@@ -253,6 +254,7 @@ async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
             object_store_canister: Some(object_store_canister),
             caller: Principal::anonymous(),
         }),
+        knowledge_store,
     };
 
     match tokio::try_join!(

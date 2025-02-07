@@ -9,14 +9,14 @@ This article introduces the system architecture and core components of the Anda 
 **Resources**:
 - [GitHub: Source code](https://github.com/ldclabs/anda)
 - [Extensions: Core agents & tools implementations](https://github.com/ldclabs/anda/tree/main/anda_engine/src/extension)
-- [Anda Bot: Full AI agent application implementation](https://github.com/ldclabs/anda/tree/main/agents/anda_bot)
-- [Anda bot (Application)](https://x.com/AndaICP)
+- [Anda Bot: Full AI agent implementation](https://github.com/ldclabs/anda/tree/main/agents/anda_bot)
+- [Anda bot (application on X)](https://x.com/AndaICP)
 
 ## System Architecture
 
 ![Anda Architecture Diagram](./anda_architecture.webp)
 
-To run a complete Anda AI Agent application (referred to as Anda), the following three external resources and two internal services are required:
+To run a complete Anda AI Agent (referred to as Anda), the following three external resources and two internal services are required:
 
 **External Resources**:
 1. **LLM Service**
@@ -36,11 +36,11 @@ The LLM service provides intelligent computing power to Anda, similar to GPU clo
 
 ### TEE Computing
 
-TEE computing provides Anda with a hardware-level secure isolated computing environment and application identity verification.
+TEE computing provides Anda with a hardware-level secure isolated computing environment and identity verification.
 
 - **Current Support**: AWS Nitro enclave (via IC-TEE).
 - **Future Support**: Intel SGX, NVIDIA TEE GPU, and more.
-- **Security**: Only by running in TEE can we ensure that Anda remains untampered, and its computational state (e.g., keys) is secure and cannot be stolen.
+- **Security**: Only by running in TEE we can ensure that Anda remains untampered, and its computational state (e.g., keys) is secure and cannot be stolen.
 
 ### ICP Blockchain
 
@@ -51,7 +51,7 @@ The ICP blockchain provides Anda with decentralized identity verification, root 
 
 ### Anda Engine
 
-The Anda Engine is the core scheduling engine of Anda. An Anda application can include multiple agents and tools, which are registered with the Engine and automatically scheduled for execution. The architecture and working principles of the Engine will be detailed in the next section.
+The Anda Engine is the core scheduling engine of Anda. An Anda AI agent can include multiple agents and tools, which are registered with the Engine and automatically scheduled for execution. The architecture and working principles of the Engine will be detailed in the next section.
 
 ### IC-TEE Gateway
 
@@ -186,7 +186,7 @@ let output = engine.agent_run(None, "Hello", None, Some(user), None).await?;
 
 ## Conclusion
 
-The above outlines the complete composition of an Anda agent application. While it may appear complex, the Anda framework encapsulates this complexity, allowing developers to focus on their business logic and quickly build secure, efficient, and scalable agent applications on Anda.
+The above outlines the complete composition of an Anda AI agent. While it may appear complex, the Anda framework encapsulates this complexity, allowing developers to focus on their business logic and quickly build secure, efficient, and scalable agents on Anda.
 
 ### Future Outlook
 

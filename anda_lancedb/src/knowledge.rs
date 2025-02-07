@@ -37,7 +37,7 @@ impl KnowledgeStore {
             Field::new(
                 "vec",
                 DataType::FixedSizeList(
-                    Arc::new(Field::new("item", DataType::Float32, false)),
+                    Arc::new(Field::new("item", DataType::Float16, false)),
                     dim as i32,
                 ),
                 false,
@@ -211,7 +211,7 @@ impl KnowledgeFeatures for KnowledgeStore {
         let mut users: Vec<String> = Vec::with_capacity(docs.len());
         let mut texts: Vec<String> = Vec::with_capacity(docs.len());
         let mut metas: Vec<String> = Vec::with_capacity(docs.len());
-        let mut vecs: Vec<Option<Vec<Option<f32>>>> = Vec::with_capacity(docs.len());
+        let mut vecs: Vec<Option<Vec<Option<half::f16>>>> = Vec::with_capacity(docs.len());
         for doc in docs {
             if doc.vec.len() != self.dim as usize {
                 return Err(format!(
@@ -226,7 +226,12 @@ impl KnowledgeFeatures for KnowledgeStore {
             users.push(doc.user.to_ascii_lowercase());
             texts.push(doc.text);
             metas.push(serde_json::to_string(&doc.meta)?);
-            vecs.push(Some(doc.vec.into_iter().map(Some).collect()));
+            vecs.push(Some(
+                doc.vec
+                    .into_iter()
+                    .map(|v| Some(half::f16::from_f32(v)))
+                    .collect(),
+            ));
         }
         // Create a RecordBatch stream.
         let batches = RecordBatch::try_new(
@@ -237,7 +242,7 @@ impl KnowledgeFeatures for KnowledgeStore {
                 Arc::new(StringArray::from(texts)),
                 Arc::new(StringArray::from(metas)),
                 Arc::new(
-                    FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(vecs, self.dim),
+                    FixedSizeListArray::from_iter_primitive::<Float16Type, _, _>(vecs, self.dim),
                 ),
             ],
         )?;

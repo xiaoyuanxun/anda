@@ -9,14 +9,14 @@
 **资源**:
 - [GitHub: 项目源代码](https://github.com/ldclabs/anda)
 - [扩展（Extensions）: 核心 agents & tools 的实现](https://github.com/ldclabs/anda/tree/main/anda_engine/src/extension)
-- [Anda Bot: 一个 AI Agent 应用的完整实现](https://github.com/ldclabs/anda/tree/main/agents/anda_bot)
+- [Anda Bot: 一个 AI Agent 智能体的完整实现](https://github.com/ldclabs/anda/tree/main/agents/anda_bot)
 - [Anda bot（X 平台应用）](https://x.com/AndaICP)
 
 ## 系统架构
 
 ![Anda 系统架构图](./anda_architecture.webp)
 
-要运行完整的 Anda AI Agent 应用程序（下面简称为 Anda），需要3种外部资源，分别是 **LLM 服务**、**TEE 计算**和 **ICP 区块链**；以及两个内部服务，即 **Anda Engine** 和 **IC-TEE Gateway**。
+要运行完整的 Anda AI Agent 程序（下面简称为 Anda），需要3种外部资源，分别是 **LLM 服务**、**TEE 计算**和 **ICP 区块链**；以及两个内部服务，即 **Anda Engine** 和 **IC-TEE Gateway**。
 
 ### LLM 服务
 
@@ -26,7 +26,7 @@ LLM 服务为 Anda 提供智能算力，就像一种 GPU 云服务，它是可�
 
 ### TEE 计算
 
-TEE 计算为 Anda 提供硬件级的安全隔离计算环境和应用身份证明。目前 Anda 框架通过 IC-TEE 支持了 AWS Nitro enclave，未来会支持 Intel SGX，NVIDIA 的 TEE GPU 等。只有运行在 TEE 中，我们才可相信并验证 Anda 还是那个 Anda，它没有被篡改，它的计算状态（如密钥等）也处于安全环境不会被窃取。
+TEE 计算为 Anda 提供硬件级的安全隔离计算环境和身份证明。目前 Anda 框架通过 IC-TEE 支持了 AWS Nitro enclave，未来会支持 Intel SGX，NVIDIA 的 TEE GPU 等。只有运行在 TEE 中，我们才可相信并验证 Anda 还是那个 Anda，它没有被篡改，它的计算状态（如密钥等）也处于安全环境不会被窃取。
 
 ### ICP 区块链
 
@@ -36,7 +36,7 @@ ICP 区块链为 Anda 提供了必要的去中心化的身份证明、根密钥�
 
 ### Anda Engine
 
-Anda Engine 是 Anda 的核心调度引擎。一个 Anda 应用可以包含多个 agents 和 tools，它们被注册到 Engine 中，可以被 Engine 自动调度执行。我们将在下一部分详细介绍 Engine 的架构和工作原理。
+Anda Engine 是 Anda 的核心调度引擎。一个 Anda AI Agent 可以包含多个 agents 和 tools，它们被注册到 Engine 中，可以被 Engine 自动调度执行。我们将在下一部分详细介绍 Engine 的架构和工作原理。
 
 ### IC-TEE Gateway
 
@@ -170,7 +170,7 @@ let output = engine.agent_run(None, "Hello", None, Some(user), None).await?;
 
 ## 结论
 
-以上概述了 Anda 代理应用的完整组成。虽然它可能看起来复杂，但 Anda 框架封装了这种复杂性，使开发人员能够专注于业务逻辑，并快速在 Anda 上构建安全、高效和可扩展的代理应用。
+以上概述了 Anda 智能体的完整组成。虽然它可能看起来复杂，但 Anda 框架封装了这种复杂性，使开发人员能够专注于业务逻辑，并快速在 Anda 上构建安全、高效和可扩展的智能体。
 
 ### 未来展望
 

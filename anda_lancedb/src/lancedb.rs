@@ -4,7 +4,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 pub use anda_engine::{model::EmbeddingFeaturesDyn, store::VectorSearchFeaturesDyn};
 pub use arrow_array::{
-    types::Float32Type, FixedSizeListArray, RecordBatch, RecordBatchIterator, StringArray,
+    types::Float16Type, FixedSizeListArray, RecordBatch, RecordBatchIterator, StringArray,
 };
 pub use arrow_schema::{DataType, Field, Schema, SchemaRef};
 pub use lance_index::scalar::FullTextSearchQuery;
