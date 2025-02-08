@@ -60,9 +60,24 @@ struct Cli {
     #[clap(long, default_value = "8042")]
     port: u16,
 
-    /// Path to the configuration file
-    #[clap(long, env = "CONFIG_FILE_PATH", default_value = "./Config.toml")]
-    config: String,
+    #[clap(long, default_value = "http://127.0.0.1:8080")]
+    tee_host: String,
+
+    /// Basic auth to request TEE service
+    #[clap(long)]
+    basic_token: String,
+
+    /// ICP API host
+    #[clap(long, default_value = "https://icp-api.io")]
+    icp_host: String,
+
+    /// COSE canister
+    #[clap(long)]
+    cose_canister: String,
+
+    /// COSE namespace
+    #[clap(long)]
+    cose_namespace: String,
 
     #[clap(long, env = "CHARACTER_FILE_PATH", default_value = "./Character.toml")]
     character: String,
@@ -111,11 +126,11 @@ fn main() -> Result<(), BoxError> {
 }
 
 async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
-    let cfg = config::Conf::from_file(&cli.config).unwrap_or_else(|err| {
-        println!("config error: {:?}", err);
-        panic!("config error: {:?}", err)
-    });
-    log::info!("{:?}", cfg);
+    // let cfg = config::Conf::from_file(&cli.config).unwrap_or_else(|err| {
+    //     println!("config error: {:?}", err);
+    //     panic!("config error: {:?}", err)
+    // });
+    // log::info!("{:?}", cfg);
 
     let character = std::fs::read_to_string(&cli.character)?;
     let character = Character::from_toml(&character)?;
@@ -125,14 +140,14 @@ async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
     let shutdown_future = shutdown_signal(global_cancel_token.clone());
 
     let engine_name = ENGINE_NAME.to_string();
-    let cose_canister = Principal::from_text(&cfg.icp.cose_canister)?;
+    let cose_canister = Principal::from_text(&cli.cose_canister)?;
     let default_agent = character.username.clone();
     let knowledge_table: Path = default_agent.to_ascii_lowercase().into();
     let cose_setting_key: Vec<u8> = default_agent.to_ascii_lowercase().into();
 
     log::info!(target: LOG_TARGET, "start to connect TEE service");
-    let tee = TEEClient::new(&cfg.tee.tee_host, &cfg.tee.basic_token, cose_canister);
-    let tee_info = connect_tee(&cfg, &tee, global_cancel_token.clone()).await?;
+    let tee = TEEClient::new(&cli.tee_host, &cli.basic_token, cose_canister);
+    let tee_info = connect_tee(&cli.tee_host, &tee, global_cancel_token.clone()).await?;
     log::info!(target: LOG_TARGET, "TEEAppInformation: {:?}", tee_info);
 
     let root_path = Path::from(ROOT_PATH);
@@ -144,14 +159,12 @@ async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
     log::info!(target: LOG_TARGET,
        "sign_in, principal: {:?}", my_principal.to_text());
 
-    let my_agent = build_agent(&cfg.icp.api_host, Arc::new(my_id))
-        .await
-        .unwrap();
+    let my_agent = build_agent(&cli.icp_host, Arc::new(my_id)).await.unwrap();
 
     log::info!(target: LOG_TARGET, "start to get admin_master_secret");
     let admin_master_secret = tee
         .get_cose_encrypted_key(&SettingPath {
-            ns: cfg.icp.cose_namespace.clone(),
+            ns: cli.cose_namespace.clone(),
             user_owned: false,
             subject: Some(tee_info.id),
             key: COSE_SECRET_PERMANENT_KEY.as_bytes().to_vec().into(),
@@ -161,7 +174,7 @@ async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
 
     log::info!(target: LOG_TARGET, "start to get encrypted config");
     let encrypted_cfg_path = SettingPath {
-        ns: cfg.icp.cose_namespace.clone(),
+        ns: cli.cose_namespace.clone(),
         user_owned: false,
         subject: Some(tee_info.id),
         key: cose_setting_key.into(),
@@ -180,7 +193,7 @@ async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
                 &encrypted_cfg_path
             );
 
-            cfg.clone()
+            return Err(err.into());
         }
     };
 
@@ -190,7 +203,7 @@ async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
 
     // ObjectStore
     log::info!(target: LOG_TARGET, "start to connect object_store");
-    let object_store_canister = Principal::from_text(cfg.icp.object_store_canister)?;
+    let object_store_canister = Principal::from_text(encrypted_cfg.icp.object_store_canister)?;
     let object_store =
         connect_object_store(&tee, Arc::new(my_agent), &root_path, object_store_canister).await?;
     let object_store = Arc::new(object_store);
@@ -224,8 +237,8 @@ async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
             None,
         ))?;
     }
-    if !cfg.icp.token_ledgers.is_empty() {
-        let token_ledgers: BTreeSet<Principal> = cfg
+    if !encrypted_cfg.icp.token_ledgers.is_empty() {
+        let token_ledgers: BTreeSet<Principal> = encrypted_cfg
             .icp
             .token_ledgers
             .iter()
@@ -245,7 +258,7 @@ async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
     let app_state = handler::AppState {
         tee: Arc::new(tee),
         x_status: x_status.clone(),
-        cose_namespace: cfg.icp.cose_namespace.clone(),
+        cose_namespace: cli.cose_namespace.clone(),
         info: Arc::new(handler::AppInformation {
             id: my_principal,
             name: engine_name,
@@ -281,17 +294,12 @@ async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
 }
 
 async fn connect_tee(
-    cfg: &config::Conf,
+    host: &str,
     tee: &TEEClient,
     cancel_token: CancellationToken,
 ) -> Result<TEEAppInformation, BoxError> {
     loop {
-        if let Ok(tee_info) = tee
-            .http
-            .get(format!("{}/information", &cfg.tee.tee_host))
-            .send()
-            .await
-        {
+        if let Ok(tee_info) = tee.http.get(format!("{}/information", host)).send().await {
             let tee_info = tee_info.bytes().await?;
             let tee_info: TEEAppInformation = from_reader(&tee_info[..])?;
             return Ok(tee_info);

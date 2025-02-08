@@ -8,7 +8,8 @@
 5. Users can customize their own AI bot by modifying Character.toml and Config.toml. The default bot is Anda ICP, created by ICPanda.
 
 ## Deployment Guide
-TODO
+- [English Deployment Guide](./deployment_en.md)
+- [中文部署指南](./deployment_cn.md)
 
 ## About Anda ICP
 

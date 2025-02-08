@@ -3,16 +3,7 @@ use config::{Config, File, FileFormat};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct Tee {
-    pub tee_host: String,
-    pub basic_token: String,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Icp {
-    pub api_host: String,
-    pub cose_namespace: String,
-    pub cose_canister: String,
     pub object_store_canister: String,
     pub token_ledgers: Vec<String>,
 }
@@ -54,7 +45,6 @@ pub struct Google {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Conf {
     pub llm: Llm,
-    pub tee: Tee,
     pub icp: Icp,
     pub x: X,
     pub google: Google,

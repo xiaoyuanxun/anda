@@ -1,5 +1,5 @@
 # base image
-FROM rust:slim-bookworm AS builder
+FROM debian:bookworm-slim AS builder
 
 RUN apt-get update \
     && apt-get install -y gcc g++ libc6-dev pkg-config libssl-dev wget protobuf-compiler
@@ -25,7 +25,7 @@ RUN chmod +x ic_tee_daemon
 RUN wget -O ic_tee_nitro_gateway https://github.com/ldclabs/ic-tee/releases/download/v0.2.14/ic_tee_nitro_gateway
 RUN chmod +x ic_tee_nitro_gateway
 
-RUN wget -O anda_bot https://github.com/ldclabs/anda/releases/download/v0.3.7/anda_bot
+RUN wget -O anda_bot https://github.com/ldclabs/anda/releases/download/v0.3.8/anda_bot
 RUN chmod +x anda_bot
 
 FROM debian:bookworm-slim AS runtime
@@ -41,13 +41,12 @@ COPY --from=builder /app /app/
 WORKDIR /app
 
 # supervisord config
-COPY agents/anda_bot/nitro_enclave/supervisord.conf /etc/supervisord.conf
+COPY supervisord.conf /etc/supervisord.conf
 # setup.sh script that will act as entrypoint
-COPY agents/anda_bot/nitro_enclave/Config.toml agents/anda_bot/nitro_enclave/Character.toml agents/anda_bot/nitro_enclave/setup.sh ./
+COPY Character.toml setup.sh ./
 RUN chmod +x setup.sh && ls -la
 
 ENV LOG_LEVEL=info
-ENV RUST_MIN_STACK=8388608
 
 # entry point
 ENTRYPOINT [ "/app/setup.sh" ]
