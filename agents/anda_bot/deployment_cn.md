@@ -23,7 +23,7 @@
    ic_tee_cli identity-new --path myid.pem
    # principal: vh57d-**-nqe
 
-   ic_tee_cli --identity myid.pem
+   ic_tee_cli -i myid.pem
    ```
    你需要把该 principal ID 添加到 IC COSE 服务你的 namespace 的 managers 中。
 
@@ -230,9 +230,9 @@ ic_tee_cli tee-verify --url https://YOUE_DOMAIN/.well-known/attestation
 ```
 
 还可以查看其它信息，比如 Anda ICP 的信息：
-TEE attestation：https://andaicp.anda.bot/.well-known/attestation
-TEE information：https://andaicp.anda.bot/.well-known/information
-anda_bot information：https://andaicp.anda.bot/.well-known/app
+- TEE attestation：https://andaicp.anda.bot/.well-known/attestation
+- TEE information：https://andaicp.anda.bot/.well-known/information
+- anda_bot information：https://andaicp.anda.bot/.well-known/app
 
 ### 升级
 使用上面的步骤制作最新的 enclave image。

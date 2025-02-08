@@ -22,7 +22,7 @@
    ic_tee_cli identity-new --path myid.pem
    # principal: vh57d-**-nqe
 
-   ic_tee_cli --identity myid.pem
+   ic_tee_cli -i myid.pem
    ```
    Add this principal ID to the managers of your namespace in the IC COSE service.
 
@@ -220,9 +220,9 @@ ic_tee_cli tee-verify --url https://YOUE_DOMAIN/.well-known/attestation
 ```
 
 You can also view other information, such as Anda ICP's details:
-TEE attestation: https://andaicp.anda.bot/.well-known/attestation
-TEE information: https://andaicp.anda.bot/.well-known/information
-anda_bot information: https://andaicp.anda.bot/.well-known/app
+- TEE attestation: https://andaicp.anda.bot/.well-known/attestation
+- TEE information: https://andaicp.anda.bot/.well-known/information
+- anda_bot information: https://andaicp.anda.bot/.well-known/app
 
 ### Upgrade
 Follow the steps above to create the latest enclave image.

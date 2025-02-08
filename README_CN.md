@@ -67,7 +67,7 @@ anda/
 
 #### 非开发者：
 
-可以关注 `agents` 目录下的智能体。比如 [`anda_bot`](https://github.com/ldclabs/anda/tree/main/agents/anda_bot)，只需复制其中的 [nitro_enclave](https://github.com/ldclabs/anda/tree/main/agents/anda_bot/nitro_enclave) 文件夹，修改 `Character.toml` 角色定义和 `Config.toml` 运行参数并按照教程部署。
+可以关注 `agents` 目录下的智能体。比如 [`anda_bot`](https://github.com/ldclabs/anda/tree/main/agents/anda_bot)。
 目前部署流程还比较复杂，未来我们会推出云服务，实现一键部署。
 
 #### 开发者：
