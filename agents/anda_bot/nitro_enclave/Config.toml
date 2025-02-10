@@ -7,10 +7,13 @@ token_ledgers = []
 [llm]
 # DeepSeek API key
 deepseek_api_key = "sk-0**1a2b"
+deepseek_endpoint = "https://api.deepseek.com"
+deepseek_model = "deepseek-chat"
 cohere_api_key = "Y4f**CXd"
 cohere_embedding_model = "embed-multilingual-v3.0"
 # Or use OpenAI
 openai_api_key = ""
+openai_endpoint = ""
 openai_embedding_model = ""
 openai_completion_model = ""
 

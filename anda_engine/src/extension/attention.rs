@@ -434,7 +434,7 @@ mod tests {
         dotenv::dotenv().ok();
 
         let api_key = std::env::var("DEEPSEEK_API_KEY").expect("DEEPSEEK_API_KEY is not set");
-        let client = Client::new(&api_key);
+        let client = Client::new(&api_key, None);
         let model = client.completion_model(DEEKSEEK_V3);
         let attention = Attention::default();
         let res = attention

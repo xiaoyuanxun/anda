@@ -14,11 +14,17 @@ pub struct Llm {
     #[serde(default)]
     pub deepseek_api_key: String,
     #[serde(default)]
+    pub deepseek_endpoint: String,
+    #[serde(default)]
+    pub deepseek_model: String,
+    #[serde(default)]
     pub cohere_api_key: String,
     #[serde(default)]
     pub cohere_embedding_model: String,
     #[serde(default)]
     pub openai_api_key: String,
+    #[serde(default)]
+    pub openai_endpoint: String,
     #[serde(default)]
     pub openai_embedding_model: String,
     #[serde(default)]

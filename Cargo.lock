@@ -166,7 +166,7 @@ dependencies = [
 
 [[package]]
 name = "anda_engine"
-version = "0.3.5"
+version = "0.3.6"
 dependencies = [
  "anda_core",
  "bytes",

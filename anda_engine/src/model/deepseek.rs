@@ -38,9 +38,9 @@ impl Client {
     ///
     /// # Returns
     /// Configured DeepSeek client instance
-    pub fn new(api_key: &str) -> Self {
+    pub fn new(api_key: &str, endpoint: Option<String>) -> Self {
         Self {
-            endpoint: DEEKSEEK_API_BASE_URL.to_string(),
+            endpoint: endpoint.unwrap_or_else(|| DEEKSEEK_API_BASE_URL.to_string()),
             http: reqwest::Client::builder()
                 .use_rustls_tls()
                 .https_only(true)
@@ -48,7 +48,7 @@ impl Client {
                 .http2_keep_alive_timeout(Duration::from_secs(15))
                 .http2_keep_alive_while_idle(true)
                 .connect_timeout(Duration::from_secs(10))
-                .timeout(Duration::from_secs(60))
+                .timeout(Duration::from_secs(120))
                 .user_agent(APP_USER_AGENT)
                 .default_headers({
                     let mut headers = reqwest::header::HeaderMap::new();
@@ -332,7 +332,7 @@ mod tests {
         println!("Character path: {}", character_path);
         let character = std::fs::read_to_string(character_path).expect("Character file not found");
         let character = Character::from_toml(&character).expect("Character should parse");
-        let client = Client::new(&api_key);
+        let client = Client::new(&api_key, None);
         let now = Instant::now();
         let model = client.completion_model(DEEKSEEK_V3);
         let req = character.to_request("I am Yan, glad to see you".into(), Some("Yan".into()));

@@ -376,12 +376,30 @@ fn connect_model(cfg: &config::Llm) -> Result<Model, BoxError> {
                     .embedding_model(&cfg.cohere_embedding_model),
             ),
             Arc::new(
-                deepseek::Client::new(&cfg.deepseek_api_key)
-                    .completion_model(deepseek::DEEKSEEK_V3),
+                deepseek::Client::new(
+                    &cfg.deepseek_api_key,
+                    if cfg.deepseek_endpoint.is_empty() {
+                        None
+                    } else {
+                        Some(cfg.deepseek_endpoint.clone())
+                    },
+                )
+                .completion_model(if cfg.deepseek_model.is_empty() {
+                    deepseek::DEEKSEEK_V3
+                } else {
+                    &cfg.deepseek_model
+                }),
             ),
         ))
     } else {
-        let cli = openai::Client::new(&cfg.openai_api_key);
+        let cli = openai::Client::new(
+            &cfg.openai_api_key,
+            if cfg.deepseek_endpoint.is_empty() {
+                None
+            } else {
+                Some(cfg.deepseek_endpoint.clone())
+            },
+        );
         Ok(Model::new(
             Arc::new(cli.embedding_model(&cfg.openai_embedding_model)),
             Arc::new(cli.completion_model(&cfg.openai_completion_model)),

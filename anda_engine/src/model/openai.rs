@@ -90,9 +90,9 @@ impl Client {
     ///
     /// # Arguments
     /// * `api_key` - OpenAI API key for authentication
-    pub fn new(api_key: &str) -> Self {
+    pub fn new(api_key: &str, endpoint: Option<String>) -> Self {
         Self {
-            endpoint: OPENAI_API_BASE_URL.to_string(),
+            endpoint: endpoint.unwrap_or_else(|| OPENAI_API_BASE_URL.to_string()),
             http: reqwest::Client::builder()
                 .use_rustls_tls()
                 .https_only(true)
