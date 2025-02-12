@@ -1,5 +1,15 @@
 # `anda_bot` Deployment Guide
 
+## Running locally
+
+```sh
+git clone https://github.com/ldclabs/anda.git
+cd anda
+mkdir -p object_store
+cp example.env .env
+cargo run -p anda_bot -- start-local
+```
+
 ## Deploy TEE Version
 
 ### Prepare Environment
@@ -51,8 +61,8 @@ dfx canister call ic_cose_canister admin_create_namespace "(record {
   desc = opt \"mybot namespace\";
   visibility = 0;
   managers = vec {principal \"$MYID\"};
-  auditors = {};
-  users = {};
+  auditors = vec {};
+  users = vec {};
 })" --ic
 ```
 

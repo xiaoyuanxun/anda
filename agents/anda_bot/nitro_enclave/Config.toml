@@ -1,6 +1,4 @@
 [icp]
-# your IC Object Store canister ID
-object_store_canister = "6at64-oyaaa-aaaap-anvza-cai"
 # optional
 token_ledgers = []
 

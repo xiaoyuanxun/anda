@@ -3,48 +3,42 @@ name = "anda_bot"
 description = "I'm Anda ICP, Digital panda 🐼 by Anda framework. Secured in TEE, memories on ICP chain.✨"
 repository = "https://github.com/ldclabs/anda/tree/main/agents/anda_bot"
 publish = false
-version = "0.3.8"
+version = "0.4.0"
 edition.workspace = true
 keywords.workspace = true
 categories.workspace = true
 license.workspace = true
 
 [dependencies]
-anda_core = { path = "../../anda_core", version = "0.3" }
-anda_engine = { path = "../../anda_engine", version = "0.3" }
+anda_core = { path = "../../anda_core", version = "0.4" }
+anda_engine = { path = "../../anda_engine", version = "0.4" }
 anda_lancedb = { path = "../../anda_lancedb", version = "0.1" }
+anda_web3_client = { path = "../../anda_web3_client", version = "0.1" }
 anda_icp = { path = "../../tools/anda_icp", version = "0.2" }
 axum = { workspace = true }
-axum-server = { workspace = true }
 candid = { workspace = true }
 clap = { workspace = true }
-bytes = { workspace = true }
 ciborium = { workspace = true }
-futures = { workspace = true }
-futures-util = { workspace = true }
+dotenv = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
-serde_bytes = { workspace = true }
 http = { workspace = true }
-object_store = { workspace = true }
 ic_cose = { workspace = true }
 ic_cose_types = { workspace = true }
 ic_object_store = { workspace = true }
 ic-agent = { workspace = true }
 ic_tee_agent = { workspace = true }
-ic_tee_cdk = { workspace = true }
 tokio-util = { workspace = true }
 structured-logger = { workspace = true }
-reqwest = { workspace = true }
-rand = { workspace = true }
-moka = { workspace = true }
 toml = { workspace = true }
 tokio = { workspace = true }
 log = { workspace = true }
-chrono = { workspace = true }
 ed25519-consensus = { workspace = true }
-agent-twitter-client = { git = "https://github.com/ldclabs/agent-twitter-client.git", rev = "717bd0d8dc4febfece0065c972801924ecae2639" }
+const-hex = { workspace = true }
+lazy_static = { workspace = true }
 config = "0.15"
+agent-twitter-client = { git = "https://github.com/ldclabs/agent-twitter-client.git", rev = "717bd0d8dc4febfece0065c972801924ecae2639" }
+ic-types = { git = "https://github.com/dfinity/ic/", rev = "5d202894864f4db4a5a46f44422aebc80c3d321b" }
+ic-crypto-standalone-sig-verifier = { git = "https://github.com/dfinity/ic/", rev = "5d202894864f4db4a5a46f44422aebc80c3d321b" }
 
 [dev-dependencies]
 dotenv = { workspace = true }

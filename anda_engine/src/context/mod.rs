@@ -5,12 +5,12 @@
 mod agent;
 mod base;
 mod cache;
-mod tee;
+mod web3;
 
 pub use agent::*;
 pub use base::*;
 pub use cache::*;
-pub use tee::*;
+pub use web3::*;
 
 /// Mock implementations for testing purposes.
 ///

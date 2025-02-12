@@ -399,7 +399,7 @@ pub trait HttpFeatures: Sized {
         &self,
         url: &str,
         method: http::Method,
-        message_digest: &[u8; 32],
+        message_digest: [u8; 32],
         headers: Option<http::HeaderMap>,
         body: Option<Vec<u8>>, // default is empty
     ) -> impl Future<Output = Result<reqwest::Response, BoxError>> + Send;

@@ -1,5 +1,15 @@
 # `anda_bot` 部署指南
 
+## 本地运行
+
+```sh
+git clone https://github.com/ldclabs/anda.git
+cd anda
+mkdir -p object_store
+cp example.env .env
+cargo run -p anda_bot -- start-local
+```
+
 ## 部署 TEE 版本
 
 ### 准备环境
@@ -52,11 +62,11 @@ IC COSE 是多租户服务，以 namespace 作为管理单位，不同 namespace
 MYID=$(dfx identity get-principal)
 dfx canister call ic_cose_canister admin_create_namespace "(record {
   name = \"my_namespace\";
-  desc = opt "mybot namespace";
+  desc = opt \"mybot namespace\";
   visibility = 0;
   managers = vec {principal \"$MYID\"};
-  auditors = {};
-  users = {};
+  auditors = vec {};
+  users = vec {};
 })" --ic
 ```
 

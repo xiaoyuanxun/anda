@@ -27,7 +27,12 @@ use anda_core::{
     BaseContext, BoxError, CacheExpiry, CacheFeatures, CancellationToken, CanisterCaller,
     HttpFeatures, KeysFeatures, ObjectMeta, Path, PutMode, PutResult, StateFeatures, StoreFeatures,
 };
-use candid::{utils::ArgumentEncoder, CandidType, Principal};
+use candid::{
+    utils::{encode_args, ArgumentEncoder},
+    CandidType, Decode, Principal,
+};
+use ciborium::from_reader;
+use ic_cose_types::to_cbor_bytes;
 use serde::{de::DeserializeOwned, Serialize};
 use std::{
     future::Future,
@@ -38,7 +43,10 @@ use std::{
 const CONTEXT_MAX_DEPTH: u8 = 42;
 const CACHE_MAX_CAPACITY: u64 = 1000000;
 
-use super::{cache::CacheService, tee::TEEClient};
+use super::{
+    cache::CacheService,
+    web3::{Web3Client, Web3SDK},
+};
 use crate::store::Store;
 
 #[derive(Clone)]
@@ -50,7 +58,7 @@ pub struct BaseCtx {
     pub(crate) cancellation_token: CancellationToken,
     pub(crate) start_at: Instant,
     pub(crate) depth: u8,
-    pub(crate) tee: Arc<TEEClient>,
+    pub(crate) web3: Arc<Web3SDK>,
 
     cache: Arc<CacheService>,
     store: Store,
@@ -79,7 +87,7 @@ impl BaseCtx {
     pub(crate) fn new(
         id: Principal,
         cancellation_token: CancellationToken,
-        tee: TEEClient,
+        web3: Arc<Web3SDK>,
         store: Store,
     ) -> Self {
         Self {
@@ -91,7 +99,7 @@ impl BaseCtx {
             start_at: Instant::now(),
             cache: Arc::new(CacheService::new(CACHE_MAX_CAPACITY)),
             store,
-            tee: Arc::new(tee),
+            web3,
             depth: 0,
         }
     }
@@ -112,10 +120,16 @@ impl BaseCtx {
     pub(crate) fn child(&self, path: String) -> Result<Self, BoxError> {
         let path = Path::parse(path)?;
         let child = Self {
+            id: self.id,
+            user: self.user.clone(),
+            caller: self.caller,
             path,
             cancellation_token: self.cancellation_token.child_token(),
+            start_at: self.start_at,
+            cache: self.cache.clone(),
+            store: self.store.clone(),
+            web3: self.web3.clone(),
             depth: self.depth + 1,
-            ..self.clone()
         };
 
         if child.depth >= CONTEXT_MAX_DEPTH {
@@ -144,13 +158,16 @@ impl BaseCtx {
     ) -> Result<Self, BoxError> {
         let path = Path::parse(path)?;
         let child = Self {
-            path,
+            id: self.id,
             user,
             caller,
-            start_at: Instant::now(),
+            path,
             cancellation_token: self.cancellation_token.child_token(),
+            start_at: Instant::now(),
+            cache: self.cache.clone(),
+            store: self.store.clone(),
+            web3: self.web3.clone(),
             depth: self.depth + 1,
-            ..self.clone()
         };
 
         if child.depth >= CONTEXT_MAX_DEPTH {
@@ -187,7 +204,16 @@ impl StateFeatures for BaseCtx {
 impl KeysFeatures for BaseCtx {
     /// Derives a 256-bit AES-GCM key from the given derivation path
     async fn a256gcm_key(&self, derivation_path: &[&[u8]]) -> Result<[u8; 32], BoxError> {
-        self.tee.a256gcm_key(&self.path, derivation_path).await
+        match self.web3.as_ref() {
+            Web3SDK::Tee(cli) => {
+                cli.a256gcm_key(&derivation_path_with(&self.path, derivation_path))
+                    .await
+            }
+            Web3SDK::Web3(Web3Client { client: cli }) => {
+                cli.a256gcm_key(&derivation_path_with(&self.path, derivation_path))
+                    .await
+            }
+        }
     }
 
     /// Signs a message using Ed25519 signature scheme from the given derivation path
@@ -196,9 +222,22 @@ impl KeysFeatures for BaseCtx {
         derivation_path: &[&[u8]],
         message: &[u8],
     ) -> Result<[u8; 64], BoxError> {
-        self.tee
-            .ed25519_sign_message(&self.path, derivation_path, message)
-            .await
+        match self.web3.as_ref() {
+            Web3SDK::Tee(cli) => {
+                cli.ed25519_sign_message(
+                    &derivation_path_with(&self.path, derivation_path),
+                    message,
+                )
+                .await
+            }
+            Web3SDK::Web3(Web3Client { client: cli }) => {
+                cli.ed25519_sign_message(
+                    &derivation_path_with(&self.path, derivation_path),
+                    message,
+                )
+                .await
+            }
+        }
     }
 
     /// Verifies an Ed25519 signature from the given derivation path
@@ -208,16 +247,38 @@ impl KeysFeatures for BaseCtx {
         message: &[u8],
         signature: &[u8],
     ) -> Result<(), BoxError> {
-        self.tee
-            .ed25519_verify(&self.path, derivation_path, message, signature)
-            .await
+        match self.web3.as_ref() {
+            Web3SDK::Tee(cli) => {
+                cli.ed25519_verify(
+                    &derivation_path_with(&self.path, derivation_path),
+                    message,
+                    signature,
+                )
+                .await
+            }
+            Web3SDK::Web3(Web3Client { client: cli }) => {
+                cli.ed25519_verify(
+                    &derivation_path_with(&self.path, derivation_path),
+                    message,
+                    signature,
+                )
+                .await
+            }
+        }
     }
 
     /// Gets the public key for Ed25519 from the given derivation path
     async fn ed25519_public_key(&self, derivation_path: &[&[u8]]) -> Result<[u8; 32], BoxError> {
-        self.tee
-            .ed25519_public_key(&self.path, derivation_path)
-            .await
+        match self.web3.as_ref() {
+            Web3SDK::Tee(cli) => {
+                cli.ed25519_public_key(&derivation_path_with(&self.path, derivation_path))
+                    .await
+            }
+            Web3SDK::Web3(Web3Client { client: cli }) => {
+                cli.ed25519_public_key(&derivation_path_with(&self.path, derivation_path))
+                    .await
+            }
+        }
     }
 
     /// Signs a message using Secp256k1 BIP340 Schnorr signature from the given derivation path
@@ -226,9 +287,22 @@ impl KeysFeatures for BaseCtx {
         derivation_path: &[&[u8]],
         message: &[u8],
     ) -> Result<[u8; 64], BoxError> {
-        self.tee
-            .secp256k1_sign_message_bip340(&self.path, derivation_path, message)
-            .await
+        match self.web3.as_ref() {
+            Web3SDK::Tee(cli) => {
+                cli.secp256k1_sign_message_bip340(
+                    &derivation_path_with(&self.path, derivation_path),
+                    message,
+                )
+                .await
+            }
+            Web3SDK::Web3(Web3Client { client: cli }) => {
+                cli.secp256k1_sign_message_bip340(
+                    &derivation_path_with(&self.path, derivation_path),
+                    message,
+                )
+                .await
+            }
+        }
     }
 
     /// Verifies a Secp256k1 BIP340 Schnorr signature from the given derivation path
@@ -238,9 +312,24 @@ impl KeysFeatures for BaseCtx {
         message: &[u8],
         signature: &[u8],
     ) -> Result<(), BoxError> {
-        self.tee
-            .secp256k1_verify_bip340(&self.path, derivation_path, message, signature)
-            .await
+        match self.web3.as_ref() {
+            Web3SDK::Tee(cli) => {
+                cli.secp256k1_verify_bip340(
+                    &derivation_path_with(&self.path, derivation_path),
+                    message,
+                    signature,
+                )
+                .await
+            }
+            Web3SDK::Web3(Web3Client { client: cli }) => {
+                cli.secp256k1_verify_bip340(
+                    &derivation_path_with(&self.path, derivation_path),
+                    message,
+                    signature,
+                )
+                .await
+            }
+        }
     }
 
     /// Signs a message using Secp256k1 ECDSA signature from the given derivation path
@@ -249,9 +338,22 @@ impl KeysFeatures for BaseCtx {
         derivation_path: &[&[u8]],
         message: &[u8],
     ) -> Result<[u8; 64], BoxError> {
-        self.tee
-            .secp256k1_sign_message_ecdsa(&self.path, derivation_path, message)
-            .await
+        match self.web3.as_ref() {
+            Web3SDK::Tee(cli) => {
+                cli.secp256k1_sign_message_ecdsa(
+                    &derivation_path_with(&self.path, derivation_path),
+                    message,
+                )
+                .await
+            }
+            Web3SDK::Web3(Web3Client { client: cli }) => {
+                cli.secp256k1_sign_message_ecdsa(
+                    &derivation_path_with(&self.path, derivation_path),
+                    message,
+                )
+                .await
+            }
+        }
     }
 
     /// Verifies a Secp256k1 ECDSA signature from the given derivation path
@@ -261,16 +363,38 @@ impl KeysFeatures for BaseCtx {
         message: &[u8],
         signature: &[u8],
     ) -> Result<(), BoxError> {
-        self.tee
-            .secp256k1_verify_ecdsa(&self.path, derivation_path, message, signature)
-            .await
+        match self.web3.as_ref() {
+            Web3SDK::Tee(cli) => {
+                cli.secp256k1_verify_ecdsa(
+                    &derivation_path_with(&self.path, derivation_path),
+                    message,
+                    signature,
+                )
+                .await
+            }
+            Web3SDK::Web3(Web3Client { client: cli }) => {
+                cli.secp256k1_verify_ecdsa(
+                    &derivation_path_with(&self.path, derivation_path),
+                    message,
+                    signature,
+                )
+                .await
+            }
+        }
     }
 
     /// Gets the compressed SEC1-encoded public key for Secp256k1 from the given derivation path
     async fn secp256k1_public_key(&self, derivation_path: &[&[u8]]) -> Result<[u8; 33], BoxError> {
-        self.tee
-            .secp256k1_public_key(&self.path, derivation_path)
-            .await
+        match self.web3.as_ref() {
+            Web3SDK::Tee(cli) => {
+                cli.secp256k1_public_key(&derivation_path_with(&self.path, derivation_path))
+                    .await
+            }
+            Web3SDK::Web3(Web3Client { client: cli }) => {
+                cli.secp256k1_public_key(&derivation_path_with(&self.path, derivation_path))
+                    .await
+            }
+        }
     }
 }
 
@@ -383,7 +507,17 @@ impl CanisterCaller for BaseCtx {
         method: &str,
         args: In,
     ) -> Result<Out, BoxError> {
-        self.tee.canister_query(canister, method, args).await
+        match self.web3.as_ref() {
+            Web3SDK::Tee(cli) => cli.canister_query(canister, method, args).await,
+            Web3SDK::Web3(Web3Client { client: cli }) => {
+                let input = encode_args(args)?;
+                let res = cli
+                    .canister_query_raw(canister.to_owned(), method.to_string(), input)
+                    .await?;
+                let output = Decode!(res.as_slice(), Out)?;
+                Ok(output)
+            }
+        }
     }
 
     /// Performs an update call to a canister (may modify state)
@@ -401,7 +535,17 @@ impl CanisterCaller for BaseCtx {
         method: &str,
         args: In,
     ) -> Result<Out, BoxError> {
-        self.tee.canister_update(canister, method, args).await
+        match self.web3.as_ref() {
+            Web3SDK::Tee(cli) => cli.canister_update(canister, method, args).await,
+            Web3SDK::Web3(Web3Client { client: cli }) => {
+                let input = encode_args(args)?;
+                let res = cli
+                    .canister_update_raw(canister.to_owned(), method.to_string(), input)
+                    .await?;
+                let output = Decode!(res.as_slice(), Out)?;
+                Ok(output)
+            }
+        }
     }
 }
 
@@ -420,7 +564,12 @@ impl HttpFeatures for BaseCtx {
         headers: Option<http::HeaderMap>,
         body: Option<Vec<u8>>, // default is empty
     ) -> Result<reqwest::Response, BoxError> {
-        self.tee.https_call(url, method, headers, body).await
+        match self.web3.as_ref() {
+            Web3SDK::Tee(cli) => cli.https_call(url, method, headers, body).await,
+            Web3SDK::Web3(Web3Client { client: cli }) => {
+                cli.https_call(url.to_string(), method, headers, body).await
+            }
+        }
     }
 
     /// Makes a signed HTTPs request with message authentication
@@ -435,13 +584,20 @@ impl HttpFeatures for BaseCtx {
         &self,
         url: &str,
         method: http::Method,
-        message_digest: &[u8; 32],
+        message_digest: [u8; 32],
         headers: Option<http::HeaderMap>,
         body: Option<Vec<u8>>, // default is empty
     ) -> Result<reqwest::Response, BoxError> {
-        self.tee
-            .https_signed_call(url, method, message_digest, headers, body)
-            .await
+        match self.web3.as_ref() {
+            Web3SDK::Tee(cli) => {
+                cli.https_signed_call(url, method, message_digest, headers, body)
+                    .await
+            }
+            Web3SDK::Web3(Web3Client { client: cli }) => {
+                cli.https_signed_call(url.to_string(), method, message_digest, headers, body)
+                    .await
+            }
+        }
     }
 
     /// Makes a signed CBOR-encoded RPC call
@@ -459,6 +615,23 @@ impl HttpFeatures for BaseCtx {
     where
         T: DeserializeOwned,
     {
-        self.tee.https_signed_rpc(endpoint, method, params).await
+        match self.web3.as_ref() {
+            Web3SDK::Tee(cli) => cli.https_signed_rpc(endpoint, method, params).await,
+            Web3SDK::Web3(Web3Client { client: cli }) => {
+                let params = to_cbor_bytes(&params);
+                let res = cli
+                    .https_signed_rpc_raw(endpoint.to_string(), method.to_string(), params)
+                    .await?;
+                let res = from_reader(&res[..])?;
+                Ok(res)
+            }
+        }
     }
+}
+
+pub fn derivation_path_with<'a>(path: &'a Path, derivation_path: &'a [&'a [u8]]) -> Vec<&'a [u8]> {
+    let mut dp = Vec::with_capacity(derivation_path.len() + 1);
+    dp.push(path.as_ref().as_bytes());
+    dp.extend(derivation_path);
+    dp
 }

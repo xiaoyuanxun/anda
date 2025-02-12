@@ -3,40 +3,22 @@ name = "anda_icp"
 description = "Anda agent tools offers integration with the Internet Computer (ICP)."
 repository = "https://github.com/ldclabs/anda/tree/main/tools/anda_icp"
 publish = true
-version = "0.2.2"
+version = "0.2.3"
 edition.workspace = true
 keywords.workspace = true
 categories.workspace = true
 license.workspace = true
 
 [dependencies]
-anda_core = { path = "../../anda_core", version = "0.3" }
-anda_engine = { path = "../../anda_engine", version = "0.3" }
-async-trait = { workspace = true }
+anda_core = { path = "../../anda_core", version = "0.4" }
+anda_engine = { path = "../../anda_engine", version = "0.4" }
 candid = { workspace = true }
-bytes = { workspace = true }
-ciborium = { workspace = true }
-futures = { workspace = true }
-futures-util = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_bytes = { workspace = true }
-http = { workspace = true }
-object_store = { workspace = true }
-ic_cose = { workspace = true }
-ic_cose_types = { workspace = true }
 num-traits = { workspace = true }
-tokio-util = { workspace = true }
-structured-logger = { workspace = true }
-reqwest = { workspace = true }
-rand = { workspace = true }
-moka = { workspace = true }
-toml = { workspace = true }
 tokio = { workspace = true }
-log = { workspace = true }
-chrono = { workspace = true }
 schemars = { workspace = true }
 icrc-ledger-types = "0.1"
 
 [dev-dependencies]
-dotenv = { workspace = true }

@@ -9,32 +9,58 @@ use candid::Principal;
 use ic_cose::client::CoseSDK;
 use ic_cose_types::to_cbor_bytes;
 use ic_tee_agent::{
-    http::{Content, ANONYMOUS_PRINCIPAL, HEADER_IC_TEE_CALLER},
+    http::{Content, UserSignature, ANONYMOUS_PRINCIPAL, HEADER_IC_TEE_CALLER},
     RPCRequest, RPCResponse,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use structured_logger::unix_ms;
 use tokio::sync::RwLock;
+
+use crate::ic_sig_verifier::verify_sig;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub cose_namespace: String,
-    pub tee: Arc<TEEClient>,
+    pub web3: Arc<Web3SDK>,
     pub x_status: Arc<RwLock<ServiceStatus>>,
     pub info: Arc<AppInformation>,
     pub knowledge_store: Arc<KnowledgeStore>,
+    pub cose_namespace: String, // used for TEE
+    pub manager: String,        // used for local
+}
+
+pub enum Web3SDK {
+    Tee(TEEClient),
+    Web3(anda_web3_client::client::Client),
 }
 
 impl AppState {
     pub async fn is_manager(&self, headers: &http::HeaderMap) -> bool {
-        let caller = get_caller(headers);
-        caller != ANONYMOUS_PRINCIPAL
-            && self
-                .tee
-                .as_ref()
-                .namespace_is_member(&self.cose_namespace, "manager", &caller)
-                .await
-                .unwrap_or(false)
+        match self.web3.as_ref() {
+            Web3SDK::Tee(cli) => {
+                // signature is verified by the TEE gateway
+                let caller = get_caller(headers);
+                caller != ANONYMOUS_PRINCIPAL
+                    && cli
+                        .namespace_is_member(&self.cose_namespace, "manager", &caller)
+                        .await
+                        .unwrap_or(false)
+            }
+            Web3SDK::Web3(_cli) => {
+                // verify signature
+                let caller = if let Some(sig) = UserSignature::try_from(headers) {
+                    match sig.verify_with(self.info.id, unix_ms(), verify_sig) {
+                        Ok(_) => sig.user,
+                        Err(_) => {
+                            return false;
+                        }
+                    }
+                } else {
+                    return false;
+                };
+                caller.to_text() == self.manager
+            }
+        }
     }
 }
 

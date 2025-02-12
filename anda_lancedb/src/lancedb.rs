@@ -18,7 +18,9 @@ pub use lancedb::{
     table::OptimizeAction,
     Table,
 };
-pub use object_store::{memory::InMemory, path::Path, DynObjectStore, ObjectStore};
+pub use object_store::{
+    local::LocalFileSystem, memory::InMemory, path::Path, DynObjectStore, ObjectStore,
+};
 
 #[derive(Clone)]
 pub struct LanceVectorStore {

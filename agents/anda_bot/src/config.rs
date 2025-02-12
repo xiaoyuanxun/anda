@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Icp {
-    pub object_store_canister: String,
     pub token_ledgers: Vec<String>,
 }
 

@@ -1,7 +1,7 @@
 use agent_twitter_client::scraper::Scraper;
 use anda_core::{BoxError, EmbeddingFeatures, Path};
 use anda_engine::{
-    context::TEEClient,
+    context::{derivation_path_with, TEEClient, Web3SDK},
     engine::{Engine, EngineBuilder, ROOT_PATH},
     extension::{
         attention::Attention,
@@ -11,13 +11,17 @@ use anda_engine::{
     },
     model::{cohere, deepseek, openai, Model},
     store::Store,
+    APP_USER_AGENT,
 };
 use anda_icp::ledger::{BalanceOfTool, ICPLedgers};
-use anda_lancedb::{knowledge::KnowledgeStore, lancedb::LanceVectorStore};
+use anda_lancedb::{
+    knowledge::KnowledgeStore,
+    lancedb::{DynObjectStore, LanceVectorStore, LocalFileSystem},
+};
+use anda_web3_client::client::Client as Web3Client;
 use axum::{routing, Router};
 use candid::Principal;
-use ciborium::from_reader;
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use ed25519_consensus::SigningKey;
 use ic_agent::{
     identity::{BasicIdentity, Identity},
@@ -33,15 +37,15 @@ use ic_object_store::{
     client::{Client, ObjectStoreClient},
 };
 use ic_tee_agent::setting::decrypt_payload;
-use ic_tee_cdk::TEEAppInformation;
 use std::collections::BTreeSet;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use structured_logger::{async_json::new_writer, get_env_level, unix_ms, Builder};
-use tokio::{net::TcpStream, signal, sync::RwLock, time::sleep};
+use tokio::{net::TcpStream, signal, sync::RwLock};
 use tokio_util::sync::CancellationToken;
 
 mod config;
 mod handler;
+mod ic_sig_verifier;
 mod twitter;
 
 const APP_NAME: &str = env!("CARGO_PKG_NAME");
@@ -53,50 +57,82 @@ static ENGINE_NAME: &str = "Anda.bot";
 static COSE_SECRET_PERMANENT_KEY: &str = "v1";
 const LOCAL_SERVER_SHUTDOWN_DURATION: Duration = Duration::from_secs(5);
 
-#[derive(Debug, Parser)]
-#[clap(author, version, about, long_about = None)]
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
 struct Cli {
     /// Port to listen on
-    #[clap(long, default_value = "8042")]
+    #[clap(short, long, default_value = "8042")]
     port: u16,
 
-    #[clap(long, default_value = "http://127.0.0.1:8080")]
-    tee_host: String,
-
-    /// Basic auth to request TEE service
-    #[clap(long)]
-    basic_token: String,
-
     /// ICP API host
-    #[clap(long, default_value = "https://icp-api.io")]
-    icp_host: String,
+    #[clap(short, long, default_value = "https://icp-api.io")]
+    ic_host: String,
 
-    /// COSE canister
-    #[clap(long)]
-    cose_canister: String,
-
-    /// COSE namespace
-    #[clap(long)]
-    cose_namespace: String,
-
-    #[clap(long, env = "CHARACTER_FILE_PATH", default_value = "./Character.toml")]
+    /// Path to the character file
+    #[clap(
+        short,
+        long,
+        env = "CHARACTER_FILE_PATH",
+        default_value = "./Character.toml"
+    )]
     character: String,
 
     /// where the logtail server is running on host (e.g. 127.0.0.1:9999)
-    #[clap(long)]
+    #[clap(short, long)]
     logtail: Option<String>,
+
+    #[command(subcommand)]
+    command: Option<Commands>,
 }
 
-// cargo run -p anda_bot -- --port 8042 --config agents/anda_bot/nitro_enclave/Config.toml --character agents/anda_bot/nitro_enclave/Character.toml
+#[derive(Subcommand)]
+pub enum Commands {
+    StartTee {
+        #[clap(long, default_value = "http://127.0.0.1:8080")]
+        tee_host: String,
+        /// Basic auth to request TEE service
+        #[clap(long)]
+        basic_token: String,
+
+        /// COSE canister
+        #[clap(long)]
+        cose_canister: String,
+
+        /// COSE namespace
+        #[clap(long)]
+        cose_namespace: String,
+
+        /// COSE canister
+        #[clap(long)]
+        object_store_canister: String,
+    },
+    StartLocal {
+        /// TEE kind to derive the principal
+        #[arg(long, env = "ID_SECRET")]
+        id_secret: String,
+
+        #[arg(long, env = "ROOT_SECRET")]
+        root_secret: String,
+
+        /// Path to the configuration file
+        #[clap(long, env = "CONFIG_FILE_PATH", default_value = "./Config.toml")]
+        config: String,
+
+        #[clap(long, env = "OBJECT_STORE_PATH", default_value = "./object_store")]
+        store_path: String,
+
+        /// Manager principal
+        #[clap(long, default_value = "")]
+        manager: String,
+    },
+}
+
+// cargo run -p anda_bot -- start-local
 fn main() -> Result<(), BoxError> {
-    let default_stack_size = 2 * 1024 * 1024;
-    let stack_size = std::env::var("RUST_MIN_STACK")
-        .map(|s| s.parse().expect("RUST_MIN_STACK must be a valid number"))
-        .unwrap_or(default_stack_size);
+    dotenv::dotenv().ok();
 
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
-        .thread_stack_size(stack_size)
         .build()
         .unwrap()
         .block_on(async {
@@ -126,45 +162,107 @@ fn main() -> Result<(), BoxError> {
 }
 
 async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
-    // let cfg = config::Conf::from_file(&cli.config).unwrap_or_else(|err| {
-    //     println!("config error: {:?}", err);
-    //     panic!("config error: {:?}", err)
-    // });
-    // log::info!("{:?}", cfg);
-
     let character = std::fs::read_to_string(&cli.character)?;
     let character = Character::from_toml(&character)?;
     log::info!("{:?}", character);
 
+    match cli.command {
+        Some(Commands::StartTee {
+            tee_host,
+            basic_token,
+            cose_canister,
+            cose_namespace,
+            object_store_canister,
+        }) => {
+            bootstrap_tee(
+                cli.port,
+                cli.ic_host,
+                tee_host,
+                basic_token,
+                cose_canister,
+                cose_namespace,
+                object_store_canister,
+                character,
+            )
+            .await
+        }
+        Some(Commands::StartLocal {
+            id_secret,
+            root_secret,
+            config,
+            store_path,
+            manager,
+        }) => {
+            let cfg = config::Conf::from_file(&config)?;
+            log::debug!("{:?}", cfg);
+            let id_secret = const_hex::decode(id_secret)?;
+            let id_secret: [u8; 32] = id_secret.try_into().map_err(|_| "invalid id_secret")?;
+            let root_secret = const_hex::decode(root_secret)?;
+            let root_secret: [u8; 48] =
+                root_secret.try_into().map_err(|_| "invalid root_secret")?;
+
+            bootstrap_local(
+                cli.port,
+                cli.ic_host,
+                id_secret,
+                root_secret,
+                cfg,
+                character,
+                store_path,
+                manager,
+            )
+            .await
+        }
+        None => {
+            println!("{}@{}", APP_NAME, APP_VERSION);
+            Err("missing subcommand".into())
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn bootstrap_tee(
+    port: u16,
+    ic_host: String,
+    tee_host: String,
+    basic_token: String,
+    cose_canister: String,
+    cose_namespace: String,
+    object_store_canister: String,
+    character: Character,
+) -> Result<(), BoxError> {
     let global_cancel_token = CancellationToken::new();
     let shutdown_future = shutdown_signal(global_cancel_token.clone());
 
     let engine_name = ENGINE_NAME.to_string();
-    let cose_canister = Principal::from_text(&cli.cose_canister)?;
     let default_agent = character.username.clone();
     let knowledge_table: Path = default_agent.to_ascii_lowercase().into();
     let cose_setting_key: Vec<u8> = default_agent.to_ascii_lowercase().into();
 
+    let cose_canister = Principal::from_text(&cose_canister)?;
     log::info!(target: LOG_TARGET, "start to connect TEE service");
-    let tee = TEEClient::new(&cli.tee_host, &cli.basic_token, cose_canister);
-    let tee_info = connect_tee(&cli.tee_host, &tee, global_cancel_token.clone()).await?;
+    let tee = TEEClient::new(&tee_host, &basic_token, APP_USER_AGENT, cose_canister);
+    let tee_info = tee.connect_tee(global_cancel_token.clone()).await?;
     log::info!(target: LOG_TARGET, "TEEAppInformation: {:?}", tee_info);
 
     let root_path = Path::from(ROOT_PATH);
     let id_secret = tee
-        .a256gcm_key(&root_path, &[default_agent.as_bytes()])
+        .a256gcm_key(&derivation_path_with(
+            &root_path,
+            &[default_agent.as_bytes()],
+        ))
         .await?;
     let my_id = BasicIdentity::from_signing_key(SigningKey::from(id_secret));
     let my_principal = my_id.sender()?;
     log::info!(target: LOG_TARGET,
        "sign_in, principal: {:?}", my_principal.to_text());
 
-    let my_agent = build_agent(&cli.icp_host, Arc::new(my_id)).await.unwrap();
+    let my_agent = build_agent(&ic_host, Arc::new(my_id)).await.unwrap();
 
     log::info!(target: LOG_TARGET, "start to get admin_master_secret");
     let admin_master_secret = tee
         .get_cose_encrypted_key(&SettingPath {
-            ns: cli.cose_namespace.clone(),
+            ns: cose_namespace.clone(),
             user_owned: false,
             subject: Some(tee_info.id),
             key: COSE_SECRET_PERMANENT_KEY.as_bytes().to_vec().into(),
@@ -174,7 +272,7 @@ async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
 
     log::info!(target: LOG_TARGET, "start to get encrypted config");
     let encrypted_cfg_path = SettingPath {
-        ns: cli.cose_namespace.clone(),
+        ns: cose_namespace.clone(),
         user_owned: false,
         subject: Some(tee_info.id),
         key: cose_setting_key.into(),
@@ -203,7 +301,7 @@ async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
 
     // ObjectStore
     log::info!(target: LOG_TARGET, "start to connect object_store");
-    let object_store_canister = Principal::from_text(encrypted_cfg.icp.object_store_canister)?;
+    let object_store_canister = Principal::from_text(object_store_canister)?;
     let object_store =
         connect_object_store(&tee, Arc::new(my_agent), &root_path, object_store_canister).await?;
     let object_store = Arc::new(object_store);
@@ -226,7 +324,7 @@ async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
         .with_id(tee_info.id)
         .with_name(engine_name.clone())
         .with_cancellation_token(global_cancel_token.clone())
-        .with_tee_client(tee.clone())
+        .with_web3_client(Arc::new(Web3SDK::from_tee(tee.clone())))
         .with_model(model)
         .with_store(Store::new(object_store));
 
@@ -256,9 +354,8 @@ async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
     let engine = Arc::new(engine.build(default_agent.clone())?);
     let x_status = Arc::new(RwLock::new(handler::ServiceStatus::Running));
     let app_state = handler::AppState {
-        tee: Arc::new(tee),
+        web3: Arc::new(handler::Web3SDK::Tee(tee)),
         x_status: x_status.clone(),
-        cose_namespace: cli.cose_namespace.clone(),
         info: Arc::new(handler::AppInformation {
             id: my_principal,
             name: engine_name,
@@ -268,11 +365,13 @@ async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
             caller: Principal::anonymous(),
         }),
         knowledge_store,
+        cose_namespace,
+        manager: "".to_string(),
     };
 
     match tokio::try_join!(
         start_server(
-            format!("127.0.0.1:{}", cli.port),
+            format!("127.0.0.1:{}", port),
             app_state,
             global_cancel_token.clone()
         ),
@@ -293,25 +392,112 @@ async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
     }
 }
 
-async fn connect_tee(
-    host: &str,
-    tee: &TEEClient,
-    cancel_token: CancellationToken,
-) -> Result<TEEAppInformation, BoxError> {
-    loop {
-        if let Ok(tee_info) = tee.http.get(format!("{}/information", host)).send().await {
-            let tee_info = tee_info.bytes().await?;
-            let tee_info: TEEAppInformation = from_reader(&tee_info[..])?;
-            return Ok(tee_info);
-        }
+#[allow(clippy::too_many_arguments)]
+async fn bootstrap_local(
+    port: u16,
+    ic_host: String,
+    id_secret: [u8; 32],
+    root_secret: [u8; 48],
+    cfg: config::Conf,
+    character: Character,
+    store_path: String,
+    manager: String,
+) -> Result<(), BoxError> {
+    let global_cancel_token = CancellationToken::new();
+    let shutdown_future = shutdown_signal(global_cancel_token.clone());
 
-        tokio::select! {
-            _ = cancel_token.cancelled() => {
-                return Err("connect_tee cancelled".into());
-            },
-            _ = sleep(Duration::from_secs(2)) => {},
+    let engine_name = ENGINE_NAME.to_string();
+    let default_agent = character.username.clone();
+    let knowledge_table: Path = default_agent.to_ascii_lowercase().into();
+
+    let web3 = Web3Client::new(&ic_host, id_secret, root_secret, None).await?;
+    let my_principal = web3.get_principal();
+    log::info!(target: LOG_TARGET, "start local service, principal: {:?}", my_principal.to_text());
+
+    // LL Models
+    log::info!(target: LOG_TARGET, "start to connect models");
+    let model = connect_model(&cfg.llm)?;
+
+    // ObjectStore
+    log::info!(target: LOG_TARGET, "start to connect object_store");
+    let object_store = LocalFileSystem::new_with_prefix(store_path)?;
+    let object_store = Arc::new(object_store);
+
+    log::info!(target: LOG_TARGET, "start to init knowledge_store");
+    let knowledge_store =
+        connect_knowledge_store(object_store.clone(), knowledge_table, &model).await?;
+
+    let knowledge_store = Arc::new(knowledge_store);
+    log::info!(target: LOG_TARGET, "start to build engine");
+    let agent = character.build(
+        Arc::new(Attention::default()),
+        Arc::new(DocumentSegmenter::default()),
+        knowledge_store.clone(),
+    );
+
+    let mut engine = EngineBuilder::new()
+        .with_id(my_principal)
+        .with_name(engine_name.clone())
+        .with_cancellation_token(global_cancel_token.clone())
+        .with_web3_client(Arc::new(Web3SDK::from_web3(Arc::new(web3.clone()))))
+        .with_model(model)
+        .with_store(Store::new(object_store));
+
+    if !cfg.google.api_key.is_empty() {
+        engine = engine.register_tool(GoogleSearchTool::new(
+            cfg.google.api_key.clone(),
+            cfg.google.search_engine_id.clone(),
+            None,
+        ))?;
+    }
+    if !cfg.icp.token_ledgers.is_empty() {
+        let token_ledgers: BTreeSet<Principal> = cfg
+            .icp
+            .token_ledgers
+            .iter()
+            .flat_map(|t| Principal::from_text(t).map_err(|_| format!("invalid token: {}", t)))
+            .collect();
+
+        let ledgers = ICPLedgers::load(&web3, token_ledgers, false).await?;
+        let ledgers = Arc::new(ledgers);
+        engine = engine.register_tool(BalanceOfTool::new(ledgers.clone()))?;
+    }
+
+    engine = engine.register_agent(agent.clone())?;
+
+    let agent = Arc::new(agent);
+    let engine = Arc::new(engine.build(default_agent.clone())?);
+    let x_status = Arc::new(RwLock::new(handler::ServiceStatus::Running));
+    let app_state = handler::AppState {
+        web3: Arc::new(handler::Web3SDK::Web3(web3)),
+        x_status: x_status.clone(),
+        info: Arc::new(handler::AppInformation {
+            id: my_principal,
+            name: engine_name,
+            start_time_ms: unix_ms(),
+            default_agent,
+            object_store_canister: None,
+            caller: Principal::anonymous(),
+        }),
+        knowledge_store,
+        cose_namespace: "".to_string(),
+        manager,
+    };
+
+    match tokio::try_join!(
+        start_server(
+            format!("127.0.0.1:{}", port),
+            app_state,
+            global_cancel_token.clone()
+        ),
+        start_x(cfg.x, engine, agent, global_cancel_token.clone(), x_status),
+        shutdown_future
+    ) {
+        Ok(_) => Ok(()),
+        Err(err) => {
+            log::error!(target: LOG_TARGET, "server error: {:?}", err);
+            Err(err)
         }
-        log::info!(target: LOG_TARGET, "connecting TEE service again");
     }
 }
 
@@ -322,7 +508,10 @@ async fn connect_object_store(
     object_store_canister: Principal,
 ) -> Result<ObjectStoreClient, BoxError> {
     let aes_secret = tee
-        .a256gcm_key(root_path, &[IC_OBJECT_STORE.as_bytes(), b"A256GCM"])
+        .a256gcm_key(&derivation_path_with(
+            root_path,
+            &[IC_OBJECT_STORE.as_bytes(), b"A256GCM"],
+        ))
         .await?;
 
     // ensure write access to object store
@@ -349,7 +538,7 @@ async fn connect_object_store(
 }
 
 async fn connect_knowledge_store(
-    object_store: Arc<ObjectStoreClient>,
+    object_store: Arc<DynObjectStore>,
     namespace: Path,
     model: &Model,
 ) -> Result<KnowledgeStore, BoxError> {

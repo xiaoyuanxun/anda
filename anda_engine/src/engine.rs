@@ -38,12 +38,10 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    context::{AgentCtx, BaseCtx, TEEClient},
+    context::{AgentCtx, BaseCtx, Web3Client, Web3SDK},
     model::Model,
     store::Store,
 };
-
-static TEE_LOCAL_SERVER: &str = "http://127.0.0.1:8080";
 
 pub static ROOT_PATH: &str = "_";
 
@@ -171,7 +169,7 @@ pub struct EngineBuilder {
     agents: AgentSet<AgentCtx>,
     model: Model,
     store: Store,
-    tee_client: TEEClient,
+    web3: Arc<Web3SDK>,
     cancellation_token: CancellationToken,
 }
 
@@ -192,7 +190,7 @@ impl EngineBuilder {
             agents: AgentSet::new(),
             model: Model::not_implemented(),
             store: Store::new(mstore),
-            tee_client: TEEClient::new(TEE_LOCAL_SERVER, "", Principal::anonymous()),
+            web3: Arc::new(Web3SDK::Web3(Web3Client::not_implemented())),
             cancellation_token: CancellationToken::new(),
         }
     }
@@ -216,8 +214,8 @@ impl EngineBuilder {
     }
 
     /// Sets the TEE (Trusted Execution Environment) client.
-    pub fn with_tee_client(mut self, tee_client: TEEClient) -> Self {
-        self.tee_client = tee_client;
+    pub fn with_web3_client(mut self, web3: Arc<Web3SDK>) -> Self {
+        self.web3 = web3;
         self
     }
 
@@ -301,12 +299,7 @@ impl EngineBuilder {
             return Err(format!("default agent {} not found", default_agent).into());
         }
 
-        let ctx = BaseCtx::new(
-            self.id,
-            self.cancellation_token,
-            self.tee_client,
-            self.store,
-        );
+        let ctx = BaseCtx::new(self.id, self.cancellation_token, self.web3, self.store);
         let ctx = AgentCtx::new(ctx, self.model, Arc::new(self.tools), Arc::new(self.agents));
 
         Ok(Engine {
@@ -322,7 +315,7 @@ impl EngineBuilder {
         let ctx = BaseCtx::new(
             Principal::anonymous(),
             self.cancellation_token,
-            self.tee_client,
+            self.web3,
             self.store,
         );
         AgentCtx::new(ctx, self.model, Arc::new(self.tools), Arc::new(self.agents))
