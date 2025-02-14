@@ -107,7 +107,6 @@ pub enum Commands {
         object_store_canister: String,
     },
     StartLocal {
-        /// TEE kind to derive the principal
         #[arg(long, env = "ID_SECRET")]
         id_secret: String,
 

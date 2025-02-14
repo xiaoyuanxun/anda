@@ -179,12 +179,36 @@ dependencies = [
  "reqwest 0.12.12",
  "schemars",
  "serde",
+ "serde_bytes",
  "serde_json",
  "structured-logger",
  "tokio",
  "tokio-util",
  "toml",
  "url",
+]
+
+[[package]]
+name = "anda_engine_server"
+version = "0.1.0"
+dependencies = [
+ "anda_core",
+ "anda_engine",
+ "axum",
+ "candid",
+ "ciborium",
+ "http 1.2.0",
+ "ic-crypto-standalone-sig-verifier",
+ "ic-types",
+ "ic_cose_types",
+ "ic_tee_agent",
+ "lazy_static",
+ "log",
+ "serde",
+ "serde_bytes",
+ "structured-logger",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -4276,6 +4300,26 @@ dependencies = [
  "serde",
  "serde_bytes",
  "thiserror 2.0.11",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
+name = "icp_ledger_agent"
+version = "0.1.0"
+dependencies = [
+ "anda_core",
+ "anda_engine",
+ "anda_engine_server",
+ "anda_icp",
+ "anda_lancedb",
+ "anda_web3_client",
+ "candid",
+ "clap",
+ "const-hex",
+ "dotenv",
+ "log",
+ "structured-logger",
  "tokio",
  "tokio-util",
 ]

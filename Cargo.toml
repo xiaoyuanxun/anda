@@ -3,9 +3,11 @@ resolver = "2"
 members = [
   "anda_core",
   "anda_engine",
+  "anda_engine_server",
   "anda_lancedb",
   "anda_web3_client",
   "agents/*",
+  "examples/*",
   "tools/*",
 ]
 

@@ -41,4 +41,3 @@ ic-types = { git = "https://github.com/dfinity/ic/", rev = "5d202894864f4db4a5a4
 ic-crypto-standalone-sig-verifier = { git = "https://github.com/dfinity/ic/", rev = "5d202894864f4db4a5a46f44422aebc80c3d321b" }
 
 [dev-dependencies]
-dotenv = { workspace = true }

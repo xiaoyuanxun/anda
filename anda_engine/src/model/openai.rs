@@ -10,6 +10,7 @@ use anda_core::{
     AgentOutput, BoxError, BoxPinFut, CompletionRequest, Embedding, FunctionDefinition, Message,
     ToolCall, CONTENT_TYPE_JSON,
 };
+use log::{log_enabled, Level::Debug};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::time::Duration;
@@ -443,7 +444,6 @@ impl CompletionFeaturesDyn for CompletionModel {
                 full_history.push(Message {
                     role: "user".into(),
                     content: format!("{}", req.documents).into(),
-                    name: req.system_name.clone(),
                     ..Default::default()
                 });
             }
@@ -499,6 +499,12 @@ impl CompletionFeaturesDyn for CompletionModel {
                     },
                 );
             };
+
+            if log_enabled!(Debug) {
+                if let Ok(val) = serde_json::to_string(&body) {
+                    log::debug!("DeepSeek request: {}", val);
+                }
+            }
 
             let response = client.post("/chat/completions").json(body).send().await?;
             if response.status().is_success() {

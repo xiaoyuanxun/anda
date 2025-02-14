@@ -38,6 +38,8 @@ pub struct TransferTool {
 }
 
 impl TransferTool {
+    pub const NAME: &'static str = "icp_ledger_transfer";
+
     pub fn new(ledgers: Arc<ICPLedgers>) -> Self {
         let mut schema = schema_for!(TransferToArgs);
         schema.meta_schema = None; // Remove the $schema field
@@ -57,7 +59,7 @@ impl Tool<BaseCtx> for TransferTool {
     type Output = Nat;
 
     fn name(&self) -> String {
-        "icp_ledger_transfer".to_string()
+        Self::NAME.to_string()
     }
 
     fn description(&self) -> String {
@@ -69,12 +71,12 @@ impl Tool<BaseCtx> for TransferTool {
             .collect::<Vec<_>>();
         if tokens.len() > 1 {
             format!(
-                "Transfer {} tokens to the specified account on ICP network.",
+                "Transfer {} tokens to the specified account on ICP blockchain.",
                 tokens.join(", ")
             )
         } else {
             format!(
-                "Transfer {} token to the specified account on ICP network.",
+                "Transfer {} token to the specified account on ICP blockchain.",
                 tokens[0]
             )
         }

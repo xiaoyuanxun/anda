@@ -26,8 +26,6 @@ use serde::{de::DeserializeOwned, Serialize};
 use serde_bytes::ByteBuf;
 use std::fmt::Display;
 
-use crate::BoxError;
-
 pub static CONTENT_TYPE_CBOR: &str = "application/cbor";
 pub static CONTENT_TYPE_JSON: &str = "application/json";
 pub static CONTENT_TYPE_TEXT: &str = "text/plain";
@@ -35,6 +33,7 @@ pub static CONTENT_TYPE_TEXT: &str = "text/plain";
 /// Represents an RPC request with method name and CBOR-encoded parameters
 #[derive(Clone, Debug, Serialize)]
 pub struct RPCRequest<'a> {
+    /// The method name to call
     pub method: &'a str,
     /// CBOR-encoded parameters for the RPC call.
     /// Parameters should be provided as a tuple, where each element represents a single parameter.
@@ -69,14 +68,14 @@ pub type RPCResponse = Result<ByteBuf, String>;
 /// Possible errors when working with http_rpc
 #[derive(Debug, thiserror::Error)]
 pub enum HttpRPCError {
-    #[error("http_rpc({endpoint}, {path}): send error: {error}")]
+    #[error("http_rpc({endpoint:?}, {path:?}): send error: {error}")]
     RequestError {
         endpoint: String,
         path: String,
-        error: BoxError,
+        error: String,
     },
 
-    #[error("http_rpc({endpoint}, {path}): response status {status}, error: {error}")]
+    #[error("http_rpc({endpoint:?}, {path:?}): response status {status}, error: {error}")]
     ResponseError {
         endpoint: String,
         path: String,
@@ -84,11 +83,11 @@ pub enum HttpRPCError {
         error: String,
     },
 
-    #[error("http_rpc({endpoint}, {path}): parse result error: {error}")]
+    #[error("http_rpc({endpoint:?}, {path:?}): parse result error: {error}")]
     ResultError {
         endpoint: String,
         path: String,
-        error: BoxError,
+        error: String,
     },
 }
 
@@ -98,7 +97,7 @@ pub enum HttpRPCError {
 /// * `client` - HTTP client to use for the request
 /// * `endpoint` - URL endpoint to send the request to
 /// * `method` - RPC method name to call
-/// * `params` - Parameters to serialize as CBOR and send with the request
+/// * `args` - Arguments to serialize as CBOR and send with the request
 ///
 /// # Returns
 /// Result with either the deserialized response or an HttpRPCError
@@ -106,22 +105,22 @@ pub async fn http_rpc<T>(
     client: &Client,
     endpoint: &str,
     method: &str,
-    params: &impl Serialize,
+    args: &impl Serialize,
 ) -> Result<T, HttpRPCError>
 where
     T: DeserializeOwned,
 {
-    let params = to_cbor_bytes(params);
+    let args = to_cbor_bytes(args);
     let req = RPCRequest {
         method,
-        params: &params.into(),
+        params: &args.into(),
     };
 
     let res = cbor_rpc(client, endpoint, method, None, to_cbor_bytes(&req)).await?;
     from_reader(&res[..]).map_err(|e| HttpRPCError::ResultError {
         endpoint: endpoint.to_string(),
         path: method.to_string(),
-        error: e.into(),
+        error: format!("{e:?}"),
     })
 }
 
@@ -147,10 +146,10 @@ where
     In: ArgumentEncoder,
     Out: CandidType + for<'a> candid::Deserialize<'a>,
 {
-    let params = encode_args(args).map_err(|e| HttpRPCError::RequestError {
-        endpoint: endpoint.to_string(),
-        path: canister.to_string(),
-        error: e.into(),
+    let args = encode_args(args).map_err(|e| HttpRPCError::RequestError {
+        endpoint: format!("{endpoint}/{canister}"),
+        path: method.to_string(),
+        error: format!("{e:?}"),
     })?;
     let res = cbor_rpc(
         client,
@@ -160,14 +159,14 @@ where
         to_cbor_bytes(&CanisterRequest {
             canister,
             method,
-            params: &ByteBuf::from(params),
+            params: &ByteBuf::from(args),
         }),
     )
     .await?;
     let res: (Out,) = decode_args(&res).map_err(|e| HttpRPCError::ResultError {
-        endpoint: endpoint.to_string(),
-        path: canister.to_string(),
-        error: e.into(),
+        endpoint: format!("{endpoint}/{canister}"),
+        path: method.to_string(),
+        error: format!("{e:?}"),
     })?;
     Ok(res.0)
 }
@@ -203,7 +202,7 @@ pub async fn cbor_rpc(
         .map_err(|e| HttpRPCError::RequestError {
             endpoint: endpoint.to_string(),
             path: path.to_string(),
-            error: e.into(),
+            error: format!("{e:?}"),
         })?;
     let status = res.status().as_u16();
     if status != 200 {
@@ -218,16 +217,16 @@ pub async fn cbor_rpc(
     let data = res.bytes().await.map_err(|e| HttpRPCError::ResultError {
         endpoint: endpoint.to_string(),
         path: path.to_string(),
-        error: e.into(),
+        error: format!("{e:?}"),
     })?;
     let res: RPCResponse = from_reader(&data[..]).map_err(|e| HttpRPCError::ResultError {
         endpoint: endpoint.to_string(),
         path: path.to_string(),
-        error: e.into(),
+        error: format!("{e:?}"),
     })?;
     res.map_err(|e| HttpRPCError::ResultError {
         endpoint: endpoint.to_string(),
         path: path.to_string(),
-        error: e.into(),
+        error: format!("{e:?}"),
     })
 }

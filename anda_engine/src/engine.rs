@@ -34,6 +34,7 @@ use anda_core::{
 };
 use candid::Principal;
 use object_store::memory::InMemory;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
@@ -49,15 +50,50 @@ pub static ROOT_PATH: &str = "_";
 /// It provides methods to interact with agents, call tools, and manage execution.
 #[derive(Clone)]
 pub struct Engine {
+    id: Principal,
     ctx: AgentCtx,
     name: String, // engine name
     default_agent: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Information {
+    pub id: Principal,
+    pub name: String,
+    pub default_agent: String,
+    pub agent_definitions: Vec<FunctionDefinition>,
+    pub tool_definitions: Vec<FunctionDefinition>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct InformationJSON {
+    pub id: String,
+    pub name: String,
+    pub default_agent: String,
+    pub agent_definitions: Vec<FunctionDefinition>,
+    pub tool_definitions: Vec<FunctionDefinition>,
+}
+
+impl From<Information> for InformationJSON {
+    fn from(info: Information) -> Self {
+        InformationJSON {
+            id: info.id.to_text(),
+            name: info.name,
+            default_agent: info.default_agent,
+            agent_definitions: info.agent_definitions,
+            tool_definitions: info.tool_definitions,
+        }
+    }
 }
 
 impl Engine {
     /// Creates a new EngineBuilder instance for constructing an Engine.
     pub fn builder() -> EngineBuilder {
         EngineBuilder::new()
+    }
+
+    pub fn id(&self) -> Principal {
+        self.id
     }
 
     /// Returns the name of the engine.
@@ -157,6 +193,16 @@ impl Engine {
     /// If no names are provided, returns definitions for all tools.
     pub fn tool_definitions(&self, names: Option<&[&str]>) -> Vec<FunctionDefinition> {
         self.ctx.tools.definitions(names)
+    }
+
+    pub fn information(&self) -> Information {
+        Information {
+            id: self.id,
+            name: self.name.clone(),
+            default_agent: self.default_agent.clone(),
+            agent_definitions: self.agent_definitions(None),
+            tool_definitions: self.tool_definitions(None),
+        }
     }
 }
 
@@ -303,6 +349,7 @@ impl EngineBuilder {
         let ctx = AgentCtx::new(ctx, self.model, Arc::new(self.tools), Arc::new(self.agents));
 
         Ok(Engine {
+            id: self.id,
             ctx,
             name: self.name,
             default_agent,

@@ -33,6 +33,7 @@ use anda_core::{
 };
 use candid::{utils::ArgumentEncoder, CandidType, Principal};
 use serde::{de::DeserializeOwned, Serialize};
+use serde_bytes::ByteBuf;
 use std::{future::Future, sync::Arc, time::Duration};
 
 use super::base::BaseCtx;
@@ -226,8 +227,12 @@ impl AgentContext for AgentCtx {
         prompt: String,
         attachment: Option<Vec<u8>>,
     ) -> Result<AgentOutput, BoxError> {
-        self.https_signed_rpc(endpoint, "agent_run", &(agent_name, prompt, attachment))
-            .await
+        self.https_signed_rpc(
+            endpoint,
+            "agent_run",
+            &(agent_name, prompt, attachment.map(ByteBuf::from)),
+        )
+        .await
     }
 }
 

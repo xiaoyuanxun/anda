@@ -1,0 +1,31 @@
+[package]
+name = "anda_engine_server"
+description = "A http server to serve multiple Anda engines."
+repository = "https://github.com/ldclabs/anda/tree/main/anda_engine_server"
+publish = false
+version = "0.1.0"
+edition.workspace = true
+keywords.workspace = true
+categories.workspace = true
+license.workspace = true
+
+[dependencies]
+anda_core = { path = "../anda_core", version = "0.4" }
+anda_engine = { path = "../anda_engine", version = "0.4" }
+axum = { workspace = true }
+candid = { workspace = true }
+ciborium = { workspace = true }
+serde = { workspace = true }
+serde_bytes = { workspace = true }
+http = { workspace = true }
+ic_cose_types = { workspace = true }
+ic_tee_agent = { workspace = true }
+tokio-util = { workspace = true }
+structured-logger = { workspace = true }
+tokio = { workspace = true }
+log = { workspace = true }
+lazy_static = { workspace = true }
+ic-types = { git = "https://github.com/dfinity/ic/", rev = "5d202894864f4db4a5a46f44422aebc80c3d321b" }
+ic-crypto-standalone-sig-verifier = { git = "https://github.com/dfinity/ic/", rev = "5d202894864f4db4a5a46f44422aebc80c3d321b" }
+
+[dev-dependencies]

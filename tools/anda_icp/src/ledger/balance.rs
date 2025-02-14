@@ -29,6 +29,7 @@ pub struct BalanceOfTool {
 }
 
 impl BalanceOfTool {
+    pub const NAME: &'static str = "icp_ledger_balance_of";
     /// Creates a new BalanceOfTool instance
     pub fn new(ledgers: Arc<ICPLedgers>) -> Self {
         let mut schema = schema_for!(BalanceOfArgs);
@@ -49,7 +50,7 @@ impl Tool<BaseCtx> for BalanceOfTool {
     type Output = f64;
 
     fn name(&self) -> String {
-        "icp_ledger_balance_of".to_string()
+        Self::NAME.to_string()
     }
 
     fn description(&self) -> String {
@@ -60,7 +61,7 @@ impl Tool<BaseCtx> for BalanceOfTool {
             .map(|k| k.as_str())
             .collect::<Vec<_>>();
         format!(
-                "Query the balance of the specified account on ICP network for the following tokens: {}",
+                "Query the balance of the specified account on ICP blockchain for the following tokens: {}",
                 tokens.join(", ")
             )
     }
@@ -109,7 +110,7 @@ mod tests {
         println!("{}", s);
         // {
         //     "name": "icp_ledger_balance_of",
-        //     "description": "Query the balance of the specified account on ICP network for the following tokens: ICP, PANDA",
+        //     "description": "Query the balance of the specified account on ICP blockchain for the following tokens: ICP, PANDA",
         //     "parameters": {
         //       "description": "Arguments for the balance of an account for a token",
         //       "properties": {
