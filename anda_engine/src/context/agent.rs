@@ -29,11 +29,12 @@ use anda_core::{
     AgentContext, AgentOutput, AgentSet, BaseContext, BoxError, CacheExpiry, CacheFeatures,
     CancellationToken, CanisterCaller, CompletionFeatures, CompletionRequest, Embedding,
     EmbeddingFeatures, FunctionDefinition, HttpFeatures, KeysFeatures, Message, ObjectMeta, Path,
-    PutMode, PutResult, StateFeatures, StoreFeatures, ToolCall, ToolSet,
+    PutMode, PutResult, StateFeatures, StoreFeatures, ToolCall, ToolSet, Value,
 };
 use candid::{utils::ArgumentEncoder, CandidType, Principal};
 use serde::{de::DeserializeOwned, Serialize};
 use serde_bytes::ByteBuf;
+use serde_json::json;
 use std::{future::Future, sync::Arc, time::Duration};
 
 use super::base::BaseCtx;
@@ -260,27 +261,31 @@ impl CompletionFeatures for AgentCtx {
         let mut tool_calls_result: Vec<ToolCall> = Vec::new();
         loop {
             let mut res = self.model.completion(req.clone()).await?;
-            // 自动执行 tools 调用
-            let mut tool_calls_continue: Vec<Message> = Vec::new();
+            // automatically executes tools calls
+            let mut tool_calls_continue: Vec<Value> = Vec::new();
             if let Some(tool_calls) = &mut res.tool_calls {
-                // 移除已处理的 tools
-                req.tools
-                    .retain(|t| !tool_calls.iter().any(|o| o.name == t.name));
                 for tool in tool_calls.iter_mut() {
-                    match self.tool_call(&tool.id, tool.args.clone()).await {
+                    if !req.tools.iter().any(|t| t.name == tool.name) {
+                        // tool already called, skip
+                        continue;
+                    }
+
+                    // remove called tool from req.tools
+                    req.tools.retain(|t| t.name != tool.name);
+                    match self.tool_call(&tool.name, tool.args.clone()).await {
                         Ok((val, con)) => {
                             if con {
-                                // 需要使用大模型继续处理 tool 返回结果
-                                tool_calls_continue.push(Message {
+                                // need to use LLM to continue processing tool_call result
+                                tool_calls_continue.push(json!(Message {
                                     role: "tool".to_string(),
                                     content: val.clone().into(),
-                                    name: Some(tool.name.clone()),
+                                    name: None,
                                     tool_call_id: Some(tool.id.clone()),
-                                });
+                                }));
                             }
                             tool.result = Some(val);
                         }
-                        Err(_) => {
+                        Err(_err) => {
                             // TODO:
                             // support remote_tool_call
                             // support agent_run
@@ -301,7 +306,10 @@ impl CompletionFeatures for AgentCtx {
                 return Ok(res);
             }
 
-            // 将 tools 处理结果追加到 history 消息列表，交给大模型继续处理
+            req.system = None;
+            req.documents.clear();
+            req.prompt = "".to_string();
+            req.chat_history = res.full_history.unwrap_or_default();
             req.chat_history.append(&mut tool_calls_continue);
         }
     }

@@ -153,7 +153,7 @@ impl Client {
 }
 
 /// Response structure for OpenAI embedding API
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct EmbeddingResponse {
     pub object: String,
     pub data: Vec<EmbeddingData>,
@@ -185,7 +185,7 @@ impl EmbeddingResponse {
 }
 
 /// Individual embedding data from OpenAI response
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct EmbeddingData {
     pub object: String,
     pub embedding: Vec<f32>,
@@ -193,7 +193,7 @@ pub struct EmbeddingData {
 }
 
 /// Token usage information from OpenAI API
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Usage {
     pub prompt_tokens: usize,
     pub total_tokens: usize,
@@ -210,7 +210,7 @@ impl std::fmt::Display for Usage {
 }
 
 /// Response structure for OpenAI completion API
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct CompletionResponse {
     pub id: String,
     pub object: String,
@@ -221,8 +221,9 @@ pub struct CompletionResponse {
 }
 
 impl CompletionResponse {
-    fn try_into(mut self) -> Result<AgentOutput, BoxError> {
+    fn try_into(mut self, mut full_history: Vec<Value>) -> Result<AgentOutput, BoxError> {
         let choice = self.choices.pop().ok_or("No completion choice")?;
+        full_history.push(json!(choice.message));
         let mut output = AgentOutput {
             content: choice.message.content,
             tool_calls: choice.message.tool_calls.map(|tools| {
@@ -236,6 +237,7 @@ impl CompletionResponse {
                     })
                     .collect()
             }),
+            full_history: Some(full_history),
             ..Default::default()
         };
 
@@ -250,14 +252,14 @@ impl CompletionResponse {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Choice {
     pub index: usize,
     pub message: MessageOutput,
     pub finish_reason: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct MessageOutput {
     pub role: String,
     #[serde(default)]
@@ -266,7 +268,7 @@ pub struct MessageOutput {
     pub tool_calls: Option<Vec<ToolCallOutput>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ToolCallOutput {
     pub id: String,
     pub r#type: String,
@@ -288,7 +290,7 @@ impl From<FunctionDefinition> for ToolDefinition {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Function {
     pub name: String,
     pub arguments: String,
@@ -425,7 +427,7 @@ impl CompletionFeaturesDyn for CompletionModel {
         Box::pin(async move {
             // Add preamble to chat history (if available)
             let mut full_history = if let Some(system) = &req.system {
-                vec![Message {
+                vec![json!(Message {
                     role: if is_new {
                         "developer".into()
                     } else {
@@ -434,33 +436,35 @@ impl CompletionFeaturesDyn for CompletionModel {
                     content: system.to_owned().into(),
                     name: req.system_name.clone(),
                     ..Default::default()
-                }]
+                })]
             } else {
                 vec![]
             };
 
             // Add context documents to chat history
             if !req.documents.is_empty() {
-                full_history.push(Message {
+                full_history.push(json!(Message {
                     role: "user".into(),
                     content: format!("{}", req.documents).into(),
                     ..Default::default()
-                });
+                }));
             }
 
             // Extend existing chat history
             full_history.append(&mut req.chat_history);
 
-            full_history.push(Message {
-                role: "user".into(),
-                content: req.prompt.into(),
-                name: req.prompter_name,
-                ..Default::default()
-            });
+            if !req.prompt.is_empty() {
+                full_history.push(json!(Message {
+                    role: "user".into(),
+                    content: req.prompt.into(),
+                    name: req.prompter_name,
+                    ..Default::default()
+                }));
+            }
 
             let mut body = json!({
                 "model": model,
-                "messages": full_history,
+                "messages": full_history.clone(),
                 "temperature": req.temperature,
             });
             let body = body.as_object_mut().unwrap();
@@ -502,14 +506,21 @@ impl CompletionFeaturesDyn for CompletionModel {
 
             if log_enabled!(Debug) {
                 if let Ok(val) = serde_json::to_string(&body) {
-                    log::debug!("DeepSeek request: {}", val);
+                    log::debug!(request = val; "OpenAI completions request");
                 }
             }
 
             let response = client.post("/chat/completions").json(body).send().await?;
             if response.status().is_success() {
                 match response.json::<CompletionResponse>().await {
-                    Ok(res) => res.try_into(),
+                    Ok(res) => {
+                        if log_enabled!(Debug) {
+                            if let Ok(val) = serde_json::to_string(&res) {
+                                log::debug!(response = val; "OpenAI completions response");
+                            }
+                        }
+                        res.try_into(full_history)
+                    }
                     Err(err) => Err(format!("OpenAI completions error: {}", err).into()),
                 }
             } else {

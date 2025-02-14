@@ -34,6 +34,7 @@ use anda_core::{
 };
 use ic_cose_types::to_cbor_bytes;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::{fmt::Write, sync::Arc, time::Duration};
 
 use super::{
@@ -545,7 +546,7 @@ where
             .append_tools(tools);
 
         if let Some((user, chat)) = &mut chat_history {
-            req.chat_history = chat.clone();
+            req.chat_history = chat.clone().into_iter().map(|m| json!(m)).collect();
             chat.push(Message {
                 role: "user".to_string(),
                 content: req.prompt.clone().into(),
@@ -568,7 +569,7 @@ where
                         chat.push(Message {
                             role: "tool".to_string(),
                             content: "".to_string().into(),
-                            name: Some(tool_res.name.clone()),
+                            name: None,
                             tool_call_id: Some(tool_res.id.clone()),
                         });
                     }

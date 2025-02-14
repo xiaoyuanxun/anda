@@ -61,7 +61,7 @@ impl Agent<AgentCtx> for ICPLedgerAgent {
         let req = CompletionRequest {
             system: Some(
                 "\
-            You are an AI assistant designed to interact with the ICP blockchain ledger.\n\
+            You are an AI assistant designed to interact with the ICP blockchain ledger by given tools.\n\
             1. Please decline any requests that are not related to the ICP blockchain ledger.\n\
             2. For requests that are not supported by the tools available, kindly inform the user \
             of your current capabilities."

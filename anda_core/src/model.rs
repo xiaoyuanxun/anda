@@ -30,6 +30,10 @@ pub struct AgentOutput {
     /// Tool call that this message is responding to. If this message is a response to a tool call, this field should be set to the tool call ID.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCall>>,
+
+    /// full_history will not be included in the engine's response
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub full_history: Option<Vec<Value>>,
 }
 
 /// Represents a tool call response with it's ID, function name, and arguments
@@ -192,13 +196,14 @@ pub struct CompletionRequest {
     /// The name of system role
     pub system_name: Option<String>,
 
-    /// The chat history to be sent to the completion model provider
-    pub chat_history: Vec<Message>,
+    /// The chat history (raw message) to be sent to the completion model provider
+    pub chat_history: Vec<Value>,
 
     /// The documents to embed into the prompt
     pub documents: Documents,
 
     /// The prompt to be sent to the completion model provider as "user" role
+    /// It can be empty.
     pub prompt: String,
 
     /// The name of the prompter

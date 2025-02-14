@@ -409,7 +409,7 @@ async fn bootstrap_local(
     let default_agent = character.username.clone();
     let knowledge_table: Path = default_agent.to_ascii_lowercase().into();
 
-    let web3 = Web3Client::new(&ic_host, id_secret, root_secret, None).await?;
+    let web3 = Web3Client::new(&ic_host, id_secret, root_secret, None, None).await?;
     let my_principal = web3.get_principal();
     log::info!(target: LOG_TARGET, "start local service, principal: {:?}", my_principal.to_text());
 
@@ -560,10 +560,6 @@ fn connect_model(cfg: &config::Llm) -> Result<Model, BoxError> {
     if cfg.openai_api_key.is_empty() {
         Ok(Model::new(
             Arc::new(
-                cohere::Client::new(&cfg.cohere_api_key)
-                    .embedding_model(&cfg.cohere_embedding_model),
-            ),
-            Arc::new(
                 deepseek::Client::new(
                     &cfg.deepseek_api_key,
                     if cfg.deepseek_endpoint.is_empty() {
@@ -578,6 +574,10 @@ fn connect_model(cfg: &config::Llm) -> Result<Model, BoxError> {
                     &cfg.deepseek_model
                 }),
             ),
+            Arc::new(
+                cohere::Client::new(&cfg.cohere_api_key)
+                    .embedding_model(&cfg.cohere_embedding_model),
+            ),
         ))
     } else {
         let cli = openai::Client::new(
@@ -589,8 +589,8 @@ fn connect_model(cfg: &config::Llm) -> Result<Model, BoxError> {
             },
         );
         Ok(Model::new(
-            Arc::new(cli.embedding_model(&cfg.openai_embedding_model)),
             Arc::new(cli.completion_model(&cfg.openai_completion_model)),
+            Arc::new(cli.embedding_model(&cfg.openai_embedding_model)),
         ))
     }
 }

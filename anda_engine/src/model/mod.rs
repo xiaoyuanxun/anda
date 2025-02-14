@@ -129,8 +129,8 @@ pub struct Model {
 impl Model {
     /// Creates a new Model with specified embedder and completer
     pub fn new(
-        embedder: Arc<dyn EmbeddingFeaturesDyn>,
         completer: Arc<dyn CompletionFeaturesDyn>,
+        embedder: Arc<dyn EmbeddingFeaturesDyn>,
     ) -> Self {
         Self {
             embedder,
@@ -141,16 +141,16 @@ impl Model {
     /// Creates a Model with unimplemented features (returns errors for all operations)
     pub fn not_implemented() -> Self {
         Self {
-            embedder: Arc::new(NotImplemented),
             completer: Arc::new(NotImplemented),
+            embedder: Arc::new(NotImplemented),
         }
     }
 
     /// Creates a Model with mock implementations for testing
     pub fn mock_implemented() -> Self {
         Self {
-            embedder: Arc::new(MockImplemented),
             completer: Arc::new(MockImplemented),
+            embedder: Arc::new(MockImplemented),
         }
     }
 }

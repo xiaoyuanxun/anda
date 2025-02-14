@@ -189,6 +189,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "anda_engine_cli"
+version = "0.1.0"
+dependencies = [
+ "anda_core",
+ "anda_engine",
+ "anda_web3_client",
+ "base64 0.22.1",
+ "ciborium",
+ "clap",
+ "const-hex",
+ "dotenv",
+ "ic_cose_types",
+ "ic_tee_agent",
+ "rand",
+ "structured-logger",
+ "tokio",
+]
+
+[[package]]
 name = "anda_engine_server"
 version = "0.1.0"
 dependencies = [
@@ -219,6 +238,7 @@ dependencies = [
  "anda_engine",
  "candid",
  "icrc-ledger-types",
+ "log",
  "num-traits",
  "schemars",
  "serde",

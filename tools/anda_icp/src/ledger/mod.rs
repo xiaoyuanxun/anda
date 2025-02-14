@@ -171,6 +171,13 @@ impl ICPLedgers {
                 },),
             )
             .await?;
+        log::info!(
+            account = args.account,
+            symbol = args.symbol,
+            amount = args.amount,
+            result = res.is_ok();
+            "icrc1_transfer",
+        );
         res.map_err(|err| format!("failed to transfer tokens, error: {:?}", err).into())
     }
 
@@ -203,6 +210,12 @@ impl ICPLedgers {
             .await?;
 
         let amount = res.0.to_f64().unwrap_or_default() / 10u64.pow(*decimals as u32) as f64;
+        log::info!(
+            account = args.account,
+            symbol = args.symbol,
+            balance = amount;
+            "balance_of",
+        );
         Ok(amount)
     }
 }

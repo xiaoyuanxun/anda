@@ -117,6 +117,7 @@ impl DocumentSegmenter {
                         args: res_str.clone(),
                         result: Some(res_str),
                     }]),
+                    full_history: None,
                 },
             ));
         }

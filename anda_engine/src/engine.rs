@@ -159,7 +159,9 @@ impl Engine {
         }
 
         let ctx = self.ctx.child_with(&name, user, caller)?;
-        self.ctx.agents.run(&name, ctx, prompt, attachment).await
+        let mut res = self.ctx.agents.run(&name, ctx, prompt, attachment).await?;
+        res.full_history = None; // clear full history
+        Ok(res)
     }
 
     /// Calls a tool by name with the specified arguments.

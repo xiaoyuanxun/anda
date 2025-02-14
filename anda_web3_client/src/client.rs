@@ -36,6 +36,7 @@ pub struct Client {
     identity: Arc<dyn Identity>,
     agent: Arc<Agent>,
     cose_canister: Principal,
+    is_dev: bool,
 }
 
 impl Client {
@@ -53,15 +54,17 @@ impl Client {
         id_secret: [u8; 32],
         root_secret: [u8; 48],
         cose_canister: Option<Principal>,
+        is_dev: Option<bool>,
     ) -> Result<Self, BoxError> {
+        let is_dev = is_dev.unwrap_or(false);
         let outer_http = reqwest::Client::builder()
             .use_rustls_tls()
-            .https_only(true)
+            .https_only(!is_dev)
             .http2_keep_alive_interval(Some(Duration::from_secs(25)))
             .http2_keep_alive_timeout(Duration::from_secs(15))
             .http2_keep_alive_while_idle(true)
             .connect_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(120))
+            .timeout(Duration::from_secs(180))
             .user_agent(APP_USER_AGENT)
             .build()
             .expect("Anda web3 client should build");
@@ -85,6 +88,7 @@ impl Client {
             identity,
             agent: Arc::new(agent),
             cose_canister: cose_canister.unwrap_or(Principal::anonymous()),
+            is_dev,
         })
     }
 
@@ -351,8 +355,9 @@ impl Web3ClientFeatures for Client {
         }
 
         let outer_http = self.outer_http.clone();
+        let is_dev = self.is_dev;
         Box::pin(async move {
-            if !url.starts_with("https://") {
+            if !is_dev && !url.starts_with("https://") {
                 return Err("Invalid URL, must start with https://".into());
             }
             let mut req = outer_http.request(method, url);

@@ -2,7 +2,7 @@
 
 A http server to serve multiple Anda engines.
 
-Example: https://github.com/ldclabs/anda/tree/main/examples/icp_ledger_agent
+Example: https://github.com/ldclabs/anda/blob/main/examples/icp_ledger_agent/src/main.rs
 
 ## License
 Copyright © 2025 [LDC Labs](https://github.com/ldclabs).

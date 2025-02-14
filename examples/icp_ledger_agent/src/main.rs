@@ -39,6 +39,16 @@ struct Cli {
 
     #[arg(long, env = "DEEPSEEK_API_KEY")]
     deepseek_api_key: String,
+
+    #[arg(
+        long,
+        env = "DEEPSEEK_ENDPOINT",
+        default_value = "https://api.deepseek.com"
+    )]
+    deepseek_endpoint: String,
+
+    #[arg(long, env = "DEEPSEEK_MODEL", default_value = "deepseek-chat")]
+    deepseek_model: String,
 }
 
 // cargo run -p icp_ledger_agent
@@ -58,7 +68,7 @@ async fn main() -> Result<(), BoxError> {
     let root_secret = const_hex::decode(&cli.root_secret)?;
     let root_secret: [u8; 48] = root_secret.try_into().map_err(|_| "invalid root_secret")?;
 
-    let web3 = Web3Client::new(&cli.ic_host, id_secret, root_secret, None).await?;
+    let web3 = Web3Client::new(&cli.ic_host, id_secret, root_secret, None, Some(true)).await?;
     let my_principal = web3.get_principal();
     log::info!(
         "start local service, principal: {:?}",
@@ -67,11 +77,11 @@ async fn main() -> Result<(), BoxError> {
 
     // LL Models
     let model = Model::new(
-        Arc::new(NotImplemented),
         Arc::new(
-            deepseek::Client::new(&cli.deepseek_api_key, None)
-                .completion_model(deepseek::DEEKSEEK_V3),
+            deepseek::Client::new(&cli.deepseek_api_key, Some(cli.deepseek_endpoint))
+                .completion_model(&cli.deepseek_model),
         ),
+        Arc::new(NotImplemented),
     );
 
     // ObjectStore
@@ -103,7 +113,7 @@ async fn main() -> Result<(), BoxError> {
         .with_app_version(APP_VERSION.to_string())
         .with_addr(format!("127.0.0.1:{}", cli.port))
         .with_engines(engines, None)
-        .serve(shutdown_signal(global_cancel_token, Duration::from_secs(5)))
+        .serve(shutdown_signal(global_cancel_token, Duration::from_secs(3)))
         .await?;
 
     Ok(())

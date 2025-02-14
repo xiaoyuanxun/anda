@@ -71,6 +71,12 @@ pub async fn anda_engine(
 
     match ct {
         Content::CBOR(req, _) => {
+            log::info!(
+                method = req.method.as_str(),
+                agent = id.to_text(),
+                caller = caller.to_text();
+                "anda_engine",
+            );
             let res = engine_run(&req, &app, caller, id).await;
             Content::CBOR(res, None).into_response()
         }
@@ -91,11 +97,12 @@ async fn engine_run(
 
     match req.method.as_str() {
         "agent_run" => {
-            let args: (String, String, Option<ByteBuf>) = from_reader(req.params.as_slice())
-                .map_err(|err| format!("failed to decode params: {err:?}"))?;
+            let args: (Option<String>, String, Option<ByteBuf>) =
+                from_reader(req.params.as_slice())
+                    .map_err(|err| format!("failed to decode params: {err:?}"))?;
             let res = engine
                 .agent_run(
-                    Some(args.0),
+                    args.0,
                     args.1,
                     args.2.map(|v| v.into_vec()),
                     None,
