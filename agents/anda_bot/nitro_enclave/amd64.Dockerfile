@@ -22,7 +22,7 @@ RUN mv linux-amd64/dnsproxy ./ \
 RUN wget -O ic_tee_daemon https://github.com/ldclabs/ic-tee/releases/download/v0.2.14/ic_tee_daemon
 RUN chmod +x ic_tee_daemon
 
-RUN wget -O ic_tee_nitro_gateway https://github.com/ldclabs/ic-tee/releases/download/v0.2.14/ic_tee_nitro_gateway
+RUN wget -O ic_tee_nitro_gateway https://github.com/ldclabs/ic-tee/releases/download/v0.3.0/ic_tee_nitro_gateway
 RUN chmod +x ic_tee_nitro_gateway
 
 RUN wget -O anda_bot https://github.com/ldclabs/anda/releases/download/v0.4.0/anda_bot

@@ -4267,9 +4267,9 @@ dependencies = [
 
 [[package]]
 name = "ic_tee_agent"
-version = "0.2.15"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24c328ef5242737eced5ded80b431929c82857d093e5e582a43c091aa2fdb937"
+checksum = "5a625dcf022f8597bb1111f5ace4c4839fd507ef0ff34b1a4db52b5671f29936"
 dependencies = [
  "axum-core",
  "base64 0.22.1",
@@ -4307,9 +4307,9 @@ dependencies = [
 
 [[package]]
 name = "ic_tee_gateway_sdk"
-version = "0.2.15"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1203fe8f4c99186f490233556f9df7a211e9969c0d260f7f24c8554751b10c24"
+checksum = "e5d562c1b2bb36a2adc141c9e657bdac585b695c4ccf64e000a18dd65dbc7a3f"
 dependencies = [
  "candid",
  "ciborium",

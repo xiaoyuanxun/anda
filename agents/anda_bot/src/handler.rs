@@ -49,7 +49,7 @@ impl AppState {
             Web3SDK::Web3(_cli) => {
                 // verify signature
                 let caller = if let Some(sig) = UserSignature::try_from(headers) {
-                    match sig.verify_with(self.info.id, unix_ms(), verify_sig) {
+                    match sig.verify_with(unix_ms(), verify_sig, Some(self.info.id), None) {
                         Ok(_) => sig.user,
                         Err(_) => {
                             return false;

@@ -8,7 +8,7 @@ use candid::Principal;
 use ciborium::from_reader;
 use ic_cose_types::to_cbor_bytes;
 use ic_tee_agent::{
-    http::{Content, UserSignature, ANONYMOUS_PRINCIPAL},
+    http::{Content, ContentWithSHA3, UserSignature, ANONYMOUS_PRINCIPAL},
     RPCRequest, RPCResponse,
 };
 use serde_bytes::ByteBuf;
@@ -31,7 +31,7 @@ pub async fn get_information(
     headers: http::HeaderMap,
 ) -> impl IntoResponse {
     let caller = if let Some(sig) = UserSignature::try_from(&headers) {
-        match sig.verify_with(app.default_engine, unix_ms(), verify_sig) {
+        match sig.verify_with(unix_ms(), verify_sig, None, None) {
             Ok(_) => sig.user,
             Err(_) => ANONYMOUS_PRINCIPAL,
         }
@@ -57,11 +57,18 @@ pub async fn anda_engine(
     State(app): State<AppState>,
     headers: http::HeaderMap,
     Path(id): Path<String>,
-    ct: Content<RPCRequest>,
+    ct: ContentWithSHA3<RPCRequest>,
 ) -> impl IntoResponse {
     let id = Principal::from_text(&id).unwrap_or(app.default_engine);
+    let (req, hash) = match ct {
+        ContentWithSHA3::CBOR(req, hash) => (req, hash),
+        ContentWithSHA3::JSON(_, _) => {
+            return StatusCode::UNSUPPORTED_MEDIA_TYPE.into_response();
+        }
+    };
+
     let caller = if let Some(sig) = UserSignature::try_from(&headers) {
-        match sig.verify_with(id, unix_ms(), verify_sig) {
+        match sig.verify_with(unix_ms(), verify_sig, Some(id), Some(hash.as_slice())) {
             Ok(_) => sig.user,
             Err(_) => ANONYMOUS_PRINCIPAL,
         }
@@ -69,19 +76,14 @@ pub async fn anda_engine(
         ANONYMOUS_PRINCIPAL
     };
 
-    match ct {
-        Content::CBOR(req, _) => {
-            log::info!(
-                method = req.method.as_str(),
-                agent = id.to_text(),
-                caller = caller.to_text();
-                "anda_engine",
-            );
-            let res = engine_run(&req, &app, caller, id).await;
-            Content::CBOR(res, None).into_response()
-        }
-        _ => StatusCode::UNSUPPORTED_MEDIA_TYPE.into_response(),
-    }
+    log::info!(
+        method = req.method.as_str(),
+        agent = id.to_text(),
+        caller = caller.to_text();
+        "anda_engine",
+    );
+    let res = engine_run(&req, &app, caller, id).await;
+    Content::CBOR(res, None).into_response()
 }
 
 async fn engine_run(
