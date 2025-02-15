@@ -2,7 +2,7 @@
 name = "anda_web3_client"
 description = "The rust SDK for Web3 integration"
 repository = "https://github.com/ldclabs/anda/tree/main/agents/anda_web3_client"
-publish = false
+publish = false # can't publish this crate because `ic-crypto-secp256k1` and `ic-crypto-ed25519` are not published
 version = "0.1.0"
 edition.workspace = true
 keywords.workspace = true

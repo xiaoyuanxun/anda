@@ -101,13 +101,7 @@ async fn engine_run(
                 from_reader(req.params.as_slice())
                     .map_err(|err| format!("failed to decode params: {err:?}"))?;
             let res = engine
-                .agent_run(
-                    args.0,
-                    args.1,
-                    args.2.map(|v| v.into_vec()),
-                    None,
-                    Some(caller),
-                )
+                .agent_run(args.0, args.1, args.2, None, Some(caller))
                 .await
                 .map_err(|err| format!("failed to run agent: {err:?}"))?;
             Ok(to_cbor_bytes(&res).into())

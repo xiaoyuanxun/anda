@@ -10,6 +10,10 @@ cd anda
 cp example.env .env
 # update .env
 cargo build -p anda_engine_cli
+
+./target/debug/anda_engine_cli --help
+./target/debug/anda_engine_cli rand-bytes -l 48 -f hex
+./target/debug/anda_engine_cli agent-run --help
 ./target/debug/anda_engine_cli agent-run -p 'Please check my PANDA balance'
 ```
 

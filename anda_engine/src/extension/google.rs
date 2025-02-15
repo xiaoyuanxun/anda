@@ -27,7 +27,6 @@
 //!     .build("default_agent".to_string())?;
 //! ```
 
-
 use anda_core::{BoxError, FunctionDefinition, HttpFeatures, Tool};
 use http::header;
 use schemars::{schema_for, JsonSchema};
@@ -56,13 +55,13 @@ pub struct SearchResultItem {
 }
 
 /// Google Search Tool implementation
-/// 
+///
 /// Provides functionality to perform web searches using Google's Custom Search API.
-/// 
+///
 /// # Prerequisites
 /// - Enable Custom Search API at https://console.cloud.google.com/
 /// - Obtain API Key and Custom Search Engine ID
-/// 
+///
 /// # API Reference
 /// - Official documentation: https://developers.google.com/custom-search/v1/using_rest
 #[derive(Debug, Clone)]
@@ -78,6 +77,7 @@ pub struct GoogleSearchTool {
 }
 
 impl GoogleSearchTool {
+    const NAME: &'static str = "google_web_search";
     /// Creates a new GoogleSearchTool instance
     ///
     /// # Arguments
@@ -166,7 +166,7 @@ impl Tool<BaseCtx> for GoogleSearchTool {
     type Output = Vec<SearchResultItem>;
 
     fn name(&self) -> String {
-        "google_web_search".to_string()
+        Self::NAME.to_string()
     }
 
     fn description(&self) -> String {

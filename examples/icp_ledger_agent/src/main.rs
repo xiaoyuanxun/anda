@@ -2,7 +2,7 @@ use anda_core::BoxError;
 use anda_engine::{
     context::Web3SDK,
     engine::EngineBuilder,
-    model::{deepseek, Model, NotImplemented},
+    model::{deepseek, openai, Model},
     store::Store,
 };
 use anda_engine_server::{shutdown_signal, ServerBuilder};
@@ -37,7 +37,7 @@ struct Cli {
     #[arg(long, env = "ROOT_SECRET")]
     root_secret: String,
 
-    #[arg(long, env = "DEEPSEEK_API_KEY")]
+    #[arg(long, env = "DEEPSEEK_API_KEY", default_value = "")]
     deepseek_api_key: String,
 
     #[arg(
@@ -49,6 +49,9 @@ struct Cli {
 
     #[arg(long, env = "DEEPSEEK_MODEL", default_value = "deepseek-chat")]
     deepseek_model: String,
+
+    #[arg(long, env = "OPENAI_API_KEY", default_value = "")]
+    openai_api_key: String,
 }
 
 // cargo run -p icp_ledger_agent
@@ -76,13 +79,14 @@ async fn main() -> Result<(), BoxError> {
     );
 
     // LL Models
-    let model = Model::new(
+    let model = Model::with_completer(if cli.openai_api_key.is_empty() {
         Arc::new(
             deepseek::Client::new(&cli.deepseek_api_key, Some(cli.deepseek_endpoint))
                 .completion_model(&cli.deepseek_model),
-        ),
-        Arc::new(NotImplemented),
-    );
+        )
+    } else {
+        Arc::new(openai::Client::new(&cli.openai_api_key, None).completion_model(openai::O1_MINI))
+    });
 
     // ObjectStore
     let object_store = Arc::new(InMemory::new());

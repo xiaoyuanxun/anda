@@ -59,6 +59,7 @@ impl Default for DocumentSegmenter {
 }
 
 impl DocumentSegmenter {
+    const NAME: &'static str = "document_segmenter";
     /// Creates a new DocumentSegmenter with specified token limits
     ///
     /// # Arguments
@@ -141,7 +142,7 @@ impl DocumentSegmenter {
 impl Agent<AgentCtx> for DocumentSegmenter {
     /// Returns the name "document_segmenter" of the segmenter tool
     fn name(&self) -> String {
-        "document_segmenter".to_string()
+        Self::NAME.to_string()
     }
 
     /// Returns the description of the segmenter tool

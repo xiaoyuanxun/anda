@@ -409,12 +409,12 @@ pub trait HttpFeatures: Sized {
     /// # Arguments
     /// * `endpoint` - URL endpoint to send the request to
     /// * `method` - RPC method name to call
-    /// * `params` - Parameters to serialize as CBOR and send with the request
+    /// * `args` - Arguments to serialize as CBOR and send with the request
     fn https_signed_rpc<T>(
         &self,
         endpoint: &str,
         method: &str,
-        params: impl Serialize + Send,
+        args: impl Serialize + Send,
     ) -> impl Future<Output = Result<T, BoxError>> + Send
     where
         T: DeserializeOwned;

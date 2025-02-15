@@ -374,11 +374,11 @@ impl Web3ClientFeatures for Client {
         &self,
         endpoint: String,
         method: String,
-        params: Vec<u8>,
+        args: Vec<u8>,
     ) -> BoxPinFut<Result<Vec<u8>, BoxError>> {
         let req = RPCRequest {
             method: &method,
-            params: &params.into(),
+            params: &args.into(),
         };
         let body = to_cbor_bytes(&req);
         let digest: [u8; 32] = sha3_256(&body);

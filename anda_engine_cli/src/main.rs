@@ -39,6 +39,19 @@ pub enum Commands {
         #[arg(short, long)]
         name: Option<String>,
     },
+    ToolCall {
+        #[arg(short, long, default_value = "http://127.0.0.1:8042/default")]
+        endpoint: String,
+
+        #[arg(short, long, env = "ID_SECRET")]
+        id_secret: String,
+
+        #[arg(short, long)]
+        name: String,
+
+        #[arg(short, long)]
+        args: String,
+    },
 }
 
 #[tokio::main]
@@ -75,9 +88,28 @@ async fn main() -> Result<(), BoxError> {
             let web3 =
                 Web3Client::new(&cli.ic_host, id_secret, [0u8; 48], None, Some(true)).await?;
             println!("principal: {}", web3.get_principal());
-            let params = to_cbor_bytes(&(&name, &prompt, None::<Vec<u8>>));
+            let args = to_cbor_bytes(&(&name, &prompt, None::<Vec<u8>>));
             let res = web3
-                .https_signed_rpc_raw(endpoint.to_owned(), "agent_run".to_string(), params)
+                .https_signed_rpc_raw(endpoint.to_owned(), "agent_run".to_string(), args)
+                .await?;
+            let res: AgentOutput = from_reader(&res[..])?;
+            println!("{:?}", res);
+        }
+
+        Some(Commands::ToolCall {
+            endpoint,
+            id_secret,
+            name,
+            args,
+        }) => {
+            let id_secret = const_hex::decode(id_secret)?;
+            let id_secret: [u8; 32] = id_secret.try_into().map_err(|_| "invalid id_secret")?;
+            let web3 =
+                Web3Client::new(&cli.ic_host, id_secret, [0u8; 48], None, Some(true)).await?;
+            println!("principal: {}", web3.get_principal());
+            let args = to_cbor_bytes(&(&name, &args));
+            let res = web3
+                .https_signed_rpc_raw(endpoint.to_owned(), "tool_call".to_string(), args)
                 .await?;
             let res: AgentOutput = from_reader(&res[..])?;
             println!("{:?}", res);

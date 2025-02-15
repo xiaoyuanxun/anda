@@ -35,6 +35,7 @@ use anda_core::{
 use candid::Principal;
 use object_store::memory::InMemory;
 use serde::{Deserialize, Serialize};
+use serde_bytes::ByteBuf;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
@@ -145,7 +146,7 @@ impl Engine {
         &self,
         agent_name: Option<String>,
         prompt: String,
-        attachment: Option<Vec<u8>>,
+        attachment: Option<ByteBuf>,
         user: Option<String>,
         caller: Option<Principal>,
     ) -> Result<AgentOutput, BoxError> {
@@ -159,7 +160,11 @@ impl Engine {
         }
 
         let ctx = self.ctx.child_with(&name, user, caller)?;
-        let mut res = self.ctx.agents.run(&name, ctx, prompt, attachment).await?;
+        let mut res = self
+            .ctx
+            .agents
+            .run(&name, ctx, prompt, attachment.map(|v| v.into_vec()))
+            .await?;
         res.full_history = None; // clear full history
         Ok(res)
     }

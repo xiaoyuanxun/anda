@@ -138,6 +138,14 @@ impl Model {
         }
     }
 
+    /// Creates a Model with only completion features
+    pub fn with_completer(completer: Arc<dyn CompletionFeaturesDyn>) -> Self {
+        Self {
+            completer,
+            embedder: Arc::new(NotImplemented),
+        }
+    }
+
     /// Creates a Model with unimplemented features (returns errors for all operations)
     pub fn not_implemented() -> Self {
         Self {

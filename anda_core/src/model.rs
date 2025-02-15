@@ -31,7 +31,8 @@ pub struct AgentOutput {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCall>>,
 
-    /// full_history will not be included in the engine's response
+    /// full_history will be included in `ctx.completion`'s response,
+    /// but not be included in the engine's response
     #[serde(skip_serializing_if = "Option::is_none")]
     pub full_history: Option<Vec<Value>>,
 }

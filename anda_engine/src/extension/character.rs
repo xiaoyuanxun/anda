@@ -564,16 +564,6 @@ where
                         ..Default::default()
                     });
                 }
-                if let Some(tool_calls) = &res.tool_calls {
-                    for tool_res in tool_calls {
-                        chat.push(Message {
-                            role: "tool".to_string(),
-                            content: "".to_string().into(),
-                            name: None,
-                            tool_call_id: Some(tool_res.id.clone()),
-                        });
-                    }
-                }
 
                 if chat.len() > MAX_CHAT_HISTORY {
                     chat.drain(0..(chat.len() - MAX_CHAT_HISTORY));
