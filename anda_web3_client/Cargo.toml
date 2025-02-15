@@ -3,7 +3,7 @@ name = "anda_web3_client"
 description = "The Rust SDK for Web3 integration in non-TEE environments."
 repository = "https://github.com/ldclabs/anda/tree/main/anda_web3_client"
 publish = false # can't publish this crate because `ic-crypto-secp256k1` and `ic-crypto-ed25519` are not published
-version = "0.1.0"
+version = "0.1.1"
 edition.workspace = true
 keywords.workspace = true
 categories.workspace = true
@@ -15,6 +15,8 @@ anda_engine = { path = "../anda_engine", version = "0.4" }
 futures = { workspace = true }
 http = { workspace = true }
 candid = { workspace = true }
+ciborium = { workspace = true }
+serde = { workspace = true }
 serde_bytes = { workspace = true }
 ic-agent = { workspace = true }
 ic_cose = { workspace = true }

@@ -605,22 +605,22 @@ impl HttpFeatures for BaseCtx {
     /// # Arguments
     /// * `endpoint` - URL endpoint to send the request to
     /// * `method` - RPC method name to call
-    /// * `params` - Parameters to serialize as CBOR and send with the request
+    /// * `args` - Arguments to serialize as CBOR and send with the request
     async fn https_signed_rpc<T>(
         &self,
         endpoint: &str,
         method: &str,
-        params: impl Serialize + Send,
+        args: impl Serialize + Send,
     ) -> Result<T, BoxError>
     where
         T: DeserializeOwned,
     {
         match self.web3.as_ref() {
-            Web3SDK::Tee(cli) => cli.https_signed_rpc(endpoint, method, params).await,
+            Web3SDK::Tee(cli) => cli.https_signed_rpc(endpoint, method, args).await,
             Web3SDK::Web3(Web3Client { client: cli }) => {
-                let params = to_cbor_bytes(&params);
+                let args = to_cbor_bytes(&args);
                 let res = cli
-                    .https_signed_rpc_raw(endpoint.to_string(), method.to_string(), params)
+                    .https_signed_rpc_raw(endpoint.to_string(), method.to_string(), args)
                     .await?;
                 let res = from_reader(&res[..])?;
                 Ok(res)

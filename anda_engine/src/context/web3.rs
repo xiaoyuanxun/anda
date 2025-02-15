@@ -143,12 +143,12 @@ pub trait Web3ClientFeatures: Send + Sync + 'static {
     /// # Arguments
     /// * `endpoint` - URL endpoint to send the request to
     /// * `method` - RPC method name to call
-    /// * `params` - Parameters to serialize as CBOR and send with the request
+    /// * `args` - Arguments to serialize as CBOR and send with the request
     fn https_signed_rpc_raw(
         &self,
         endpoint: String,
         method: String,
-        params: Vec<u8>,
+        args: Vec<u8>,
     ) -> BoxPinFut<Result<Vec<u8>, BoxError>>;
 }
 

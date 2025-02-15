@@ -1,10 +1,7 @@
-use anda_core::{AgentOutput, BoxError};
-use anda_engine::context::Web3ClientFeatures;
+use anda_core::{AgentOutput, BoxError, HttpFeatures};
 use anda_web3_client::client::Client as Web3Client;
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
-use ciborium::from_reader;
 use clap::{Parser, Subcommand};
-use ic_cose_types::to_cbor_bytes;
 use rand::{thread_rng, RngCore};
 
 #[derive(Parser)]
@@ -88,11 +85,10 @@ async fn main() -> Result<(), BoxError> {
             let web3 =
                 Web3Client::new(&cli.ic_host, id_secret, [0u8; 48], None, Some(true)).await?;
             println!("principal: {}", web3.get_principal());
-            let args = to_cbor_bytes(&(&name, &prompt, None::<Vec<u8>>));
-            let res = web3
-                .https_signed_rpc_raw(endpoint.to_owned(), "agent_run".to_string(), args)
+
+            let res: AgentOutput = web3
+                .https_signed_rpc(endpoint, "agent_run", &(&name, &prompt, None::<Vec<u8>>))
                 .await?;
-            let res: AgentOutput = from_reader(&res[..])?;
             println!("{:?}", res);
         }
 
@@ -107,11 +103,10 @@ async fn main() -> Result<(), BoxError> {
             let web3 =
                 Web3Client::new(&cli.ic_host, id_secret, [0u8; 48], None, Some(true)).await?;
             println!("principal: {}", web3.get_principal());
-            let args = to_cbor_bytes(&(&name, &args));
-            let res = web3
-                .https_signed_rpc_raw(endpoint.to_owned(), "tool_call".to_string(), args)
+
+            let res: (String, bool) = web3
+                .https_signed_rpc(endpoint, "tool_call", &(&name, &args))
                 .await?;
-            let res: (String, bool) = from_reader(&res[..])?;
             println!("{:?}", res);
         }
 

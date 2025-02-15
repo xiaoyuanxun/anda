@@ -190,7 +190,7 @@ dependencies = [
 
 [[package]]
 name = "anda_engine_cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anda_core",
  "anda_engine",
@@ -273,11 +273,12 @@ dependencies = [
 
 [[package]]
 name = "anda_web3_client"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anda_core",
  "anda_engine",
  "candid",
+ "ciborium",
  "ed25519-consensus",
  "futures",
  "http 1.2.0",
@@ -288,6 +289,7 @@ dependencies = [
  "ic_cose_types",
  "ic_tee_agent",
  "reqwest 0.12.12",
+ "serde",
  "serde_bytes",
 ]
 

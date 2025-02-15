@@ -1,9 +1,10 @@
-use anda_core::{cbor_rpc, BoxError, BoxPinFut, RPCRequest};
+use anda_core::{cbor_rpc, BoxError, BoxPinFut, HttpFeatures, RPCRequest};
 use anda_engine::context::Web3ClientFeatures;
 use candid::{
     utils::{encode_args, ArgumentEncoder},
     CandidType, Decode, Principal,
 };
+use ciborium::from_reader;
 use ed25519_consensus::SigningKey;
 use ic_agent::identity::BasicIdentity;
 use ic_cose::client::CoseSDK;
@@ -16,6 +17,7 @@ use ic_cose_types::{
     to_cbor_bytes, CanisterCaller,
 };
 use ic_tee_agent::http::sign_digest_to_headers;
+use serde::{de::DeserializeOwned, Serialize};
 use std::{sync::Arc, time::Duration};
 
 pub use ic_agent::{Agent, Identity};
@@ -56,7 +58,7 @@ impl Client {
         cose_canister: Option<Principal>,
         is_dev: Option<bool>,
     ) -> Result<Self, BoxError> {
-        let is_dev = is_dev.unwrap_or(false);
+        let is_dev = is_dev.unwrap_or(ic_host.starts_with("http://"));
         let outer_http = reqwest::Client::builder()
             .use_rustls_tls()
             .https_only(!is_dev)
@@ -322,11 +324,14 @@ impl Web3ClientFeatures for Client {
         headers: Option<http::HeaderMap>,
         body: Option<Vec<u8>>, // default is empty
     ) -> BoxPinFut<Result<reqwest::Response, BoxError>> {
+        if !self.is_dev && !url.starts_with("https://") {
+            return Box::pin(futures::future::ready(Err(
+                "Invalid url, must start with https://".into(),
+            )));
+        }
+
         let outer_http = self.outer_http.clone();
         Box::pin(async move {
-            if !url.starts_with("https://") {
-                return Err("Invalid URL, must start with https://".into());
-            }
             let mut req = outer_http.request(method, url);
             if let Some(headers) = headers {
                 req = req.headers(headers);
@@ -347,6 +352,12 @@ impl Web3ClientFeatures for Client {
         headers: Option<http::HeaderMap>,
         body: Option<Vec<u8>>, // default is empty
     ) -> BoxPinFut<Result<reqwest::Response, BoxError>> {
+        if !self.is_dev && !url.starts_with("https://") {
+            return Box::pin(futures::future::ready(Err(
+                "Invalid url, must start with https://".into(),
+            )));
+        }
+
         let mut headers = headers.unwrap_or_default();
         if let Err(err) =
             sign_digest_to_headers(self.identity.as_ref(), &mut headers, &message_digest)
@@ -355,11 +366,7 @@ impl Web3ClientFeatures for Client {
         }
 
         let outer_http = self.outer_http.clone();
-        let is_dev = self.is_dev;
         Box::pin(async move {
-            if !is_dev && !url.starts_with("https://") {
-                return Err("Invalid URL, must start with https://".into());
-            }
             let mut req = outer_http.request(method, url);
             req = req.headers(headers);
             if let Some(body) = body {
@@ -376,6 +383,12 @@ impl Web3ClientFeatures for Client {
         method: String,
         args: Vec<u8>,
     ) -> BoxPinFut<Result<Vec<u8>, BoxError>> {
+        if !self.is_dev && !endpoint.starts_with("https://") {
+            return Box::pin(futures::future::ready(Err(
+                "Invalid endpoint, must start with https://".into(),
+            )));
+        }
+
         let req = RPCRequest {
             method: &method,
             params: &args.into(),
@@ -391,6 +404,99 @@ impl Web3ClientFeatures for Client {
             let res = cbor_rpc(&outer_http, &endpoint, &method, Some(headers), body).await?;
             Ok(res.into_vec())
         })
+    }
+}
+
+impl HttpFeatures for Client {
+    /// Makes an HTTPs request
+    ///
+    /// # Arguments
+    /// * `url` - Target URL, should start with `https://`
+    /// * `method` - HTTP method (GET, POST, etc.)
+    /// * `headers` - Optional HTTP headers
+    /// * `body` - Optional request body (default empty)
+    async fn https_call(
+        &self,
+        url: &str,
+        method: http::Method,
+        headers: Option<http::HeaderMap>,
+        body: Option<Vec<u8>>, // default is empty
+    ) -> Result<reqwest::Response, BoxError> {
+        if !self.is_dev && !url.starts_with("https://") {
+            return Err("Invalid url, must start with https://".into());
+        }
+        let mut req = self.outer_http.request(method, url);
+        if let Some(headers) = headers {
+            req = req.headers(headers);
+        }
+        if let Some(body) = body {
+            req = req.body(body);
+        }
+
+        req.send().await.map_err(|e| e.into())
+    }
+
+    /// Makes a signed HTTPs request with message authentication
+    ///
+    /// # Arguments
+    /// * `url` - Target URL
+    /// * `method` - HTTP method (GET, POST, etc.)
+    /// * `message_digest` - 32-byte message digest for signing
+    /// * `headers` - Optional HTTP headers
+    /// * `body` - Optional request body (default empty)
+    async fn https_signed_call(
+        &self,
+        url: &str,
+        method: http::Method,
+        message_digest: [u8; 32],
+        headers: Option<http::HeaderMap>,
+        body: Option<Vec<u8>>, // default is empty
+    ) -> Result<reqwest::Response, BoxError> {
+        if !self.is_dev && !url.starts_with("https://") {
+            return Err("Invalid url, must start with https://".into());
+        }
+        let mut headers = headers.unwrap_or_default();
+        sign_digest_to_headers(self.identity.as_ref(), &mut headers, &message_digest)?;
+
+        let mut req = self.outer_http.request(method, url);
+        req = req.headers(headers);
+        if let Some(body) = body {
+            req = req.body(body);
+        }
+
+        req.send().await.map_err(|e| e.into())
+    }
+
+    /// Makes a signed CBOR-encoded RPC call
+    ///
+    /// # Arguments
+    /// * `endpoint` - URL endpoint to send the request to
+    /// * `method` - RPC method name to call
+    /// * `args` - Arguments to serialize as CBOR and send with the request
+    async fn https_signed_rpc<T>(
+        &self,
+        endpoint: &str,
+        method: &str,
+        args: impl Serialize + Send,
+    ) -> Result<T, BoxError>
+    where
+        T: DeserializeOwned,
+    {
+        if !self.is_dev && !endpoint.starts_with("https://") {
+            return Err("Invalid endpoint, must start with https://".into());
+        }
+        let args = to_cbor_bytes(&args);
+        let req = RPCRequest {
+            method,
+            params: &args.into(),
+        };
+        let body = to_cbor_bytes(&req);
+        let digest: [u8; 32] = sha3_256(&body);
+        let mut headers = http::HeaderMap::new();
+        sign_digest_to_headers(self.identity.as_ref(), &mut headers, &digest)?;
+        let res = cbor_rpc(&self.outer_http, endpoint, &method, Some(headers), body).await?;
+        let res = from_reader(&res[..])?;
+        Ok(res)
     }
 }
 
