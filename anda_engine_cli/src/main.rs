@@ -111,7 +111,7 @@ async fn main() -> Result<(), BoxError> {
             let res = web3
                 .https_signed_rpc_raw(endpoint.to_owned(), "tool_call".to_string(), args)
                 .await?;
-            let res: AgentOutput = from_reader(&res[..])?;
+            let res: (String, bool) = from_reader(&res[..])?;
             println!("{:?}", res);
         }
 

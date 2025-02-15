@@ -51,16 +51,20 @@ Documents:
 
 ```sh
 anda/
-├── anda_core/ # Core library containing base types and interfaces
-├── anda_engine/ # Engine implementation for agent runtime and management
-├── anda_lancedb/ # LanceDB integration for vector storage and retrieval
-├── agents/ # Various AI agent implementations
-│ ├── anda_bot/ # Example agent: Anda ICP
-│ └── .../ # More agents in future releases
-├── tools/ # Tool libraries
-│ ├── anda_icp/ # Anda agent tools offers integration with the Internet Computer (ICP).
-│ └── .../ # More tools in future releases
-└── characters/ # characters examples
+├── anda_core/        # Core library containing base types and interfaces
+├── anda_engine/      # Engine implementation for agent runtime and management
+├── anda_engine_cli/  # The command line interface for Anda engine server
+├── anda_engine_server/ # A http server to serve multiple Anda engines
+├── anda_lancedb/     # LanceDB integration for vector storage and retrieval
+├── anda_web3_client/ # The Rust SDK for Web3 integration in non-TEE environments
+├── agents/           # Various AI agent implementations
+│ ├── anda_bot/       # Example agent: Anda ICP
+│ └── .../            # More agents in future releases
+├── tools/            # Tool libraries
+│ ├── anda_icp/       # Anda agent tools offers integration with the Internet Computer (ICP).
+│ └── .../            # More tools in future releases
+├── characters/       # characters examples
+└── examples/         # AI agents examples
 ```
 
 ### How to Use and Contribute
