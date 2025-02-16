@@ -7,6 +7,7 @@ git clone https://github.com/ldclabs/anda.git
 cd anda
 mkdir -p object_store
 cp example.env .env
+# update .env
 cargo run -p anda_bot -- start-local
 ```
 
@@ -36,15 +37,21 @@ cargo run -p anda_bot -- start-local
    - https://github.com/ldclabs/anda/blob/main/agents/anda_bot/nitro_enclave/Character.toml
    - https://github.com/ldclabs/anda/blob/main/agents/anda_bot/nitro_enclave/Config.toml
 
+   ```sh
+   wget https://raw.githubusercontent.com/ldclabs/anda/refs/heads/main/agents/anda_bot/nitro_enclave/Character.toml
+   wget https://raw.githubusercontent.com/ldclabs/anda/refs/heads/main/agents/anda_bot/nitro_enclave/Config.toml
+   ```
+
    并将其内容修改为你的配置。
 
 5. 创建 `.env` 文件，填写以下内容：
    ```sh
-   LOG_LEVEL=debug
+   LOG_LEVEL=info
    ID_SECRET=0000000000000000000000000000000000000000000000000000000000000000
    ROOT_SECRET=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
    CHARACTER_FILE_PATH='./Character.toml'
    CONFIG_FILE_PATH='./Config.toml'
+   OBJECT_STORE_PATH='./object_store'
    ```
 
    使用 `ic_tee_cli` 生成你自己的 ID_SECRET 和 ROOT_SECRET：
@@ -57,6 +64,7 @@ cargo run -p anda_bot -- start-local
 
 6. 启动 anda_bot
    ```sh
+   mkdir -p object_store
    ./anda_bot
    ```
 
