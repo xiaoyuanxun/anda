@@ -10,6 +10,57 @@ cp example.env .env
 cargo run -p anda_bot -- start-local
 ```
 
+## Running Non-TEE Version on Linux
+
+1. Install the Rust development environment.
+
+2. Install the IC TEE CLI tool.
+   Install using rust cargo:
+   ```sh
+   cargo install ic_tee_cli
+   ic_tee_cli --help
+   ```
+
+3. Download the executable directly on Linux:
+   ```sh
+   wget https://github.com/ldclabs/anda/releases/download/v0.4.0/anda_bot
+   chmod +x anda_bot
+   ```
+
+   For other operating systems, compile it yourself:
+   ```sh
+   cargo build -p anda_bot --release
+   ```
+
+4. Download `Character.toml` and `Config.toml` files:
+
+   - https://github.com/ldclabs/anda/blob/main/agents/anda_bot/nitro_enclave/Character.toml
+   - https://github.com/ldclabs/anda/blob/main/agents/anda_bot/nitro_enclave/Config.toml
+
+   Modify their contents to fit your configuration.
+
+5. Create a `.env` file with the following content:
+   ```sh
+   LOG_LEVEL=debug
+   ID_SECRET=0000000000000000000000000000000000000000000000000000000000000000
+   ROOT_SECRET=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+   CHARACTER_FILE_PATH='./Character.toml'
+   CONFIG_FILE_PATH='./Config.toml'
+   ```
+
+   Generate your own ID_SECRET and ROOT_SECRET using `ic_tee_cli`:
+   ```sh
+   # ID_SECRET
+   ic_tee_cli rand-bytes --len 32
+   # ROOT_SECRET
+   ic_tee_cli rand-bytes --len 48
+   ```
+
+6. Start anda_bot
+   ```sh
+   ./anda_bot
+   ```
+
 ## Deploy TEE Version
 
 ### Prepare Environment
