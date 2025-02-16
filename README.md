@@ -1,6 +1,6 @@
 # `Anda`
 
-> 🤖 A framework for AI agent development, designed to build a highly composable, autonomous, and perpetually memorizing network of AI agents.
+> 🤖 An AI agent framework built with Rust, powered by ICP and TEEs.
 
 ## 🌍 README Translations
 
@@ -8,7 +8,9 @@
 
 ## 🤖 Introduction
 
-`Anda` is an innovative agent development framework designed to build a highly composable, autonomous, and permanently memory-enabled AI agent network. By connecting agents across various industries, Anda aims to create a super AGI system, advancing artificial intelligence to higher levels.
+Anda is an AI agent framework built with Rust, featuring ICP blockchain integration and TEE support.
+It is designed to create a highly composable, autonomous, and perpetually memorizing network of AI agents.
+By connecting agents across various industries, Anda aims to create a super AGI system, advancing artificial intelligence to higher levels.
 
 ![Anda Diagram](./anda_diagram.webp)
 

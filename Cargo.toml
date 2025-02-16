@@ -13,7 +13,7 @@ members = [
 ]
 
 [workspace.package]
-description = "Anda is a framework for AI agent development, designed to build a highly composable, autonomous, and perpetually memorizing network of AI agents."
+description = "Anda is an AI agent framework built with Rust, powered by ICP and TEEs."
 repository = "https://github.com/ldclabs/anda"
 homepage = "https://github.com/ldclabs/anda"
 keywords = ["ai-agent", "icp", "tee"]
