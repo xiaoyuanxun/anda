@@ -113,6 +113,7 @@ mod tests {
         //     "name": "icp_ledger_balance_of",
         //     "description": "Query the balance of the specified account on ICP blockchain for the following tokens: ICP, PANDA",
         //     "parameters": {
+        //       "additionalProperties": false,
         //       "description": "Arguments for the balance of an account for a token",
         //       "properties": {
         //         "account": {

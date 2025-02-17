@@ -19,7 +19,6 @@ use super::ICPLedgers;
 
 /// Arguments for transferring tokens to an account
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
 pub struct TransferToArgs {
     /// ICP account address (principal) to receive token, e.g. "77ibd-jp5kr-moeco-kgoar-rro5v-5tng4-krif5-5h2i6-osf2f-2sjtv-kqe"
     pub account: String,
@@ -93,8 +92,9 @@ impl Tool<BaseCtx> for TransferTool {
     async fn call(&self, ctx: BaseCtx, data: Self::Args) -> Result<Self::Output, BoxError> {
         let (ledger, tx) = self.ledgers.transfer(&ctx, ctx.id(), data).await?;
         Ok(format!(
-            "Transfer success, transaction id: {}, details: https://www.icexplorer.io/token/details/{}",
-            tx.0.to_u64().unwrap_or(0), ledger.to_text()
+            "Successful, transaction ID: {}, detail: https://www.icexplorer.io/token/details/{}",
+            tx.0.to_u64().unwrap_or(0),
+            ledger.to_text()
         ))
     }
 }
@@ -134,8 +134,9 @@ mod tests {
         println!("{}", s);
         // {
         //     "name": "icp_ledger_transfer",
-        //     "description": "Transfer ICP, PANDA tokens to the specified account on ICP network.",
+        //     "description": "Transfer ICP, PANDA tokens to the specified account on ICP blockchain.",
         //     "parameters": {
+        //       "additionalProperties": false,
         //       "description": "Arguments for transferring tokens to an account",
         //       "properties": {
         //         "account": {
@@ -144,15 +145,7 @@ mod tests {
         //         },
         //         "amount": {
         //           "description": "Token amount, e.g. 1.1 ICP",
-        //           "format": "double",
         //           "type": "number"
-        //         },
-        //         "memo": {
-        //           "description": "Optional memo (should be less than 32 bytes)",
-        //           "type": [
-        //             "string",
-        //             "null"
-        //           ]
         //         },
         //         "symbol": {
         //           "description": "Token symbol, e.g. \"ICP\"",
