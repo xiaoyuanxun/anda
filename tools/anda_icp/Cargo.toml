@@ -3,7 +3,7 @@ name = "anda_icp"
 description = "Anda agent tools offers integration with the Internet Computer (ICP)."
 repository = "https://github.com/ldclabs/anda/tree/main/tools/anda_icp"
 publish = true
-version = "0.2.4"
+version = "0.2.5"
 edition.workspace = true
 keywords.workspace = true
 categories.workspace = true
@@ -15,11 +15,10 @@ anda_engine = { path = "../../anda_engine", version = "0.4" }
 candid = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_bytes = { workspace = true }
 num-traits = { workspace = true }
 tokio = { workspace = true }
-schemars = { workspace = true }
 log = { workspace = true }
+schemars = { workspace = true }
 icrc-ledger-types = "0.1"
 
 [dev-dependencies]

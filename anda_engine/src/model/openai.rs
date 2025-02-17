@@ -36,48 +36,10 @@ pub const TEXT_EMBEDDING_ADA_002: &str = "text-embedding-ada-002";
 // ================================================================
 // OpenAI Completion API
 // ================================================================
-/// `o1-preview` completion model
-pub const O1_PREVIEW: &str = "o1-preview";
-/// `o1-preview-2024-09-12` completion model
-pub const O1_PREVIEW_2024_09_12: &str = "o1-preview-2024-09-12";
+/// `o1` completion model
+pub const O1: &str = "o1";
 /// `o1-mini completion model
-pub const O1_MINI: &str = "o1-mini";
-/// `o1-mini-2024-09-12` completion model
-pub const O1_MINI_2024_09_12: &str = "o1-mini-2024-09-12";
-/// `gpt-4o` completion model
-pub const GPT_4O: &str = "gpt-4o";
-/// `gpt-4o-2024-05-13` completion model
-pub const GPT_4O_2024_05_13: &str = "gpt-4o-2024-05-13";
-/// `gpt-4-turbo` completion model
-pub const GPT_4_TURBO: &str = "gpt-4-turbo";
-/// `gpt-4-turbo-2024-04-09` completion model
-pub const GPT_4_TURBO_2024_04_09: &str = "gpt-4-turbo-2024-04-09";
-/// `gpt-4-turbo-preview` completion model
-pub const GPT_4_TURBO_PREVIEW: &str = "gpt-4-turbo-preview";
-/// `gpt-4-0125-preview` completion model
-pub const GPT_4_0125_PREVIEW: &str = "gpt-4-0125-preview";
-/// `gpt-4-1106-preview` completion model
-pub const GPT_4_1106_PREVIEW: &str = "gpt-4-1106-preview";
-/// `gpt-4-vision-preview` completion model
-pub const GPT_4_VISION_PREVIEW: &str = "gpt-4-vision-preview";
-/// `gpt-4-1106-vision-preview` completion model
-pub const GPT_4_1106_VISION_PREVIEW: &str = "gpt-4-1106-vision-preview";
-/// `gpt-4` completion model
-pub const GPT_4: &str = "gpt-4";
-/// `gpt-4-0613` completion model
-pub const GPT_4_0613: &str = "gpt-4-0613";
-/// `gpt-4-32k` completion model
-pub const GPT_4_32K: &str = "gpt-4-32k";
-/// `gpt-4-32k-0613` completion model
-pub const GPT_4_32K_0613: &str = "gpt-4-32k-0613";
-/// `gpt-3.5-turbo` completion model
-pub const GPT_35_TURBO: &str = "gpt-3.5-turbo";
-/// `gpt-3.5-turbo-0125` completion model
-pub const GPT_35_TURBO_0125: &str = "gpt-3.5-turbo-0125";
-/// `gpt-3.5-turbo-1106` completion model
-pub const GPT_35_TURBO_1106: &str = "gpt-3.5-turbo-1106";
-/// `gpt-3.5-turbo-instruct` completion model
-pub const GPT_35_TURBO_INSTRUCT: &str = "gpt-3.5-turbo-instruct";
+pub const O3_MINI: &str = "o3-mini";
 
 /// OpenAI API client for handling embeddings and completions
 #[derive(Clone)]
@@ -225,7 +187,7 @@ impl CompletionResponse {
         let choice = self.choices.pop().ok_or("No completion choice")?;
         full_history.push(json!(choice.message));
         let mut output = AgentOutput {
-            content: choice.message.content,
+            content: choice.message.content.unwrap_or_default(),
             tool_calls: choice.message.tool_calls.map(|tools| {
                 tools
                     .into_iter()
@@ -263,7 +225,7 @@ pub struct Choice {
 pub struct MessageOutput {
     pub role: String,
     #[serde(default)]
-    pub content: String,
+    pub content: Option<String>,
     pub refusal: Option<String>,
     pub tool_calls: Option<Vec<ToolCallOutput>>,
 }
@@ -465,9 +427,12 @@ impl CompletionFeaturesDyn for CompletionModel {
             let mut body = json!({
                 "model": model,
                 "messages": full_history.clone(),
-                "temperature": req.temperature,
             });
+
             let body = body.as_object_mut().unwrap();
+            if let Some(temperature) = req.temperature {
+                body.insert("temperature".to_string(), Value::from(temperature));
+            }
 
             if let Some(max_tokens) = req.max_tokens {
                 if is_new {
@@ -512,7 +477,8 @@ impl CompletionFeaturesDyn for CompletionModel {
 
             let response = client.post("/chat/completions").json(body).send().await?;
             if response.status().is_success() {
-                match response.json::<CompletionResponse>().await {
+                let text = response.text().await?;
+                match serde_json::from_str::<CompletionResponse>(&text) {
                     Ok(res) => {
                         if log_enabled!(Debug) {
                             if let Ok(val) = serde_json::to_string(&res) {
@@ -521,7 +487,9 @@ impl CompletionFeaturesDyn for CompletionModel {
                         }
                         res.try_into(full_history)
                     }
-                    Err(err) => Err(format!("OpenAI completions error: {}", err).into()),
+                    Err(err) => {
+                        Err(format!("OpenAI completions error: {}, body: {}", err, text).into())
+                    }
                 }
             } else {
                 let msg = response.text().await?;

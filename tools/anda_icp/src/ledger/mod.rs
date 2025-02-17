@@ -29,11 +29,10 @@ use icrc_ledger_types::{
     icrc::generic_metadata_value::MetadataValue,
     icrc1::{
         account::{principal_to_subaccount, Account},
-        transfer::{Memo, TransferArg, TransferError},
+        transfer::{TransferArg, TransferError},
     },
 };
 use num_traits::cast::ToPrimitive;
-use serde_bytes::ByteBuf;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub mod balance;
@@ -41,8 +40,6 @@ pub mod transfer;
 
 pub use balance::*;
 pub use transfer::*;
-
-const MAX_MEMO_LEN: usize = 32;
 
 /// ICP Ledger Transfer tool implementation
 #[derive(Debug, Clone)]
@@ -111,13 +108,13 @@ impl ICPLedgers {
     /// * `args` - Transfer arguments containing destination account, amount, and memo
     ///
     /// # Returns
-    /// Result containing the transaction ID (Nat) or an error
+    /// Result containing the ledger ID and transaction ID (Nat) or an error
     async fn transfer(
         &self,
         ctx: &impl CanisterCaller,
         me: Principal,
         args: transfer::TransferToArgs,
-    ) -> Result<Nat, BoxError> {
+    ) -> Result<(Principal, Nat), BoxError> {
         let owner = Principal::from_text(&args.account)?;
         let from_subaccount = if self.from_user_subaccount {
             Some(principal_to_subaccount(owner))
@@ -156,16 +153,7 @@ impl ICPLedgers {
                         subaccount: None,
                     },
                     amount: amount.into(),
-                    memo: args.memo.map(|m| {
-                        let mut buf = String::new();
-                        for c in m.chars() {
-                            if buf.len() + c.len_utf8() > MAX_MEMO_LEN {
-                                break;
-                            }
-                            buf.push(c);
-                        }
-                        Memo(ByteBuf::from(buf.into_bytes()))
-                    }),
+                    memo: None,
                     fee: None,
                     created_at_time: None,
                 },),
@@ -178,7 +166,8 @@ impl ICPLedgers {
             result = res.is_ok();
             "icrc1_transfer",
         );
-        res.map_err(|err| format!("failed to transfer tokens, error: {:?}", err).into())
+        res.map(|v| (*canister, v))
+            .map_err(|err| format!("failed to transfer tokens, error: {:?}", err).into())
     }
 
     /// Retrieves the balance of a specific account for a given token
@@ -188,12 +177,12 @@ impl ICPLedgers {
     /// * `args` - Balance query arguments containing account and token symbol
     ///
     /// # Returns
-    /// Result containing the token balance (f64) or an error
+    /// Result containing the ledger ID and token balance (f64) or an error
     async fn balance_of(
         &self,
         ctx: &impl CanisterCaller,
         args: balance::BalanceOfArgs,
-    ) -> Result<f64, BoxError> {
+    ) -> Result<(Principal, f64), BoxError> {
         let owner = Principal::from_text(&args.account)?;
 
         let (canister, decimals) = self
@@ -216,6 +205,6 @@ impl ICPLedgers {
             balance = amount;
             "balance_of",
         );
-        Ok(amount)
+        Ok((*canister, amount))
     }
 }

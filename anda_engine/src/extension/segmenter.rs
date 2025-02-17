@@ -29,8 +29,9 @@
 use anda_core::{
     evaluate_tokens, Agent, AgentOutput, BoxError, CompletionFeatures, Tool, ToolCall,
 };
+use schemars::JsonSchema;
 
-use super::extractor::{Deserialize, Extractor, JsonSchema, Serialize, SubmitTool};
+use super::extractor::{Deserialize, Extractor, Serialize, SubmitTool};
 use crate::context::AgentCtx;
 
 /// Represents the output of document segmentation containing multiple text segments

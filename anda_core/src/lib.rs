@@ -4,12 +4,14 @@ use std::{future::Future, pin::Pin};
 pub mod agent;
 pub mod context;
 pub mod http;
+pub mod json;
 pub mod model;
 pub mod tool;
 
 pub use agent::*;
 pub use context::*;
 pub use http::*;
+pub use json::*;
 pub use model::*;
 pub use tool::*;
 

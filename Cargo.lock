@@ -140,7 +140,7 @@ dependencies = [
 
 [[package]]
 name = "anda_core"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "bytes",
  "candid",
@@ -150,6 +150,7 @@ dependencies = [
  "ic_cose_types",
  "object_store 0.10.2",
  "reqwest 0.12.12",
+ "schemars",
  "serde",
  "serde_bytes",
  "serde_json",
@@ -159,7 +160,7 @@ dependencies = [
 
 [[package]]
 name = "anda_engine"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "anda_core",
  "bytes",
@@ -193,17 +194,12 @@ name = "anda_engine_cli"
 version = "0.1.1"
 dependencies = [
  "anda_core",
- "anda_engine",
  "anda_web3_client",
  "base64 0.22.1",
- "ciborium",
  "clap",
  "const-hex",
  "dotenv",
- "ic_cose_types",
- "ic_tee_agent",
  "rand",
- "structured-logger",
  "tokio",
 ]
 
@@ -232,7 +228,7 @@ dependencies = [
 
 [[package]]
 name = "anda_icp"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "anda_core",
  "anda_engine",
@@ -242,7 +238,6 @@ dependencies = [
  "num-traits",
  "schemars",
  "serde",
- "serde_bytes",
  "serde_json",
  "tokio",
 ]
@@ -4328,7 +4323,7 @@ dependencies = [
 
 [[package]]
 name = "icp_ledger_agent"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anda_core",
  "anda_engine",

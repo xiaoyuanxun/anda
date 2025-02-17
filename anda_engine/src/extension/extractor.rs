@@ -29,7 +29,7 @@
 //! #[derive(JsonSchema, Serialize, Deserialize)]
 //! struct ContactInfo {
 //!     name: String,
-//!     phone: Option<String>,
+//!     phone: String,
 //! }
 //!
 //! let extractor = Extractor::<ContactInfo>::default();
@@ -42,12 +42,13 @@
 //! - These traits can be easily derived using the `derive` macro
 
 use anda_core::{
-    Agent, AgentOutput, BoxError, CompletionFeatures, CompletionRequest, FunctionDefinition, Tool,
+    fix_json_schema, Agent, AgentOutput, BoxError, CompletionFeatures, CompletionRequest,
+    FunctionDefinition, Tool,
 };
+use schemars::{schema_for, JsonSchema};
 use serde_json::{json, Value};
 use std::marker::PhantomData;
 
-pub use schemars::{schema_for, JsonSchema};
 pub use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::context::{AgentCtx, BaseCtx};
@@ -83,7 +84,7 @@ where
     /// uses the type's title (if available) as the tool name
     pub fn new() -> SubmitTool<T> {
         let mut schema = schema_for!(T);
-        schema.meta_schema = None; // Remove the $schema field
+        fix_json_schema(&mut schema);
         let name = schema
             .schema
             .metadata

@@ -272,25 +272,30 @@ impl CompletionFeatures for AgentCtx {
 
                     // remove called tool from req.tools
                     req.tools.retain(|t| t.name != tool.name);
-                    match self.tool_call(&tool.name, tool.args.clone()).await {
-                        Ok((val, con)) => {
-                            if con {
-                                // need to use LLM to continue processing tool_call result
-                                tool_calls_continue.push(json!(Message {
-                                    role: "tool".to_string(),
-                                    content: val.clone().into(),
-                                    name: None,
-                                    tool_call_id: Some(tool.id.clone()),
-                                }));
+                    if self.tools.contains(&tool.name) {
+                        match self.tool_call(&tool.name, tool.args.clone()).await {
+                            Ok((val, con)) => {
+                                if con {
+                                    // need to use LLM to continue processing tool_call result
+                                    tool_calls_continue.push(json!(Message {
+                                        role: "tool".to_string(),
+                                        content: val.clone().into(),
+                                        name: None,
+                                        tool_call_id: Some(tool.id.clone()),
+                                    }));
+                                }
+                                tool.result = Some(val);
                             }
-                            tool.result = Some(val);
+                            Err(err) => {
+                                res.failed_reason = Some(err.to_string());
+                                return Ok(res);
+                            }
                         }
-                        Err(_err) => {
-                            // TODO:
-                            // support remote_tool_call
-                            // support agent_run
-                            // support remote_agent_run
-                        }
+                    } else {
+                        // TODO:
+                        // support remote_tool_call
+                        // support agent_run
+                        // support remote_agent_run
                     }
                 }
 

@@ -267,9 +267,12 @@ impl CompletionFeaturesDyn for CompletionModel {
             let mut body = json!({
                 "model": model,
                 "messages": full_history.clone(),
-                "temperature": req.temperature,
             });
+
             let body = body.as_object_mut().unwrap();
+            if let Some(temperature) = req.temperature {
+                body.insert("temperature".to_string(), Value::from(temperature));
+            }
 
             if let Some(max_tokens) = req.max_tokens {
                 body.insert("max_tokens".to_string(), Value::from(max_tokens));
@@ -314,7 +317,8 @@ impl CompletionFeaturesDyn for CompletionModel {
 
             let response = client.post("/chat/completions").json(body).send().await?;
             if response.status().is_success() {
-                match response.json::<CompletionResponse>().await {
+                let text = response.text().await?;
+                match serde_json::from_str::<CompletionResponse>(&text) {
                     Ok(res) => {
                         if log_enabled!(Debug) {
                             if let Ok(val) = serde_json::to_string(&res) {
@@ -323,7 +327,9 @@ impl CompletionFeaturesDyn for CompletionModel {
                         }
                         res.try_into(full_history)
                     }
-                    Err(err) => Err(format!("DeepSeek completions error: {}", err).into()),
+                    Err(err) => {
+                        Err(format!("DeepSeek completions error: {}, body: {}", err, text).into())
+                    }
                 }
             } else {
                 let msg = response.text().await?;

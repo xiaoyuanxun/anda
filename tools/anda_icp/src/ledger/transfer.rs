@@ -7,9 +7,9 @@
 //! - Integration with ICP ledger standards
 //! - Atomic transfers with proper error handling
 
-use anda_core::{BoxError, FunctionDefinition, StateFeatures, Tool};
+use anda_core::{fix_json_schema, BoxError, FunctionDefinition, StateFeatures, Tool};
 use anda_engine::context::BaseCtx;
-use candid::Nat;
+use num_traits::cast::ToPrimitive;
 use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -19,6 +19,7 @@ use super::ICPLedgers;
 
 /// Arguments for transferring tokens to an account
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct TransferToArgs {
     /// ICP account address (principal) to receive token, e.g. "77ibd-jp5kr-moeco-kgoar-rro5v-5tng4-krif5-5h2i6-osf2f-2sjtv-kqe"
     pub account: String,
@@ -26,8 +27,6 @@ pub struct TransferToArgs {
     pub symbol: String,
     /// Token amount, e.g. 1.1 ICP
     pub amount: f64,
-    /// Optional memo (should be less than 32 bytes)
-    pub memo: Option<String>,
 }
 
 /// Implementation of the ICP Ledger Transfer tool
@@ -42,7 +41,7 @@ impl TransferTool {
 
     pub fn new(ledgers: Arc<ICPLedgers>) -> Self {
         let mut schema = schema_for!(TransferToArgs);
-        schema.meta_schema = None; // Remove the $schema field
+        fix_json_schema(&mut schema);
 
         TransferTool {
             ledgers,
@@ -56,7 +55,7 @@ impl TransferTool {
 impl Tool<BaseCtx> for TransferTool {
     const CONTINUE: bool = true;
     type Args = TransferToArgs;
-    type Output = Nat;
+    type Output = String;
 
     fn name(&self) -> String {
         Self::NAME.to_string()
@@ -92,7 +91,11 @@ impl Tool<BaseCtx> for TransferTool {
     }
 
     async fn call(&self, ctx: BaseCtx, data: Self::Args) -> Result<Self::Output, BoxError> {
-        self.ledgers.transfer(&ctx, ctx.id(), data).await
+        let (ledger, tx) = self.ledgers.transfer(&ctx, ctx.id(), data).await?;
+        Ok(format!(
+            "Transfer success, transaction id: {}, details: https://www.icexplorer.io/token/details/{}",
+            tx.0.to_u64().unwrap_or(0), ledger.to_text()
+        ))
     }
 }
 
@@ -100,12 +103,11 @@ impl Tool<BaseCtx> for TransferTool {
 mod tests {
     use super::*;
     use anda_engine::context::mock;
-    use candid::{decode_args, encode_args, Principal};
+    use candid::{decode_args, encode_args, Nat, Principal};
     use icrc_ledger_types::icrc1::{
         account::principal_to_subaccount,
-        transfer::{Memo, TransferArg, TransferError},
+        transfer::{TransferArg, TransferError},
     };
-    use serde_bytes::ByteBuf;
     use std::collections::BTreeMap;
 
     #[tokio::test(flavor = "current_thread")]
@@ -172,7 +174,6 @@ mod tests {
             account: Principal::anonymous().to_string(),
             symbol: "PANDA".to_string(),
             amount: 9999.000012345678,
-            memo: Some("test memo".to_string()),
         };
         let mocker = mock::MockCanisterCaller::new(|canister, method, args| {
             if method == "icrc1_balance_of" {
@@ -188,13 +189,12 @@ mod tests {
             );
             assert_eq!(args.to.owner, Principal::anonymous());
             assert_eq!(args.amount, Nat::from(999900001234u64));
-            assert_eq!(args.memo, Some(Memo(ByteBuf::from("test memo".as_bytes()))));
 
             let res: Result<Nat, TransferError> = Ok(Nat::from(321u64));
             encode_args((res,)).unwrap()
         });
 
-        let res = ledgers
+        let (_, res) = ledgers
             .transfer(&mocker, Principal::anonymous(), args)
             .await
             .unwrap();

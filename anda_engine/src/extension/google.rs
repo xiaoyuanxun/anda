@@ -27,7 +27,7 @@
 //!     .build("default_agent".to_string())?;
 //! ```
 
-use anda_core::{BoxError, FunctionDefinition, HttpFeatures, Tool};
+use anda_core::{fix_json_schema, BoxError, FunctionDefinition, HttpFeatures, Tool};
 use http::header;
 use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
@@ -86,7 +86,7 @@ impl GoogleSearchTool {
     /// * `result_number` - Optional number of results to return (defaults to 5)
     pub fn new(api_key: String, search_engine_id: String, result_number: Option<u8>) -> Self {
         let mut schema = schema_for!(SearchArgs);
-        schema.meta_schema = None; // Remove the $schema field
+        fix_json_schema(&mut schema);
 
         GoogleSearchTool {
             api_key,

@@ -52,6 +52,16 @@ struct Cli {
 
     #[arg(long, env = "OPENAI_API_KEY", default_value = "")]
     openai_api_key: String,
+
+    #[arg(
+        long,
+        env = "OPENAI_ENDPOINT",
+        default_value = "https://api.openai.com/v1"
+    )]
+    openai_endpoint: String,
+
+    #[arg(long, env = "DEEPSEEK_MODEL", default_value = "o3-mini")]
+    openai_model: String,
 }
 
 /// Main entry point for the ICP Ledger Agent service.
@@ -119,7 +129,10 @@ async fn main() -> Result<(), BoxError> {
                 .completion_model(&cli.deepseek_model),
         )
     } else {
-        Arc::new(openai::Client::new(&cli.openai_api_key, None).completion_model(openai::O1_MINI))
+        Arc::new(
+            openai::Client::new(&cli.openai_api_key, Some(cli.openai_endpoint))
+                .completion_model(&cli.openai_model),
+        )
     });
 
     // Initialize in-memory object store.
