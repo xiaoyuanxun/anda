@@ -1,6 +1,6 @@
-# `ic_tee_gateway_sdk`
+# `anda_web3_client`
 
-`ic_tee_gateway_sdk` is a Rust SDK for Web3 integration in non-TEE environments.
+`anda_web3_client` is a Rust SDK for Web3 integration in non-TEE environments.
 
 ## License
 Copyright © 2024-2025 [LDC Labs](https://github.com/ldclabs).
