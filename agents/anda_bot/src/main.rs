@@ -18,7 +18,7 @@ use anda_lancedb::{
     knowledge::KnowledgeStore,
     lancedb::{DynObjectStore, LanceVectorStore, LocalFileSystem},
 };
-use anda_web3_client::client::Client as Web3Client;
+use anda_web3_client::client::{load_identity, Client as Web3Client};
 use axum::{routing, Router};
 use candid::Principal;
 use clap::{Parser, Subcommand};
@@ -107,9 +107,11 @@ pub enum Commands {
         object_store_canister: String,
     },
     StartLocal {
-        #[arg(long, env = "ID_SECRET")]
+        /// Path to ICP identity pem file or 32 bytes identity secret in hex.
+        #[arg(short, long, env = "ID_SECRET")]
         id_secret: String,
 
+        /// 48 bytes root secret in hex to derive keys
         #[arg(long, env = "ROOT_SECRET")]
         root_secret: String,
 
@@ -194,8 +196,6 @@ async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
         }) => {
             let cfg = config::Conf::from_file(&config)?;
             log::debug!("{:?}", cfg);
-            let id_secret = const_hex::decode(id_secret)?;
-            let id_secret: [u8; 32] = id_secret.try_into().map_err(|_| "invalid id_secret")?;
             let root_secret = const_hex::decode(root_secret)?;
             let root_secret: [u8; 48] =
                 root_secret.try_into().map_err(|_| "invalid root_secret")?;
@@ -203,7 +203,7 @@ async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
             bootstrap_local(
                 cli.port,
                 cli.ic_host,
-                id_secret,
+                &id_secret,
                 root_secret,
                 cfg,
                 character,
@@ -395,7 +395,7 @@ async fn bootstrap_tee(
 async fn bootstrap_local(
     port: u16,
     ic_host: String,
-    id_secret: [u8; 32],
+    id_secret: &str,
     root_secret: [u8; 48],
     cfg: config::Conf,
     character: Character,
@@ -409,7 +409,13 @@ async fn bootstrap_local(
     let default_agent = character.username.clone();
     let knowledge_table: Path = default_agent.to_ascii_lowercase().into();
 
-    let web3 = Web3Client::new(&ic_host, id_secret, root_secret, None, None).await?;
+    let identity = load_identity(id_secret)?;
+    let web3 = Web3Client::builder()
+        .with_ic_host(&ic_host)
+        .with_identity(Arc::new(identity))
+        .with_root_secret(root_secret)
+        .build()
+        .await?;
     let my_principal = web3.get_principal();
     log::info!(target: LOG_TARGET, "start local service, principal: {:?}", my_principal.to_text());
 

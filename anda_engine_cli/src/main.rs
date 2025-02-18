@@ -1,8 +1,9 @@
 use anda_core::{AgentOutput, BoxError, HttpFeatures};
-use anda_web3_client::client::Client as Web3Client;
+use anda_web3_client::client::{load_identity, Client as Web3Client};
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use clap::{Parser, Subcommand};
 use rand::{thread_rng, RngCore};
+use std::sync::Arc;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -27,7 +28,8 @@ pub enum Commands {
         #[arg(short, long, default_value = "http://127.0.0.1:8042/default")]
         endpoint: String,
 
-        #[arg(short, long, env = "ID_SECRET")]
+        /// Path to ICP identity pem file or 32 bytes identity secret in hex.
+        #[arg(short, long, env = "ID_SECRET", default_value = "Anonymous")]
         id_secret: String,
 
         #[arg(short, long)]
@@ -40,7 +42,8 @@ pub enum Commands {
         #[arg(short, long, default_value = "http://127.0.0.1:8042/default")]
         endpoint: String,
 
-        #[arg(short, long, env = "ID_SECRET")]
+        /// Path to ICP identity pem file or 32 bytes identity secret in hex.
+        #[arg(short, long, env = "ID_SECRET", default_value = "Anonymous")]
         id_secret: String,
 
         #[arg(short, long)]
@@ -80,10 +83,14 @@ async fn main() -> Result<(), BoxError> {
             prompt,
             name,
         }) => {
-            let id_secret = const_hex::decode(id_secret)?;
-            let id_secret: [u8; 32] = id_secret.try_into().map_err(|_| "invalid id_secret")?;
-            let web3 =
-                Web3Client::new(&cli.ic_host, id_secret, [0u8; 48], None, Some(true)).await?;
+            let identity = load_identity(id_secret)?;
+            let web3 = Web3Client::builder()
+                .with_ic_host(&cli.ic_host)
+                .with_identity(Arc::new(identity))
+                .with_allow_http(true)
+                .build()
+                .await?;
+
             println!("principal: {}", web3.get_principal());
 
             let res: AgentOutput = web3
@@ -98,10 +105,14 @@ async fn main() -> Result<(), BoxError> {
             name,
             args,
         }) => {
-            let id_secret = const_hex::decode(id_secret)?;
-            let id_secret: [u8; 32] = id_secret.try_into().map_err(|_| "invalid id_secret")?;
-            let web3 =
-                Web3Client::new(&cli.ic_host, id_secret, [0u8; 48], None, Some(true)).await?;
+            let identity = load_identity(id_secret)?;
+            let web3 = Web3Client::builder()
+                .with_ic_host(&cli.ic_host)
+                .with_identity(Arc::new(identity))
+                .with_allow_http(true)
+                .build()
+                .await?;
+
             println!("principal: {}", web3.get_principal());
 
             let res: (String, bool) = web3

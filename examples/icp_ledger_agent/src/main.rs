@@ -7,7 +7,7 @@ use anda_engine::{
 };
 use anda_engine_server::{shutdown_signal, ServerBuilder};
 use anda_lancedb::lancedb::InMemory;
-use anda_web3_client::client::Client as Web3Client;
+use anda_web3_client::client::{load_identity, Client as Web3Client};
 use clap::Parser;
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 use structured_logger::{async_json::new_writer, get_env_level, Builder};
@@ -31,9 +31,11 @@ struct Cli {
     #[clap(short, long, default_value = "https://icp-api.io")]
     ic_host: String,
 
-    #[arg(long, env = "ID_SECRET")]
+    /// Path to ICP identity pem file or 32 bytes identity secret in hex.
+    #[arg(short, long, env = "ID_SECRET")]
     id_secret: String,
 
+    /// 48 bytes root secret in hex to derive keys
     #[arg(long, env = "ROOT_SECRET")]
     root_secret: String,
 
@@ -109,13 +111,21 @@ async fn main() -> Result<(), BoxError> {
     let global_cancel_token = CancellationToken::new();
 
     // Parse and validate cryptographic secrets
-    let id_secret = const_hex::decode(&cli.id_secret)?;
-    let id_secret: [u8; 32] = id_secret.try_into().map_err(|_| "invalid id_secret")?;
+    let identity = load_identity(&cli.id_secret)?;
     let root_secret = const_hex::decode(&cli.root_secret)?;
-    let root_secret: [u8; 48] = root_secret.try_into().map_err(|_| "invalid root_secret")?;
+    let root_secret: [u8; 48] = root_secret
+        .try_into()
+        .map_err(|_| format!("invalid root_secret: {:?}", cli.root_secret))?;
 
     // Initialize Web3 client for ICP network interaction
-    let web3 = Web3Client::new(&cli.ic_host, id_secret, root_secret, None, Some(true)).await?;
+    let web3 = Web3Client::builder()
+        .with_ic_host(&cli.ic_host)
+        .with_identity(Arc::new(identity))
+        .with_root_secret(root_secret)
+        .with_allow_http(true)
+        .build()
+        .await?;
+
     let my_principal = web3.get_principal();
     log::info!(
         "start local service, principal: {:?}",
