@@ -105,13 +105,13 @@ impl AgentCtx {
     pub(crate) fn child_with(
         &self,
         agent_name: &str,
+        caller: Principal,
         user: Option<String>,
-        caller: Option<Principal>,
     ) -> Result<Self, BoxError> {
         Ok(Self {
             base: self
                 .base
-                .child_with(format!("A:{}", agent_name), user, caller)?,
+                .child_with(format!("A:{}", agent_name), caller, user)?,
             model: self.model.clone(),
             tools: self.tools.clone(),
             agents: self.agents.clone(),
@@ -122,16 +122,17 @@ impl AgentCtx {
     ///
     /// # Arguments
     /// * `tool_name` - Name of the tool
-    /// * `user` - Optional user identifier
     /// * `caller` - Optional caller principal
+    /// * `user` - Optional user identifier
+    ///
     pub(crate) fn child_base_with(
         &self,
         tool_name: &str,
+        caller: Principal,
         user: Option<String>,
-        caller: Option<Principal>,
     ) -> Result<BaseCtx, BoxError> {
         self.base
-            .child_with(format!("T:{}", tool_name), user, caller)
+            .child_with(format!("T:{}", tool_name), caller, user)
     }
 }
 
@@ -355,17 +356,19 @@ impl EmbeddingFeatures for AgentCtx {
 impl BaseContext for AgentCtx {}
 
 impl StateFeatures for AgentCtx {
+    /// agent ID
     fn id(&self) -> Principal {
         self.base.id()
     }
+
+    /// caller ID
+    fn caller(&self) -> Principal {
+        self.base.caller()
+    }
+
     /// Gets the current user identifier, if available
     fn user(&self) -> Option<String> {
         self.base.user()
-    }
-
-    /// Gets the current caller principal, if available
-    fn caller(&self) -> Option<Principal> {
-        self.base.caller()
     }
 
     /// Gets the cancellation token for the current context

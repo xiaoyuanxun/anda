@@ -103,7 +103,7 @@ async fn engine_run(
                 from_reader(req.params.as_slice())
                     .map_err(|err| format!("failed to decode params: {err:?}"))?;
             let res = engine
-                .agent_run(args.0, args.1, args.2, None, Some(caller))
+                .agent_run(args.0, args.1, args.2, caller, None)
                 .await
                 .map_err(|err| format!("failed to run agent: {err:?}"))?;
             Ok(to_cbor_bytes(&res).into())
@@ -112,7 +112,7 @@ async fn engine_run(
             let args: (String, String) = from_reader(req.params.as_slice())
                 .map_err(|err| format!("failed to decode params: {err:?}"))?;
             let res = engine
-                .tool_call(args.0, args.1, None, Some(caller))
+                .tool_call(args.0, args.1, caller, None)
                 .await
                 .map_err(|err| format!("failed to call tool: {err:?}"))?;
             Ok(to_cbor_bytes(&res).into())

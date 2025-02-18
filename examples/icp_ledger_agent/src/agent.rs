@@ -2,7 +2,7 @@ use anda_core::{
     Agent, AgentContext, AgentOutput, BoxError, CanisterCaller, CompletionFeatures,
     CompletionRequest, StateFeatures, ToolSet,
 };
-use anda_engine::context::{AgentCtx, BaseCtx};
+use anda_engine::context::{AgentCtx, BaseCtx, ANONYMOUS};
 use anda_icp::ledger::{BalanceOfTool, ICPLedgers, TransferTool};
 use candid::Principal;
 use std::{collections::BTreeSet, sync::Arc};
@@ -87,7 +87,11 @@ impl Agent<AgentCtx> for ICPLedgerAgent {
         prompt: String,
         _attachment: Option<Vec<u8>>,
     ) -> Result<AgentOutput, BoxError> {
-        let caller = ctx.caller().ok_or("missing caller")?;
+        let caller = ctx.caller();
+        if caller == ANONYMOUS {
+            return Err("anonymous caller not allowed".into());
+        }
+
         let req = CompletionRequest {
             system: Some(
                 "\

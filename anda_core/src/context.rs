@@ -112,16 +112,16 @@ pub trait BaseContext:
 pub trait StateFeatures: Sized {
     /// Gets the engine ID, which comes from the TEE host
     fn id(&self) -> Principal;
+    /// Gets the verified caller principal if available.
+    /// A non anonymous Principal indicates the request has been verified
+    /// using ICP blockchain's signature verification algorithm.
+    fn caller(&self) -> Principal;
+
     /// Gets the username from request context.
     /// Note: This is not verified and should not be used as a trusted identifier.
     /// For example, if triggered by a bot of X platform, this might be the username
     /// of the user interacting with the bot.
     fn user(&self) -> Option<String>;
-
-    /// Gets the verified caller principal if available.
-    /// A non-None value indicates the request has been verified
-    /// using ICP blockchain's signature verification algorithm.
-    fn caller(&self) -> Option<Principal>;
 
     /// Gets the cancellation token for the current execution context.
     /// Each call level has its own token scope.

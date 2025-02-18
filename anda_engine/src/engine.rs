@@ -122,8 +122,8 @@ impl Engine {
     pub fn ctx_with<A>(
         &self,
         agent: &A,
+        caller: Principal,
         user: Option<String>,
-        caller: Option<Principal>,
     ) -> Result<AgentCtx, BoxError>
     where
         A: Agent<AgentCtx>,
@@ -132,11 +132,12 @@ impl Engine {
         if !self.ctx.agents.contains(&name) {
             return Err(format!("agent {} not found", name).into());
         }
+
         if let Some(user) = &user {
             validate_path_part(user)?;
         }
 
-        self.ctx.child_with(&name, user, caller)
+        self.ctx.child_with(&name, caller, user)
     }
 
     /// Executes an agent with the specified parameters.
@@ -147,8 +148,8 @@ impl Engine {
         agent_name: Option<String>,
         prompt: String,
         attachment: Option<ByteBuf>,
+        caller: Principal,
         user: Option<String>,
-        caller: Option<Principal>,
     ) -> Result<AgentOutput, BoxError> {
         let name = agent_name.unwrap_or(self.default_agent.clone());
         if !self.ctx.agents.contains(&name) {
@@ -159,7 +160,7 @@ impl Engine {
             validate_path_part(user)?;
         }
 
-        let ctx = self.ctx.child_with(&name, user, caller)?;
+        let ctx = self.ctx.child_with(&name, caller, user)?;
         let mut res = self
             .ctx
             .agents
@@ -175,8 +176,8 @@ impl Engine {
         &self,
         name: String,
         args: String,
+        caller: Principal,
         user: Option<String>,
-        caller: Option<Principal>,
     ) -> Result<(String, bool), BoxError> {
         if !self.ctx.tools.contains(&name) {
             return Err(format!("tool {} not found", name).into());
@@ -186,7 +187,7 @@ impl Engine {
             validate_path_part(user)?;
         }
 
-        let ctx = self.ctx.child_base_with(&name, user, caller)?;
+        let ctx = self.ctx.child_base_with(&name, caller, user)?;
         self.ctx.tools.call(&name, ctx, args).await
     }
 

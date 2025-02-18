@@ -43,6 +43,8 @@ use std::{
 const CONTEXT_MAX_DEPTH: u8 = 42;
 const CACHE_MAX_CAPACITY: u64 = 1000000;
 
+pub const ANONYMOUS: Principal = Principal::anonymous();
+
 use super::{
     cache::CacheService,
     web3::{Web3Client, Web3SDK},
@@ -52,8 +54,8 @@ use crate::store::Store;
 #[derive(Clone)]
 pub struct BaseCtx {
     pub(crate) id: Principal,
+    pub(crate) caller: Principal,
     pub(crate) user: Option<String>,
-    pub(crate) caller: Option<Principal>,
     pub(crate) path: Path,
     pub(crate) cancellation_token: CancellationToken,
     pub(crate) start_at: Instant,
@@ -93,7 +95,7 @@ impl BaseCtx {
         Self {
             id,
             user: None,
-            caller: None,
+            caller: ANONYMOUS,
             path: Path::default(),
             cancellation_token,
             start_at: Instant::now(),
@@ -145,22 +147,22 @@ impl BaseCtx {
     ///
     /// # Arguments
     /// * `path` - New path for the child context
+    /// * `caller` - caller principal (or ANONYMOUS)
     /// * `user` - Optional user identifier
-    /// * `caller` - Optional caller principal
     ///
     /// # Errors
     /// Returns an error if the context depth exceeds CONTEXT_MAX_DEPTH
     pub(crate) fn child_with(
         &self,
         path: String,
+        caller: Principal,
         user: Option<String>,
-        caller: Option<Principal>,
     ) -> Result<Self, BoxError> {
         let path = Path::parse(path)?;
         let child = Self {
             id: self.id,
-            user,
             caller,
+            user,
             path,
             cancellation_token: self.cancellation_token.child_token(),
             start_at: Instant::now(),
@@ -184,12 +186,12 @@ impl StateFeatures for BaseCtx {
         self.id
     }
 
-    fn user(&self) -> Option<String> {
-        self.user.clone()
+    fn caller(&self) -> Principal {
+        self.caller
     }
 
-    fn caller(&self) -> Option<Principal> {
-        self.caller
+    fn user(&self) -> Option<String> {
+        self.user.clone()
     }
 
     fn cancellation_token(&self) -> CancellationToken {
