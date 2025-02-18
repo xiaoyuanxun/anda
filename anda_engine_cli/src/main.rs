@@ -87,7 +87,7 @@ async fn main() -> Result<(), BoxError> {
             let web3 = Web3Client::builder()
                 .with_ic_host(&cli.ic_host)
                 .with_identity(Arc::new(identity))
-                .with_allow_http(true)
+                .with_allow_http(true, None)
                 .build()
                 .await?;
 
@@ -109,7 +109,7 @@ async fn main() -> Result<(), BoxError> {
             let web3 = Web3Client::builder()
                 .with_ic_host(&cli.ic_host)
                 .with_identity(Arc::new(identity))
-                .with_allow_http(true)
+                .with_allow_http(true, None)
                 .build()
                 .await?;
 

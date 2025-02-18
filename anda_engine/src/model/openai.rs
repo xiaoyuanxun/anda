@@ -21,7 +21,7 @@ use crate::APP_USER_AGENT;
 // ================================================================
 // Main OpenAI Client
 // ================================================================
-const OPENAI_API_BASE_URL: &str = "https://api.openai.com/v1";
+const API_BASE_URL: &str = "https://api.openai.com/v1";
 
 // ================================================================
 // OpenAI Embedding API
@@ -54,8 +54,14 @@ impl Client {
     /// # Arguments
     /// * `api_key` - OpenAI API key for authentication
     pub fn new(api_key: &str, endpoint: Option<String>) -> Self {
+        let endpoint = endpoint.unwrap_or_else(|| API_BASE_URL.to_string());
+        let endpoint = if endpoint.is_empty() {
+            API_BASE_URL.to_string()
+        } else {
+            endpoint
+        };
         Self {
-            endpoint: endpoint.unwrap_or_else(|| OPENAI_API_BASE_URL.to_string()),
+            endpoint,
             http: reqwest::Client::builder()
                 .use_rustls_tls()
                 .https_only(true)
@@ -63,7 +69,7 @@ impl Client {
                 .http2_keep_alive_timeout(Duration::from_secs(15))
                 .http2_keep_alive_while_idle(true)
                 .connect_timeout(Duration::from_secs(10))
-                .timeout(Duration::from_secs(120))
+                .timeout(Duration::from_secs(180))
                 .user_agent(APP_USER_AGENT)
                 .default_headers({
                     let mut headers = reqwest::header::HeaderMap::new();
@@ -110,7 +116,7 @@ impl Client {
     /// # Arguments
     /// * `model` - Name of the completion model to use
     pub fn completion_model(&self, model: &str) -> CompletionModel {
-        CompletionModel::new(self.clone(), model)
+        CompletionModel::new(self.clone(), if model.is_empty() { O3_MINI } else { model })
     }
 }
 

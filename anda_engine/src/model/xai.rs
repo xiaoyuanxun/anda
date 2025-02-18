@@ -1,6 +1,6 @@
-//! DeepSeek API client implementation for Anda Engine
+//! Grok API client implementation for Anda Engine
 //!
-//! This module provides integration with DeepSeek's API, including:
+//! This module provides integration with Grok's API, including:
 //! - Client configuration and management
 //! - Completion model handling
 //! - Response parsing and conversion to Anda's internal formats
@@ -18,13 +18,12 @@ use super::CompletionFeaturesDyn;
 use crate::APP_USER_AGENT;
 
 // ================================================================
-// Main DeepSeek Client
+// Main Grok Client
 // ================================================================
-const API_BASE_URL: &str = "https://api.deepseek.com";
-pub static DEEKSEEK_V3: &str = "deepseek-chat";
-pub static DEEKSEEK_R1: &str = "deepseek-reasoner";
+const API_BASE_URL: &str = "https://api.x.ai/v1";
+pub static GROK_BETA: &str = "grok-2-latest";
 
-/// DeepSeek API client configuration and HTTP client
+/// Grok API client configuration and HTTP client
 #[derive(Clone)]
 pub struct Client {
     endpoint: String,
@@ -32,13 +31,13 @@ pub struct Client {
 }
 
 impl Client {
-    /// Creates a new DeepSeek client instance with the provided API key
+    /// Creates a new Grok client instance with the provided API key
     ///
     /// # Arguments
-    /// * `api_key` - DeepSeek API key for authentication
+    /// * `api_key` - Grok API key for authentication
     ///
     /// # Returns
-    /// Configured DeepSeek client instance
+    /// Configured Grok client instance
     pub fn new(api_key: &str, endpoint: Option<String>) -> Self {
         let endpoint = endpoint.unwrap_or_else(|| API_BASE_URL.to_string());
         let endpoint = if endpoint.is_empty() {
@@ -71,7 +70,7 @@ impl Client {
                     headers
                 })
                 .build()
-                .expect("DeepSeek reqwest client should build"),
+                .expect("Grok reqwest client should build"),
         }
     }
 
@@ -81,16 +80,16 @@ impl Client {
         self.http.post(url)
     }
 
-    /// Creates a new completion model instance using the default DeepSeek model
+    /// Creates a new completion model instance using the default Grok model
     pub fn completion_model(&self, model: &str) -> CompletionModel {
         CompletionModel::new(
             self.clone(),
-            if model.is_empty() { DEEKSEEK_V3 } else { model },
+            if model.is_empty() { GROK_BETA } else { model },
         )
     }
 }
 
-/// Token usage statistics from DeepSeek API responses
+/// Token usage statistics from Grok API responses
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Usage {
     /// Number of tokens used in the prompt
@@ -109,7 +108,7 @@ impl std::fmt::Display for Usage {
     }
 }
 
-/// Completion response from DeepSeek API
+/// Completion response from Grok API
 #[derive(Debug, Deserialize, Serialize)]
 pub struct CompletionResponse {
     /// Unique identifier for the completion
@@ -158,7 +157,7 @@ impl CompletionResponse {
     }
 }
 
-/// Individual completion choice from DeepSeek API
+/// Individual completion choice from Grok API
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Choice {
     pub index: usize,
@@ -166,7 +165,7 @@ pub struct Choice {
     pub finish_reason: String,
 }
 
-/// Output message structure from DeepSeek API
+/// Output message structure from Grok API
 #[derive(Debug, Deserialize, Serialize)]
 pub struct MessageOutput {
     pub role: String,
@@ -176,7 +175,7 @@ pub struct MessageOutput {
     pub tool_calls: Option<Vec<ToolCallOutput>>,
 }
 
-/// Tool call output structure from DeepSeek API
+/// Tool call output structure from Grok API
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ToolCallOutput {
     pub id: String,
@@ -191,7 +190,8 @@ pub struct ToolDefinition {
 }
 
 impl From<FunctionDefinition> for ToolDefinition {
-    fn from(f: FunctionDefinition) -> Self {
+    fn from(mut f: FunctionDefinition) -> Self {
+        f.strict = None; // Grok does not support strict mode
         Self {
             r#type: "function".into(),
             function: f,
@@ -205,10 +205,10 @@ pub struct Function {
     pub arguments: String,
 }
 
-/// Completion model wrapper for DeepSeek API
+/// Completion model wrapper for Grok API
 #[derive(Clone)]
 pub struct CompletionModel {
-    /// DeepSeek client instance
+    /// Grok client instance
     client: Client,
     /// Model identifier
     pub model: String,
@@ -218,7 +218,7 @@ impl CompletionModel {
     /// Creates a new completion model instance
     ///
     /// # Arguments
-    /// * `client` - DeepSeek client instance
+    /// * `client` - Grok client instance
     /// * `model` - Model identifier string
     pub fn new(client: Client, model: &str) -> Self {
         Self {
@@ -287,12 +287,8 @@ impl CompletionFeaturesDyn for CompletionModel {
                 body.insert("max_tokens".to_string(), Value::from(max_tokens));
             }
 
-            if req.response_format.is_some() {
-                // DeepSeek only supports `{"type": "json_object"}`
-                body.insert(
-                    "response_format".to_string(),
-                    json!({"type": "json_object"}),
-                );
+            if let Some(response_format) = req.response_format {
+                body.insert("response_format".to_string(), response_format);
             }
 
             if let Some(stop) = req.stop {
@@ -320,7 +316,7 @@ impl CompletionFeaturesDyn for CompletionModel {
 
             if log_enabled!(Debug) {
                 if let Ok(val) = serde_json::to_string(&body) {
-                    log::debug!(request = val; "DeepSeek completions request");
+                    log::debug!(request = val; "Grok completions request");
                 }
             }
 
@@ -331,45 +327,19 @@ impl CompletionFeaturesDyn for CompletionModel {
                     Ok(res) => {
                         if log_enabled!(Debug) {
                             if let Ok(val) = serde_json::to_string(&res) {
-                                log::debug!(response = val; "DeepSeek completions response");
+                                log::debug!(response = val; "Grok completions response");
                             }
                         }
                         res.try_into(full_history)
                     }
                     Err(err) => {
-                        Err(format!("DeepSeek completions error: {}, body: {}", err, text).into())
+                        Err(format!("Grok completions error: {}, body: {}", err, text).into())
                     }
                 }
             } else {
                 let msg = response.text().await?;
-                Err(format!("DeepSeek completions error: {}", msg).into())
+                Err(format!("Grok completions error: {}", msg).into())
             }
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::extension::character::Character;
-    use std::time::Instant;
-
-    #[tokio::test(flavor = "current_thread")]
-    #[ignore]
-    async fn test_deepseek() {
-        dotenv::dotenv().ok();
-
-        let api_key = std::env::var("DEEPSEEK_API_KEY").expect("DEEKSEEK_API_KEY is not set");
-        let character_path = format!("{}/../characters/AndaICP.toml", env!("CARGO_MANIFEST_DIR"));
-        println!("Character path: {}", character_path);
-        let character = std::fs::read_to_string(character_path).expect("Character file not found");
-        let character = Character::from_toml(&character).expect("Character should parse");
-        let client = Client::new(&api_key, None);
-        let now = Instant::now();
-        let model = client.completion_model(DEEKSEEK_V3);
-        let req = character.to_request("I am Yan, glad to see you".into(), Some("Yan".into()));
-        let res = CompletionFeatures::completion(&model, req).await.unwrap();
-        println!("{}", res.content);
-        println!("Took: {:?}", now.elapsed());
     }
 }

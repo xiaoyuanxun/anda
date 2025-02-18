@@ -18,11 +18,13 @@ use anda_core::{
     AgentOutput, BoxError, BoxPinFut, CompletionFeatures, CompletionRequest, Embedding,
     EmbeddingFeatures, ToolCall,
 };
-use std::sync::Arc;
+use serde::{Deserialize, Serialize};
+use std::{convert::Infallible, str::FromStr, sync::Arc};
 
 pub mod cohere;
 pub mod deepseek;
 pub mod openai;
+pub mod xai;
 
 /// Trait for dynamic completion features that can be used across threads
 pub trait CompletionFeaturesDyn: Send + Sync + 'static {
@@ -183,5 +185,81 @@ impl EmbeddingFeatures for Model {
 
     async fn embed_query(&self, text: &str) -> Result<Embedding, BoxError> {
         self.embedder.embed_query(text.to_string()).await
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum HybridContent {
+    Text { text: String },
+    Image { image_url: ImageDetail },
+    Audio { input_audio: AudioDetail },
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct ImageDetail {
+    pub url: String,
+    pub detail: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct AudioDetail {
+    pub data: String,
+    pub format: String,
+}
+
+impl From<String> for HybridContent {
+    fn from(text: String) -> Self {
+        HybridContent::Text { text }
+    }
+}
+
+impl From<&str> for HybridContent {
+    fn from(text: &str) -> Self {
+        text.to_owned().into()
+    }
+}
+
+impl FromStr for HybridContent {
+    type Err = Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(s.into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_hybrid_content() {
+        let content = HybridContent::Text {
+            text: "Hello, world!".to_string(),
+        };
+        let json = serde_json::to_string(&content).unwrap();
+        assert_eq!(json, r#"{"type":"text","text":"Hello, world!"}"#);
+
+        let ct: HybridContent = serde_json::from_str(&json).unwrap();
+        assert_eq!(ct, content);
+
+        let ct = HybridContent::from("Hello, world!");
+        assert_eq!(ct, content);
+
+        let content = HybridContent::Image {
+            image_url: ImageDetail {
+                url: "https://example.com/image.jpg".to_string(),
+                detail: "high".to_string(),
+            },
+        };
+
+        let json = serde_json::to_string(&content).unwrap();
+        assert_eq!(
+            json,
+            r#"{"type":"image","image_url":{"url":"https://example.com/image.jpg","detail":"high"}}"#
+        );
+
+        let ct: HybridContent = serde_json::from_str(&json).unwrap();
+        assert_eq!(ct, content);
     }
 }

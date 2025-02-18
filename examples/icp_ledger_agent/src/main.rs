@@ -2,7 +2,7 @@ use anda_core::BoxError;
 use anda_engine::{
     context::Web3SDK,
     engine::EngineBuilder,
-    model::{deepseek, openai, Model},
+    model::{openai, xai, Model},
     store::Store,
 };
 use anda_engine_server::{shutdown_signal, ServerBuilder};
@@ -24,11 +24,11 @@ const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 #[command(author, version, about, long_about = None)]
 struct Cli {
     /// Port to listen on
-    #[clap(short, long, default_value = "8042")]
+    #[clap(long, default_value = "8042")]
     port: u16,
 
     /// ICP API host
-    #[clap(short, long, default_value = "https://icp-api.io")]
+    #[clap(long, default_value = "https://icp-api.io")]
     ic_host: String,
 
     /// Path to ICP identity pem file or 32 bytes identity secret in hex.
@@ -39,31 +39,25 @@ struct Cli {
     #[arg(long, env = "ROOT_SECRET")]
     root_secret: String,
 
+    /// Deepseek API key for AI model
     #[arg(long, env = "DEEPSEEK_API_KEY", default_value = "")]
     deepseek_api_key: String,
 
-    #[arg(
-        long,
-        env = "DEEPSEEK_ENDPOINT",
-        default_value = "https://api.deepseek.com"
-    )]
-    deepseek_endpoint: String,
-
-    #[arg(long, env = "DEEPSEEK_MODEL", default_value = "deepseek-chat")]
-    deepseek_model: String,
-
+    /// OpenAI API key for AI model
     #[arg(long, env = "OPENAI_API_KEY", default_value = "")]
     openai_api_key: String,
 
-    #[arg(
-        long,
-        env = "OPENAI_ENDPOINT",
-        default_value = "https://api.openai.com/v1"
-    )]
-    openai_endpoint: String,
+    /// XAI API key for AI model
+    #[arg(long, env = "XAI_API_KEY", default_value = "")]
+    xai_api_key: String,
 
-    #[arg(long, env = "DEEPSEEK_MODEL", default_value = "o3-mini")]
-    openai_model: String,
+    /// AI model endpoint, empty for default to auto-detect
+    #[arg(long, env = "MODEL_ENDPOINT", default_value = "")]
+    model_endpoint: String,
+
+    /// AI model name, empty for default to auto-detect
+    #[arg(long, env = "MODEL_NAME", default_value = "")]
+    model_name: String,
 }
 
 /// Main entry point for the ICP Ledger Agent service.
@@ -122,7 +116,6 @@ async fn main() -> Result<(), BoxError> {
         .with_ic_host(&cli.ic_host)
         .with_identity(Arc::new(identity))
         .with_root_secret(root_secret)
-        .with_allow_http(true)
         .build()
         .await?;
 
@@ -132,17 +125,19 @@ async fn main() -> Result<(), BoxError> {
         my_principal.to_text()
     );
 
-    // Configure AI model (Deepseek as default, fallback to OpenAI)
-    let model = Model::with_completer(if cli.openai_api_key.is_empty() {
+    // Configure AI model
+    let model = Model::with_completer(if !cli.openai_api_key.is_empty() {
         Arc::new(
-            deepseek::Client::new(&cli.deepseek_api_key, Some(cli.deepseek_endpoint))
-                .completion_model(&cli.deepseek_model),
+            openai::Client::new(&cli.openai_api_key, Some(cli.model_endpoint))
+                .completion_model(&cli.model_name),
+        )
+    } else if !cli.xai_api_key.is_empty() {
+        Arc::new(
+            xai::Client::new(&cli.xai_api_key, Some(cli.model_endpoint))
+                .completion_model(&cli.model_name),
         )
     } else {
-        Arc::new(
-            openai::Client::new(&cli.openai_api_key, Some(cli.openai_endpoint))
-                .completion_model(&cli.openai_model),
-        )
+        return Err("missing AI model API key".into());
     });
 
     // Initialize in-memory object store.

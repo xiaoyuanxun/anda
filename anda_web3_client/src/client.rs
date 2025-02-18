@@ -142,8 +142,25 @@ impl ClientBuilder {
     }
 
     /// Allow HTTP connections (default is false)
-    pub fn with_allow_http(mut self, allow_http: bool) -> Self {
+    pub fn with_allow_http(
+        mut self,
+        allow_http: bool,
+        http_client: Option<reqwest::Client>,
+    ) -> Self {
         self.allow_http = allow_http;
+        self.outer_http = http_client.unwrap_or_else(|| {
+            reqwest::Client::builder()
+                .use_rustls_tls()
+                .https_only(!allow_http)
+                .http2_keep_alive_interval(Some(Duration::from_secs(25)))
+                .http2_keep_alive_timeout(Duration::from_secs(15))
+                .http2_keep_alive_while_idle(true)
+                .connect_timeout(Duration::from_secs(10))
+                .timeout(Duration::from_secs(360))
+                .user_agent(APP_USER_AGENT)
+                .build()
+                .expect("Could not create HTTP client")
+        });
         self
     }
 
