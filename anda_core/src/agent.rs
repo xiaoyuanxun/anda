@@ -50,7 +50,7 @@ where
     C: AgentContext + Send + Sync,
 {
     /// Returns the agent's name as a String
-    /// The unique name of the agent. This name should be valid Path string and unique within the engine in lowercase.
+    /// The unique name of the agent. This name should be valid Path string ([`validate_path_part`]) and unique within the engine in lowercase.
     fn name(&self) -> String;
 
     /// Returns the agent's capabilities description in a short string

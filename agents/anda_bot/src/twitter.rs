@@ -46,7 +46,9 @@ impl TwitterDaemon {
 
     pub async fn run(&self, cancel_token: CancellationToken) -> Result<(), BoxError> {
         {
-            let ctx = self.engine.ctx_with(self.agent.as_ref(), ANONYMOUS, None)?;
+            let ctx = self
+                .engine
+                .ctx_with(&self.agent.as_ref().name(), ANONYMOUS, None)?;
             // load seen_tweet_ids from store
             ctx.cache_store_init("seen_tweet_ids", async { Ok(Vec::<String>::new()) })
                 .await?;
@@ -142,7 +144,7 @@ impl TwitterDaemon {
 
         log::info!("post new tweet with {} knowledges", knowledges.len());
         let ctx = self.engine.ctx_with(
-            self.agent.as_ref(),
+            &self.agent.as_ref().name(),
             ANONYMOUS,
             Some(self.agent.character.username.clone()),
         )?;
@@ -175,7 +177,7 @@ impl TwitterDaemon {
 
     async fn handle_home_timeline(&self) -> Result<(), BoxError> {
         let ctx = self.engine.ctx_with(
-            self.agent.as_ref(),
+            &self.agent.as_ref().name(),
             ANONYMOUS,
             Some(self.agent.character.username.clone()),
         )?;
@@ -265,9 +267,11 @@ impl TwitterDaemon {
             // not replying to bot itself
             return Ok(());
         }
-        let ctx = self
-            .engine
-            .ctx_with(self.agent.as_ref(), ANONYMOUS, Some(tweet_user.clone()))?;
+        let ctx = self.engine.ctx_with(
+            &self.agent.as_ref().name(),
+            ANONYMOUS,
+            Some(tweet_user.clone()),
+        )?;
         let mut seen_tweet_ids: Vec<String> = ctx.cache_store_get("seen_tweet_ids").await?;
 
         if seen_tweet_ids.contains(&tweet_id) {

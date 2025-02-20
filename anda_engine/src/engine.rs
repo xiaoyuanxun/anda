@@ -117,18 +117,15 @@ impl Engine {
         self.ctx.base.cancellation_token.child_token()
     }
 
-    /// Creates a new [`AgentCtx`] with the specified agent, user, and caller.
+    /// Creates a new [`AgentCtx`] with the specified agent name, user, and caller.
     /// Returns an error if the agent is not found or if the user name is invalid.
-    pub fn ctx_with<A>(
+    pub fn ctx_with(
         &self,
-        agent: &A,
+        agent_name: &str,
         caller: Principal,
         user: Option<String>,
-    ) -> Result<AgentCtx, BoxError>
-    where
-        A: Agent<AgentCtx>,
-    {
-        let name = agent.name().to_ascii_lowercase();
+    ) -> Result<AgentCtx, BoxError> {
+        let name = agent_name.to_ascii_lowercase();
         if !self.ctx.agents.contains(&name) {
             return Err(format!("agent {} not found", name).into());
         }
@@ -151,16 +148,9 @@ impl Engine {
         caller: Principal,
         user: Option<String>,
     ) -> Result<AgentOutput, BoxError> {
-        let name = agent_name.unwrap_or(self.default_agent.clone());
-        if !self.ctx.agents.contains(&name) {
-            return Err(format!("agent {} not found", name).into());
-        }
+        let name = agent_name.unwrap_or_else(|| self.default_agent.clone());
+        let ctx = self.ctx_with(&name, caller, user)?;
 
-        if let Some(user) = &user {
-            validate_path_part(user)?;
-        }
-
-        let ctx = self.ctx.child_with(&name, caller, user)?;
         let mut res = self
             .ctx
             .agents
