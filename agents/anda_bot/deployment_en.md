@@ -24,7 +24,7 @@ cargo run -p anda_bot -- start-local
 
 3. Download the executable directly on Linux:
    ```sh
-   wget https://github.com/ldclabs/anda/releases/download/v0.4.0/anda_bot
+   wget https://github.com/ldclabs/anda/releases/download/v0.4.1/anda_bot
    chmod +x anda_bot
    ```
 
@@ -66,7 +66,12 @@ cargo run -p anda_bot -- start-local
 6. Start anda_bot
    ```sh
    mkdir -p object_store
-   ./anda_bot
+   nohup ./anda_bot start-local > bot.log 2>&1 &
+   ```
+
+   Check the anda_bot process:
+   ```sh
+   ps -aux | grep anda_bot
    ```
 
 ## Deploy TEE Version

@@ -23,7 +23,7 @@ cargo run -p anda_bot -- start-local
 
 3. 在 linux 环境下可直接下载 anda_bot 可执行文件。
    ```sh
-   wget https://github.com/ldclabs/anda/releases/download/v0.4.0/anda_bot
+   wget https://github.com/ldclabs/anda/releases/download/v0.4.1/anda_bot
    chmod +x anda_bot
    ```
 
@@ -65,7 +65,12 @@ cargo run -p anda_bot -- start-local
 6. 启动 anda_bot
    ```sh
    mkdir -p object_store
-   ./anda_bot
+   nohup ./anda_bot start-local > bot.log 2>&1 &
+   ```
+
+   查看 anda_bot 进程：
+   ```sh
+   ps -aux | grep anda_bot
    ```
 
 ## 部署 TEE 版本
