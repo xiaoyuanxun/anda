@@ -163,6 +163,7 @@ name = "anda_engine"
 version = "0.4.4"
 dependencies = [
  "anda_core",
+ "async-trait",
  "bytes",
  "candid",
  "ciborium",

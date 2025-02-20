@@ -27,6 +27,7 @@ use anda_core::{
     BaseContext, BoxError, CacheExpiry, CacheFeatures, CancellationToken, CanisterCaller,
     HttpFeatures, KeysFeatures, ObjectMeta, Path, PutMode, PutResult, StateFeatures, StoreFeatures,
 };
+use async_trait::async_trait;
 use candid::{
     utils::{encode_args, ArgumentEncoder},
     CandidType, Decode, Principal,
@@ -180,6 +181,8 @@ impl BaseCtx {
 }
 
 impl BaseContext for BaseCtx {}
+
+impl CacheStoreFeatures for BaseCtx {}
 
 impl StateFeatures for BaseCtx {
     fn id(&self) -> Principal {
@@ -631,6 +634,65 @@ impl HttpFeatures for BaseCtx {
     }
 }
 
+/// Trait combining Store and Cache features
+#[async_trait]
+pub trait CacheStoreFeatures: StoreFeatures + CacheFeatures + Send + Sync + 'static {
+    /// Initializes a cache value from store if missing
+    async fn cache_store_init<T, F>(&self, key: &str, init: F) -> Result<(), BoxError>
+    where
+        T: DeserializeOwned + Serialize + Send,
+        F: Future<Output = Result<T, BoxError>> + Send + 'static,
+    {
+        let p = Path::from(key);
+        match self.store_get(&p).await {
+            Ok((v, _)) => {
+                let val: T = from_reader(&v[..])?;
+                self.cache_set(key, (val, None)).await;
+                Ok(())
+            }
+            Err(_) => {
+                let val: T = init.await?;
+                self.cache_set(key, (val, None)).await;
+                Ok(())
+            }
+        }
+    }
+
+    /// Gets a value from cache
+    async fn cache_store_get<T>(&self, key: &str) -> Result<T, BoxError>
+    where
+        T: DeserializeOwned,
+    {
+        self.cache_get(key).await
+    }
+
+    /// Sets a value in cache and store, without waiting for store completion
+    async fn cache_store_set<T>(self, key: &str, val: T)
+    where
+        T: Serialize + Send,
+    {
+        let data = to_cbor_bytes(&val);
+        self.cache_set(key, (val, None)).await;
+        let p = Path::from(key);
+        tokio::spawn(async move {
+            let _ = self.store_put(&p, PutMode::Overwrite, data.into()).await;
+        });
+    }
+
+    /// Sets a value in cache and store, waiting for store completion
+    async fn cache_store_set_and_wait<T>(self, key: &str, val: T) -> Result<(), BoxError>
+    where
+        T: Serialize + Send,
+    {
+        let data = to_cbor_bytes(&val);
+        self.cache_set(key, (val, None)).await;
+        let p = Path::from(key);
+        let _ = self.store_put(&p, PutMode::Overwrite, data.into()).await?;
+        Ok(())
+    }
+}
+
+/// Derives a derivation path with the given path and derivation path
 pub fn derivation_path_with<'a>(path: &'a Path, derivation_path: &'a [&'a [u8]]) -> Vec<&'a [u8]> {
     let mut dp = Vec::with_capacity(derivation_path.len() + 1);
     dp.push(path.as_ref().as_bytes());

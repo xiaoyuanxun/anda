@@ -190,7 +190,7 @@ impl EmbeddingFeatures for Model {
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 #[serde(tag = "type", rename_all = "lowercase")]
-pub enum HybridContent {
+pub enum MixtureContent {
     Text { text: String },
     Image { image_url: ImageDetail },
     Audio { input_audio: AudioDetail },
@@ -208,19 +208,19 @@ pub struct AudioDetail {
     pub format: String,
 }
 
-impl From<String> for HybridContent {
+impl From<String> for MixtureContent {
     fn from(text: String) -> Self {
-        HybridContent::Text { text }
+        MixtureContent::Text { text }
     }
 }
 
-impl From<&str> for HybridContent {
+impl From<&str> for MixtureContent {
     fn from(text: &str) -> Self {
         text.to_owned().into()
     }
 }
 
-impl FromStr for HybridContent {
+impl FromStr for MixtureContent {
     type Err = Infallible;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -234,19 +234,19 @@ mod tests {
 
     #[test]
     fn test_hybrid_content() {
-        let content = HybridContent::Text {
+        let content = MixtureContent::Text {
             text: "Hello, world!".to_string(),
         };
         let json = serde_json::to_string(&content).unwrap();
         assert_eq!(json, r#"{"type":"text","text":"Hello, world!"}"#);
 
-        let ct: HybridContent = serde_json::from_str(&json).unwrap();
+        let ct: MixtureContent = serde_json::from_str(&json).unwrap();
         assert_eq!(ct, content);
 
-        let ct = HybridContent::from("Hello, world!");
+        let ct = MixtureContent::from("Hello, world!");
         assert_eq!(ct, content);
 
-        let content = HybridContent::Image {
+        let content = MixtureContent::Image {
             image_url: ImageDetail {
                 url: "https://example.com/image.jpg".to_string(),
                 detail: "high".to_string(),
@@ -259,7 +259,7 @@ mod tests {
             r#"{"type":"image","image_url":{"url":"https://example.com/image.jpg","detail":"high"}}"#
         );
 
-        let ct: HybridContent = serde_json::from_str(&json).unwrap();
+        let ct: MixtureContent = serde_json::from_str(&json).unwrap();
         assert_eq!(ct, content);
     }
 }

@@ -38,6 +38,8 @@ pub struct X {
     pub email: Option<String>,
     pub two_factor_auth: Option<String>,
     pub cookie_string: Option<String>,
+    #[serde(default)]
+    pub min_interval_secs: u64,
 }
 
 /// Configuration for the Google search should be encrypted and stored in the ICP COSE canister.

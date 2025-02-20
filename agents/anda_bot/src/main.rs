@@ -51,7 +51,6 @@ mod twitter;
 const APP_NAME: &str = env!("CARGO_PKG_NAME");
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-static LOG_TARGET: &str = "anda_bot";
 static IC_OBJECT_STORE: &str = "ic://object_store";
 static ENGINE_NAME: &str = "Anda.bot";
 static COSE_SECRET_PERMANENT_KEY: &str = "v1";
@@ -150,11 +149,11 @@ fn main() -> Result<(), BoxError> {
                 .with_target_writer("*", writer)
                 .init();
 
-            log::info!(target: LOG_TARGET, "bootstrap {}@{}", APP_NAME, APP_VERSION);
+            log::info!("bootstrap {}@{}", APP_NAME, APP_VERSION);
             match bootstrap(cli).await {
                 Ok(_) => Ok(()),
                 Err(err) => {
-                    log::error!(target: LOG_TARGET, "bootstrap error: {:?}", err);
+                    log::error!("bootstrap error: {:?}", err);
                     tokio::time::sleep(Duration::from_secs(3)).await;
                     Err(err)
                 }
@@ -239,10 +238,10 @@ async fn bootstrap_tee(
     let cose_setting_key: Vec<u8> = default_agent.to_ascii_lowercase().into();
 
     let cose_canister = Principal::from_text(&cose_canister)?;
-    log::info!(target: LOG_TARGET, "start to connect TEE service");
+    log::info!("start to connect TEE service");
     let tee = TEEClient::new(&tee_host, &basic_token, APP_USER_AGENT, cose_canister);
     let tee_info = tee.connect_tee(global_cancel_token.clone()).await?;
-    log::info!(target: LOG_TARGET, "TEEAppInformation: {:?}", tee_info);
+    log::info!("TEEAppInformation: {:?}", tee_info);
 
     let root_path = Path::from(ROOT_PATH);
     let id_secret = tee
@@ -253,12 +252,11 @@ async fn bootstrap_tee(
         .await?;
     let my_id = BasicIdentity::from_signing_key(SigningKey::from(id_secret));
     let my_principal = my_id.sender()?;
-    log::info!(target: LOG_TARGET,
-       "sign_in, principal: {:?}", my_principal.to_text());
+    log::info!("sign_in, principal: {:?}", my_principal.to_text());
 
     let my_agent = build_agent(&ic_host, Arc::new(my_id)).await.unwrap();
 
-    log::info!(target: LOG_TARGET, "start to get admin_master_secret");
+    log::info!("start to get admin_master_secret");
     let admin_master_secret = tee
         .get_cose_encrypted_key(&SettingPath {
             ns: cose_namespace.clone(),
@@ -269,7 +267,7 @@ async fn bootstrap_tee(
         })
         .await?;
 
-    log::info!(target: LOG_TARGET, "start to get encrypted config");
+    log::info!("start to get encrypted config");
     let encrypted_cfg_path = SettingPath {
         ns: cose_namespace.clone(),
         user_owned: false,
@@ -295,24 +293,24 @@ async fn bootstrap_tee(
     };
 
     // LL Models
-    log::info!(target: LOG_TARGET, "start to connect models");
+    log::info!("start to connect models");
     let model = connect_model(&encrypted_cfg.llm)?;
 
     // ObjectStore
-    log::info!(target: LOG_TARGET, "start to connect object_store");
+    log::info!("start to connect object_store");
     let object_store_canister = Principal::from_text(object_store_canister)?;
     let object_store =
         connect_object_store(&tee, Arc::new(my_agent), &root_path, object_store_canister).await?;
     let object_store = Arc::new(object_store);
     let os_state = object_store.get_state().await?;
-    log::info!(target: LOG_TARGET, "object_store state: {:?}", os_state);
+    log::info!("object_store state: {:?}", os_state);
 
-    log::info!(target: LOG_TARGET, "start to init knowledge_store");
+    log::info!("start to init knowledge_store");
     let knowledge_store =
         connect_knowledge_store(object_store.clone(), knowledge_table, &model).await?;
 
     let knowledge_store = Arc::new(knowledge_store);
-    log::info!(target: LOG_TARGET, "start to build engine");
+    log::info!("start to build engine");
     let agent = character.build(
         Arc::new(Attention::default()),
         Arc::new(DocumentSegmenter::default()),
@@ -385,7 +383,7 @@ async fn bootstrap_tee(
     ) {
         Ok(_) => Ok(()),
         Err(err) => {
-            log::error!(target: LOG_TARGET, "server error: {:?}", err);
+            log::error!("server error: {:?}", err);
             Err(err)
         }
     }
@@ -417,23 +415,26 @@ async fn bootstrap_local(
         .build()
         .await?;
     let my_principal = web3.get_principal();
-    log::info!(target: LOG_TARGET, "start local service, principal: {:?}", my_principal.to_text());
+    log::info!(
+        "start local service, principal: {:?}",
+        my_principal.to_text()
+    );
 
     // LL Models
-    log::info!(target: LOG_TARGET, "start to connect models");
+    log::info!("start to connect models");
     let model = connect_model(&cfg.llm)?;
 
     // ObjectStore
-    log::info!(target: LOG_TARGET, "start to connect object_store");
+    log::info!("start to connect object_store");
     let object_store = LocalFileSystem::new_with_prefix(store_path)?;
     let object_store = Arc::new(object_store);
 
-    log::info!(target: LOG_TARGET, "start to init knowledge_store");
+    log::info!("start to init knowledge_store");
     let knowledge_store =
         connect_knowledge_store(object_store.clone(), knowledge_table, &model).await?;
 
     let knowledge_store = Arc::new(knowledge_store);
-    log::info!(target: LOG_TARGET, "start to build engine");
+    log::info!("start to build engine");
     let agent = character.build(
         Arc::new(Attention::default()),
         Arc::new(DocumentSegmenter::default()),
@@ -495,12 +496,12 @@ async fn bootstrap_local(
             app_state,
             global_cancel_token.clone()
         ),
-        start_x(cfg.x, engine, agent, global_cancel_token.clone(), x_status),
+        start_x(cfg.x, engine, agent, global_cancel_token.clone(), x_status,),
         shutdown_future
     ) {
         Ok(_) => Ok(()),
         Err(err) => {
-            log::error!(target: LOG_TARGET, "server error: {:?}", err);
+            log::error!("server error: {:?}", err);
             Err(err)
         }
     }
@@ -555,10 +556,10 @@ async fn connect_knowledge_store(
     )
     .await?;
 
-    log::info!(target: LOG_TARGET, "knowledge_store start init");
+    log::info!("knowledge_store start init");
     let ks =
         KnowledgeStore::init(&mut store, namespace, model.ndims() as u16, Some(1024 * 10)).await?;
-    log::info!(target: LOG_TARGET, "knowledge_store ks: {:?}", ks.name());
+    log::info!("knowledge_store ks: {:?}", ks.name());
     Ok(ks)
 }
 
@@ -614,9 +615,7 @@ async fn start_server(
     let addr: SocketAddr = addr.parse()?;
     let listener = create_reuse_port_listener(addr).await?;
 
-    log::warn!(target: LOG_TARGET,
-                "{}@{} listening on {:?}", APP_NAME, APP_VERSION, addr);
-
+    log::warn!("{}@{} listening on {:?}", APP_NAME, APP_VERSION, addr);
     axum::serve(listener, app)
         .with_graceful_shutdown(async move {
             let _ = cancel_token.cancelled().await;
@@ -649,7 +648,7 @@ async fn start_x(
             .await?;
     }
 
-    let x = twitter::TwitterDaemon::new(engine, agent, scraper, status);
+    let x = twitter::TwitterDaemon::new(engine, agent, scraper, status, cfg.min_interval_secs);
     x.run(cancel_token).await
 }
 
@@ -676,7 +675,7 @@ async fn shutdown_signal(cancel_token: CancellationToken) -> Result<(), BoxError
         _ = terminate => {},
     }
 
-    log::warn!(target: LOG_TARGET, "received termination signal, starting graceful shutdown");
+    log::warn!("received termination signal, starting graceful shutdown");
     cancel_token.cancel();
     tokio::time::sleep(LOCAL_SERVER_SHUTDOWN_DURATION).await;
 

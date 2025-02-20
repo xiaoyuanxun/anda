@@ -37,7 +37,7 @@ use serde_bytes::ByteBuf;
 use serde_json::json;
 use std::{future::Future, sync::Arc, time::Duration};
 
-use super::base::BaseCtx;
+use super::base::{BaseCtx, CacheStoreFeatures};
 use crate::model::Model;
 
 /// Context for agent operations, providing access to models, tools, and other agents
@@ -135,6 +135,8 @@ impl AgentCtx {
             .child_with(format!("T:{}", tool_name), caller, user)
     }
 }
+
+impl CacheStoreFeatures for AgentCtx {}
 
 impl AgentContext for AgentCtx {
     /// Retrieves definitions for available tools

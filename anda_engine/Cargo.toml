@@ -11,6 +11,7 @@ license.workspace = true
 
 [dependencies]
 anda_core = { path = "../anda_core", version = "0.4" }
+async-trait = { workspace = true }
 candid = { workspace = true }
 bytes = { workspace = true }
 ciborium = { workspace = true }

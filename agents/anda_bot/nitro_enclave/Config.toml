@@ -21,6 +21,7 @@ password = ""                                    # optional
 email = ""                                       # optional
 two_factor_auth = ""                             # optional
 cookie_string = "auth_token=91**1a; ct0=4c**32;"
+min_interval_secs = 60                           # default 60
 
 [google]
 api_key = ""          # optional
