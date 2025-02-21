@@ -302,12 +302,13 @@ impl TwitterDaemon {
         if res.failed_reason.is_none() {
             // Reply to the original tweet
             let tweet: Option<&str> = tweet.id.as_deref();
-            let _ = self.scraper.send_tweet(&res.content, tweet, None).await?;
+            let content = remove_quotes(res.content);
+            let _ = self.scraper.send_tweet(&content, tweet, None).await?;
 
             log::info!(
                 tweet_user = tweet_user,
                 tweet_id = tweet_id,
-                chars = res.content.chars().count(),
+                chars = content.chars().count(),
                 time_elapsed = ctx.time_elapsed().as_millis() as u64;
                 "handle mention");
         }
@@ -378,7 +379,7 @@ impl TwitterDaemon {
                 .character
                 .to_request(
                     "\
-                    Reply the tweet with a single clear, natural sentence.\
+                    Reply the tweet with a single clear, natural sentence. No hashtags.\
                     "
                     .to_string(),
                     ctx.user(),
@@ -395,7 +396,7 @@ impl TwitterDaemon {
                 None => {
                     let _ = self
                         .scraper
-                        .send_tweet(&res.content, Some(tweet_id), None)
+                        .send_tweet(&remove_quotes(res.content), Some(tweet_id), None)
                         .await?;
                     return Ok(true);
                 }
@@ -416,7 +417,7 @@ impl TwitterDaemon {
                 .character
                 .to_request(
                     "\
-                    Reply the tweet with a single clear, natural sentence.\
+                    Quote the tweet with a single clear, natural sentence. No hashtags.\
                     "
                     .to_string(),
                     ctx.user(),
@@ -433,7 +434,7 @@ impl TwitterDaemon {
                 None => {
                     let _ = self
                         .scraper
-                        .send_quote_tweet(&res.content, tweet_id, None)
+                        .send_quote_tweet(&remove_quotes(res.content), tweet_id, None)
                         .await?;
                     return Ok(true);
                 }
@@ -508,5 +509,14 @@ mod tests {
         }
         // let tweets = serde_json::to_string_pretty(&tweets).unwrap();
         // std::fs::write("home_timeline_tweets.json", tweets).unwrap();
+    }
+}
+
+fn remove_quotes(s: String) -> String {
+    let mut chars = s.chars();
+    if chars.next() == Some('"') && chars.next_back() == Some('"') {
+        chars.collect()
+    } else {
+        s
     }
 }

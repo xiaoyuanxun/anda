@@ -105,7 +105,7 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "anda_bot"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "agent-twitter-client",
  "anda_core",
@@ -160,7 +160,7 @@ dependencies = [
 
 [[package]]
 name = "anda_engine"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "anda_core",
  "async-trait",
