@@ -4,7 +4,7 @@
 
 ## 🌍 README Translations
 
-[English readme](./README.md) | [中文说明](./README_CN.md)
+[English readme](./README.md) | [中文说明](./README_CN.md) | [日本語の説明](./README_JA.md)
 
 ## 🤖 Introduction
 
