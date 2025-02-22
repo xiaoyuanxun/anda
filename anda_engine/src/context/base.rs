@@ -28,6 +28,7 @@ use anda_core::{
     HttpFeatures, KeysFeatures, ObjectMeta, Path, PutMode, PutResult, StateFeatures, StoreFeatures,
 };
 use async_trait::async_trait;
+use bytes::Bytes;
 use candid::{
     CandidType, Decode, Principal,
     utils::{ArgumentEncoder, encode_args},
@@ -36,6 +37,7 @@ use ciborium::from_reader;
 use ic_cose_types::to_cbor_bytes;
 use serde::{Serialize, de::DeserializeOwned};
 use std::{
+    collections::BTreeSet,
     future::Future,
     sync::Arc,
     time::{Duration, Instant},
@@ -90,6 +92,7 @@ impl BaseCtx {
     pub(crate) fn new(
         id: Principal,
         cancellation_token: CancellationToken,
+        names: BTreeSet<Path>,
         web3: Arc<Web3SDK>,
         store: Store,
     ) -> Self {
@@ -100,7 +103,7 @@ impl BaseCtx {
             path: Path::default(),
             cancellation_token,
             start_at: Instant::now(),
-            cache: Arc::new(CacheService::new(CACHE_MAX_CAPACITY)),
+            cache: Arc::new(CacheService::new(CACHE_MAX_CAPACITY, names)),
             store,
             web3,
             depth: 0,
@@ -490,9 +493,24 @@ impl CacheFeatures for BaseCtx {
         self.cache.set(&self.path, key, val).await
     }
 
+    /// Sets a value in cache if key doesn't exist, returns true if set
+    async fn cache_set_if_not_exists<T>(&self, key: &str, val: (T, Option<CacheExpiry>)) -> bool
+    where
+        T: Sized + Serialize + Send,
+    {
+        self.cache.set_if_not_exists(&self.path, key, val).await
+    }
+
     /// Deletes a cached value by key, returns true if key existed
     async fn cache_delete(&self, key: &str) -> bool {
         self.cache.delete(&self.path, key).await
+    }
+
+    /// Returns an iterator over all cached items with raw value
+    fn cache_raw_iter(
+        &self,
+    ) -> impl Iterator<Item = (Arc<String>, Arc<(Bytes, Option<CacheExpiry>)>)> {
+        self.cache.iter(&self.path)
     }
 }
 

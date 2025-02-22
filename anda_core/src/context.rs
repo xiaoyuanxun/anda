@@ -38,8 +38,9 @@
 //! Implement these traits to create custom execution contexts for Agents and Tools. The `anda_engine` [`context`](https://github.com/ldclabs/anda/blob/main/anda_engine/src/context/mod.rs) module provides
 //! a complete implementation, but custom implementations can be created for specialized environments.
 
+use bytes::Bytes;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use std::{future::Future, time::Duration};
+use std::{future::Future, sync::Arc, time::Duration};
 
 pub use candid::Principal;
 pub use ic_cose_types::CanisterCaller;
@@ -362,8 +363,22 @@ pub trait CacheFeatures: Sized {
     where
         T: Sized + Serialize + Send;
 
+    /// Sets a value in cache if key doesn't exist, returns true if set
+    fn cache_set_if_not_exists<T>(
+        &self,
+        key: &str,
+        val: (T, Option<CacheExpiry>),
+    ) -> impl Future<Output = bool> + Send
+    where
+        T: Sized + Serialize + Send;
+
     /// Deletes a cached value by key, returns true if key existed
     fn cache_delete(&self, key: &str) -> impl Future<Output = bool> + Send;
+
+    /// Returns an iterator over all cached items with raw value
+    fn cache_raw_iter(
+        &self,
+    ) -> impl Iterator<Item = (Arc<String>, Arc<(Bytes, Option<CacheExpiry>)>)>;
 }
 
 /// HttpFeatures provides HTTP request capabilities for Agents and Tools

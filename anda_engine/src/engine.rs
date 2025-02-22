@@ -30,13 +30,14 @@
 //! ```
 
 use anda_core::{
-    Agent, AgentOutput, AgentSet, BoxError, FunctionDefinition, Tool, ToolSet, validate_path_part,
+    Agent, AgentOutput, AgentSet, BoxError, FunctionDefinition, Path, Tool, ToolSet,
+    validate_path_part,
 };
 use candid::Principal;
 use object_store::memory::InMemory;
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
-use std::sync::Arc;
+use std::{collections::BTreeSet, sync::Arc};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -343,7 +344,20 @@ impl EngineBuilder {
             return Err(format!("default agent {} not found", default_agent).into());
         }
 
-        let ctx = BaseCtx::new(self.id, self.cancellation_token, self.web3, self.store);
+        let names: BTreeSet<Path> = self
+            .tools
+            .set
+            .keys()
+            .chain(self.agents.set.keys())
+            .map(|s| Path::from(s.as_str()))
+            .collect();
+        let ctx = BaseCtx::new(
+            self.id,
+            self.cancellation_token,
+            names,
+            self.web3,
+            self.store,
+        );
         let ctx = AgentCtx::new(ctx, self.model, Arc::new(self.tools), Arc::new(self.agents));
 
         Ok(Engine {
@@ -357,9 +371,18 @@ impl EngineBuilder {
     /// Creates a mock context for testing purposes.
     #[cfg(test)]
     pub fn mock_ctx(self) -> AgentCtx {
+        let names: BTreeSet<Path> = self
+            .tools
+            .set
+            .keys()
+            .chain(self.agents.set.keys())
+            .map(|s| Path::from(s.as_str()))
+            .collect();
+
         let ctx = BaseCtx::new(
             Principal::anonymous(),
             self.cancellation_token,
+            names,
             self.web3,
             self.store,
         );

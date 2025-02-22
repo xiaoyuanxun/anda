@@ -31,6 +31,7 @@ use anda_core::{
     EmbeddingFeatures, FunctionDefinition, HttpFeatures, KeysFeatures, Message, ObjectMeta, Path,
     PutMode, PutResult, StateFeatures, StoreFeatures, ToolCall, ToolSet, Value,
 };
+use bytes::Bytes;
 use candid::{CandidType, Principal, utils::ArgumentEncoder};
 use serde::{Serialize, de::DeserializeOwned};
 use serde_bytes::ByteBuf;
@@ -556,9 +557,24 @@ impl CacheFeatures for AgentCtx {
         self.base.cache_set(key, val).await
     }
 
+    /// Sets a value in cache if key doesn't exist, returns true if set
+    async fn cache_set_if_not_exists<T>(&self, key: &str, val: (T, Option<CacheExpiry>)) -> bool
+    where
+        T: Sized + Serialize + Send,
+    {
+        self.base.cache_set_if_not_exists(key, val).await
+    }
+
     /// Deletes a cached value by key, returns true if key existed
     async fn cache_delete(&self, key: &str) -> bool {
         self.base.cache_delete(key).await
+    }
+
+    /// Returns an iterator over all cached items with raw value
+    fn cache_raw_iter(
+        &self,
+    ) -> impl Iterator<Item = (Arc<String>, Arc<(Bytes, Option<CacheExpiry>)>)> {
+        self.base.cache_raw_iter()
     }
 }
 
