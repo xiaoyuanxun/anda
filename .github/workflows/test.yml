@@ -12,5 +12,6 @@ jobs:
       - name: Run tests
         run: |
           sudo apt-get install -y protobuf-compiler
+          rustup update --no-self-update stable
           cargo clippy --verbose --all-targets --all-features
           cargo test --verbose --workspace -- --nocapture
