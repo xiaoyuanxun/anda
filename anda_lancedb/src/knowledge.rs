@@ -257,7 +257,7 @@ mod tests {
     use super::*;
     use candid::Principal;
     use ed25519_consensus::SigningKey;
-    use ic_agent::{identity::BasicIdentity, Identity};
+    use ic_agent::{Identity, identity::BasicIdentity};
     use ic_cose_types::types::object_store::CHUNK_SIZE;
     use ic_object_store::{
         agent::build_agent,

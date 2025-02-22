@@ -38,17 +38,17 @@
 //! Implement these traits to create custom execution contexts for Agents and Tools. The `anda_engine` [`context`](https://github.com/ldclabs/anda/blob/main/anda_engine/src/context/mod.rs) module provides
 //! a complete implementation, but custom implementations can be created for specialized environments.
 
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::{future::Future, time::Duration};
 
 pub use candid::Principal;
 pub use ic_cose_types::CanisterCaller;
-pub use object_store::{path::Path, ObjectMeta, PutMode, PutResult};
+pub use object_store::{ObjectMeta, PutMode, PutResult, path::Path};
 pub use serde_json::Value;
 pub use tokio_util::sync::CancellationToken;
 
-use crate::model::*;
 use crate::BoxError;
+use crate::model::*;
 
 /// AgentContext provides the execution environment for Agents.
 /// It combines core functionality with AI-specific features:

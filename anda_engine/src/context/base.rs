@@ -29,12 +29,12 @@ use anda_core::{
 };
 use async_trait::async_trait;
 use candid::{
-    utils::{encode_args, ArgumentEncoder},
     CandidType, Decode, Principal,
+    utils::{ArgumentEncoder, encode_args},
 };
 use ciborium::from_reader;
 use ic_cose_types::to_cbor_bytes;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use std::{
     future::Future,
     sync::Arc,

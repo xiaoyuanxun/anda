@@ -7,12 +7,12 @@
 //! - Response parsing and conversion to Anda's internal formats
 
 use anda_core::{
-    AgentOutput, BoxError, BoxPinFut, CompletionRequest, Embedding, FunctionDefinition, Message,
-    ToolCall, CONTENT_TYPE_JSON,
+    AgentOutput, BoxError, BoxPinFut, CONTENT_TYPE_JSON, CompletionRequest, Embedding,
+    FunctionDefinition, Message, ToolCall,
 };
-use log::{log_enabled, Level::Debug};
+use log::{Level::Debug, log_enabled};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::time::Duration;
 
 use super::{CompletionFeaturesDyn, EmbeddingFeaturesDyn};
@@ -459,11 +459,12 @@ impl CompletionFeaturesDyn for CompletionModel {
             if !req.tools.is_empty() {
                 body.insert(
                     "tools".to_string(),
-                    json!(req
-                        .tools
-                        .into_iter()
-                        .map(ToolDefinition::from)
-                        .collect::<Vec<_>>()),
+                    json!(
+                        req.tools
+                            .into_iter()
+                            .map(ToolDefinition::from)
+                            .collect::<Vec<_>>()
+                    ),
                 );
                 body.insert(
                     "tool_choice".to_string(),

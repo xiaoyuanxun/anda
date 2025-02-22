@@ -1,6 +1,6 @@
 use schemars::schema::{RootSchema, Schema, SchemaObject, SingleOrVec};
 
-pub use schemars::{schema_for, JsonSchema};
+pub use schemars::{JsonSchema, schema_for};
 
 /// Function Calling has strict requirements for JsonSchema, use fix_json_schema to fix it
 /// 1. Remove $schema field

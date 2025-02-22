@@ -28,10 +28,10 @@
 //! required for LLMs Function Calling.
 
 use ic_cose_types::validate_str;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use std::{collections::BTreeMap, future::Future, marker::PhantomData, sync::Arc};
 
-use crate::{context::BaseContext, model::FunctionDefinition, BoxError, BoxPinFut};
+use crate::{BoxError, BoxPinFut, context::BaseContext, model::FunctionDefinition};
 
 /// Core trait for implementing tools that can be used by the AI Agent system
 ///

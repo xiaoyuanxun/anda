@@ -30,7 +30,7 @@
 //! ```
 
 use anda_core::{
-    validate_path_part, Agent, AgentOutput, AgentSet, BoxError, FunctionDefinition, Tool, ToolSet,
+    Agent, AgentOutput, AgentSet, BoxError, FunctionDefinition, Tool, ToolSet, validate_path_part,
 };
 use candid::Principal;
 use object_store::memory::InMemory;

@@ -30,7 +30,7 @@
 //! let (content, meta) = store.store_get(&namespace, &path).await?;
 //! ```
 
-use anda_core::{path_lowercase, BoxError, BoxPinFut, ObjectMeta, Path, PutMode, PutResult};
+use anda_core::{BoxError, BoxPinFut, ObjectMeta, Path, PutMode, PutResult, path_lowercase};
 use futures::TryStreamExt;
 use object_store::{ObjectStore, PutOptions};
 use std::sync::Arc;

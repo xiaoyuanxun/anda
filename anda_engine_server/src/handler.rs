@@ -8,8 +8,8 @@ use candid::Principal;
 use ciborium::from_reader;
 use ic_cose_types::to_cbor_bytes;
 use ic_tee_agent::{
-    http::{Content, ContentWithSHA3, UserSignature, ANONYMOUS_PRINCIPAL},
     RPCRequest, RPCResponse,
+    http::{ANONYMOUS_PRINCIPAL, Content, ContentWithSHA3, UserSignature},
 };
 use serde_bytes::ByteBuf;
 use std::collections::BTreeMap;

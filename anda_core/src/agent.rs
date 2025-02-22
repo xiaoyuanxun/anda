@@ -36,9 +36,10 @@ use serde_json::json;
 use std::{collections::BTreeMap, future::Future, marker::PhantomData, sync::Arc};
 
 use crate::{
+    BoxError, BoxPinFut,
     context::AgentContext,
     model::{AgentOutput, FunctionDefinition},
-    validate_path_part, BoxError, BoxPinFut,
+    validate_path_part,
 };
 
 /// Core trait defining an AI agent's behavior

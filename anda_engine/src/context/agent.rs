@@ -31,8 +31,8 @@ use anda_core::{
     EmbeddingFeatures, FunctionDefinition, HttpFeatures, KeysFeatures, Message, ObjectMeta, Path,
     PutMode, PutResult, StateFeatures, StoreFeatures, ToolCall, ToolSet, Value,
 };
-use candid::{utils::ArgumentEncoder, CandidType, Principal};
-use serde::{de::DeserializeOwned, Serialize};
+use candid::{CandidType, Principal, utils::ArgumentEncoder};
+use serde::{Serialize, de::DeserializeOwned};
 use serde_bytes::ByteBuf;
 use serde_json::json;
 use std::{future::Future, sync::Arc, time::Duration};

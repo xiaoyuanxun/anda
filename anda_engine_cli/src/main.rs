@@ -1,8 +1,8 @@
 use anda_core::{AgentOutput, BoxError, HttpFeatures};
-use anda_web3_client::client::{load_identity, Client as Web3Client};
-use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
+use anda_web3_client::client::{Client as Web3Client, load_identity};
+use base64::{Engine, prelude::BASE64_URL_SAFE_NO_PAD};
 use clap::{Parser, Subcommand};
-use rand::{thread_rng, RngCore};
+use rand::{RngCore, thread_rng};
 use std::sync::Arc;
 
 #[derive(Parser)]

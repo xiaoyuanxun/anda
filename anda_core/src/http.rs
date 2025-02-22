@@ -17,12 +17,12 @@
 //! - [`canister_rpc`]: Makes a canister-specific RPC call with Candid encoding
 //! - [`cbor_rpc`]: Internal function for making CBOR-encoded HTTP requests
 
-use candid::{decode_args, encode_args, utils::ArgumentEncoder, CandidType, Principal};
+use candid::{CandidType, Principal, decode_args, encode_args, utils::ArgumentEncoder};
 use ciborium::from_reader;
 use http::header;
 use ic_cose_types::to_cbor_bytes;
 use reqwest::Client;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use serde_bytes::ByteBuf;
 use std::fmt::Display;
 

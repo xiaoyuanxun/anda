@@ -18,7 +18,7 @@ pub use web3::*;
 /// for controlled testing environments without requiring actual canister calls.
 pub mod mock {
     use anda_core::{BoxError, CanisterCaller};
-    use candid::{encode_args, utils::ArgumentEncoder, CandidType, Decode, Principal};
+    use candid::{CandidType, Decode, Principal, encode_args, utils::ArgumentEncoder};
 
     /// A mock implementation of CanisterCaller for testing purposes.
     ///
@@ -127,7 +127,7 @@ pub mod mock {
 mod tests {
     use super::*;
     use anda_core::CanisterCaller;
-    use candid::{encode_args, CandidType, Deserialize, Principal};
+    use candid::{CandidType, Deserialize, Principal, encode_args};
 
     #[derive(CandidType, Deserialize, Debug, PartialEq)]
     struct TestResponse {

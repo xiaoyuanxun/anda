@@ -1,23 +1,24 @@
-use anda_core::{cbor_rpc, BoxError, BoxPinFut, HttpFeatures, RPCRequest};
+use anda_core::{BoxError, BoxPinFut, HttpFeatures, RPCRequest, cbor_rpc};
 use anda_engine::context::Web3ClientFeatures;
 use candid::{
-    utils::{encode_args, ArgumentEncoder},
     CandidType, Decode, Principal,
+    utils::{ArgumentEncoder, encode_args},
 };
 use ciborium::from_reader;
 use ed25519_consensus::SigningKey;
 use ic_agent::identity::{AnonymousIdentity, BasicIdentity, Secp256k1Identity};
 use ic_cose::client::CoseSDK;
 use ic_cose_types::{
+    CanisterCaller,
     cose::{
         ed25519::ed25519_verify,
         k256::{secp256k1_verify_bip340, secp256k1_verify_ecdsa},
         sha3_256,
     },
-    to_cbor_bytes, CanisterCaller,
+    to_cbor_bytes,
 };
 use ic_tee_agent::http::sign_digest_to_headers;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use std::{sync::Arc, time::Duration};
 
 pub use ic_agent::{Agent, Identity};

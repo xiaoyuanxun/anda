@@ -7,12 +7,12 @@
 //! - Integration with ICP ledger standards
 //! - Atomic transfers with proper error handling
 
-use anda_core::{fix_json_schema, BoxError, FunctionDefinition, StateFeatures, Tool};
+use anda_core::{BoxError, FunctionDefinition, StateFeatures, Tool, fix_json_schema};
 use anda_engine::context::BaseCtx;
 use num_traits::cast::ToPrimitive;
-use schemars::{schema_for, JsonSchema};
+use schemars::{JsonSchema, schema_for};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use super::ICPLedgers;
@@ -103,7 +103,7 @@ impl Tool<BaseCtx> for TransferTool {
 mod tests {
     use super::*;
     use anda_engine::context::mock;
-    use candid::{decode_args, encode_args, Nat, Principal};
+    use candid::{Nat, Principal, decode_args, encode_args};
     use icrc_ledger_types::icrc1::{
         account::principal_to_subaccount,
         transfer::{TransferArg, TransferError},

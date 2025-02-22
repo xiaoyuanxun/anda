@@ -28,9 +28,9 @@
 //! ```
 
 use anda_core::{
-    evaluate_tokens, Agent, AgentContext, AgentOutput, BoxError, CacheExpiry, CacheFeatures,
-    CompletionFeatures, CompletionRequest, Documents, Embedding, EmbeddingFeatures, Knowledge,
-    KnowledgeFeatures, KnowledgeInput, Message, StateFeatures, VectorSearchFeatures,
+    Agent, AgentContext, AgentOutput, BoxError, CacheExpiry, CacheFeatures, CompletionFeatures,
+    CompletionRequest, Documents, Embedding, EmbeddingFeatures, Knowledge, KnowledgeFeatures,
+    KnowledgeInput, Message, StateFeatures, VectorSearchFeatures, evaluate_tokens,
 };
 use ic_cose_types::to_cbor_bytes;
 use serde::{Deserialize, Serialize};
@@ -217,7 +217,8 @@ impl Character {
             username = self.username,
             adjectives_0 = self
                 .style
-                .adjectives.first()
+                .adjectives
+                .first()
                 .unwrap_or(&"mysterious".to_string()),
             identity = self.identity,
             description = self.description,
@@ -225,29 +226,18 @@ impl Character {
             learning_persona_flexibility = self.learning.persona_flexibility,
             traits = self.traits.join(" |\n"),
             style_tone = self.style.tone.join(" + "),
-            style_chat = self
-                .style
-                .chat
-                .iter()
-                .fold(String::new(), |mut output, b| {
-                    let _ = writeln!(output, "◆ {b}");
-                    output
-                }),
-            style_post = self
-                .style
-                .chat
-                .iter()
-                .fold(String::new(), |mut output, b| {
-                    let _ = writeln!(output, "▸ {b}");
-                    output
-                }),
-            topics = self
-                .topics
-                .iter()
-                .fold(String::new(), |mut output, b| {
-                    let _ = writeln!(output, "★ {b}");
-                    output
-                }),
+            style_chat = self.style.chat.iter().fold(String::new(), |mut output, b| {
+                let _ = writeln!(output, "◆ {b}");
+                output
+            }),
+            style_post = self.style.chat.iter().fold(String::new(), |mut output, b| {
+                let _ = writeln!(output, "▸ {b}");
+                output
+            }),
+            topics = self.topics.iter().fold(String::new(), |mut output, b| {
+                let _ = writeln!(output, "★ {b}");
+                output
+            }),
             interests = self
                 .style
                 .interests
@@ -256,21 +246,18 @@ impl Character {
                     let _ = writeln!(output, "▣ {b}");
                     output
                 }),
-            goals = self
-                .goals
-                .iter()
-                .fold(String::new(), |mut output, b| {
-                    let _ = writeln!(output, "► {b}");
-                    output
-                }),
-            learning_active_inquiry = self
-                .learning
-                .active_inquiry
-                .iter()
-                .fold(String::new(), |mut output, b| {
-                    let _ = writeln!(output, "🔍 {b}");
-                    output
-                }),
+            goals = self.goals.iter().fold(String::new(), |mut output, b| {
+                let _ = writeln!(output, "► {b}");
+                output
+            }),
+            learning_active_inquiry =
+                self.learning
+                    .active_inquiry
+                    .iter()
+                    .fold(String::new(), |mut output, b| {
+                        let _ = writeln!(output, "🔍 {b}");
+                        output
+                    }),
             adjectives = self.style.adjectives.join(" › "),
             meme_phrases = self.style.meme_phrases.join("  "),
             style_chat_0 = self
@@ -279,7 +266,11 @@ impl Character {
                 .get(1)
                 .unwrap_or(&"Keep responses concise and under 280 characters".to_string()),
             learning_mechanics = self.learning.mechanics.join(" + "),
-            goals_n = self.goals.iter().last().unwrap_or(&"Seek knowledge and share wisdom".to_string()),
+            goals_n = self
+                .goals
+                .iter()
+                .last()
+                .unwrap_or(&"Seek knowledge and share wisdom".to_string()),
         );
 
         CompletionRequest {

@@ -4,7 +4,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 pub use anda_engine::{model::EmbeddingFeaturesDyn, store::VectorSearchFeaturesDyn};
 pub use arrow_array::{
-    types::Float16Type, FixedSizeListArray, RecordBatch, RecordBatchIterator, StringArray,
+    FixedSizeListArray, RecordBatch, RecordBatchIterator, StringArray, types::Float16Type,
 };
 pub use arrow_schema::{DataType, Field, Schema, SchemaRef};
 pub use lance_index::scalar::FullTextSearchQuery;
@@ -12,14 +12,14 @@ pub use lance_io::object_store::{
     ObjectStore as LanceObjectStore, ObjectStoreParams, ObjectStoreProvider,
 };
 pub use lancedb::{
+    Table,
     connection::{ConnectBuilder, Connection, CreateTableMode},
-    index::{scalar::FtsIndexBuilder, Index},
+    index::{Index, scalar::FtsIndexBuilder},
     query::{ExecutableQuery, QueryBase, Select},
     table::OptimizeAction,
-    Table,
 };
 pub use object_store::{
-    local::LocalFileSystem, memory::InMemory, path::Path, DynObjectStore, ObjectStore,
+    DynObjectStore, ObjectStore, local::LocalFileSystem, memory::InMemory, path::Path,
 };
 
 #[derive(Clone)]

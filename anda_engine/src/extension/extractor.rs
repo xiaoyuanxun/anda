@@ -42,14 +42,14 @@
 //! - These traits can be easily derived using the `derive` macro
 
 use anda_core::{
-    fix_json_schema, Agent, AgentOutput, BoxError, CompletionFeatures, CompletionRequest,
-    FunctionDefinition, Tool,
+    Agent, AgentOutput, BoxError, CompletionFeatures, CompletionRequest, FunctionDefinition, Tool,
+    fix_json_schema,
 };
-use schemars::{schema_for, JsonSchema};
-use serde_json::{json, Value};
+use schemars::{JsonSchema, schema_for};
+use serde_json::{Value, json};
 use std::marker::PhantomData;
 
-pub use serde::{de::DeserializeOwned, Deserialize, Serialize};
+pub use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::context::{AgentCtx, BaseCtx};
 

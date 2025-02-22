@@ -2,15 +2,15 @@ use anda_core::BoxError;
 use anda_engine::{
     context::Web3SDK,
     engine::EngineBuilder,
-    model::{openai, xai, Model},
+    model::{Model, openai, xai},
     store::Store,
 };
-use anda_engine_server::{shutdown_signal, ServerBuilder};
+use anda_engine_server::{ServerBuilder, shutdown_signal};
 use anda_lancedb::lancedb::InMemory;
-use anda_web3_client::client::{load_identity, Client as Web3Client};
+use anda_web3_client::client::{Client as Web3Client, load_identity};
 use clap::Parser;
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
-use structured_logger::{async_json::new_writer, get_env_level, Builder};
+use structured_logger::{Builder, async_json::new_writer, get_env_level};
 use tokio_util::sync::CancellationToken;
 
 mod agent;

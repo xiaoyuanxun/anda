@@ -20,7 +20,7 @@
 //! and interactions in complex environments. It provides both automated decision-making and
 //! configurable parameters for fine-tuning behavior.
 
-use anda_core::{evaluate_tokens, AgentOutput, CompletionFeatures, CompletionRequest, Message};
+use anda_core::{AgentOutput, CompletionFeatures, CompletionRequest, Message, evaluate_tokens};
 
 static HIGH_REWARD_COMMAND: &str = "HIGH_REWARD";
 static MEDIUM_REWARD_COMMAND: &str = "MEDIUM_REWARD";
@@ -122,7 +122,8 @@ impl Attention {
         }
 
         let req = CompletionRequest {
-            system: Some(format!("\
+            system: Some(format!(
+                "\
                 You are an expert evaluator for article content quality, specializing in assessing knowledge value. Your task is to analyze the provided article, classify its quality into three levels, and determine the appropriate storage and reward action.\n\n\
                 ## Evaluation criteria:\n\
                 1. Knowledge Depth: Does the article provide detailed, well-researched, or expert-level insights?\n\
@@ -131,8 +132,10 @@ impl Attention {
                 ## Classification Levels:\n\
                 - {HIGH_REWARD_COMMAND}: The article has exceptional knowledge value, with deep insights, originality, and significant relevance.\n\
                 - {MEDIUM_REWARD_COMMAND}: The article has good knowledge value, meeting most criteria but with some areas for improvement.\n\
-                - {IGNORE_COMMAND}: The article does not meet the criteria for high or medium knowledge value and requires no action.")),
-            prompt: format!("\
+                - {IGNORE_COMMAND}: The article does not meet the criteria for high or medium knowledge value and requires no action."
+            )),
+            prompt: format!(
+                "\
                 ## Evaluation Task:\n\
                 1. Analyze the article based on Knowledge Depth, Originality, and Relevance.\n\
                 2. Classify the article into one of the three levels:\n\
@@ -207,7 +210,8 @@ impl Attention {
         );
 
         let req = CompletionRequest {
-            system: Some(format!("\
+            system: Some(format!(
+                "\
                 You are an intelligent assistant monitoring a multi-user discussion. \
                 Your task is to determine whether to respond to messages based on their \
                 **substantive relevance** to the conversation topic, while filtering out \
@@ -229,8 +233,10 @@ impl Attention {
                 - Off-topic socializing (\"How's the weather?\")\n\
                 - Meta-comments about your presence (\"Why is the bot here?\")\n\
                 - Incomplete/ambiguous messages\n\
-                ")),
-            prompt: format!("\
+                "
+            )),
+            prompt: format!(
+                "\
                 **Conversation Topic:** `{}`\n\
                 **Message Context:**\n\
                 ```\n\
@@ -254,7 +260,9 @@ impl Attention {
                 → Yes → {STOP_COMMAND}\n\
                 → No → {IGNORE_COMMAND}\n\
                 ",
-                topics.join(", "), recent_messages.join("\n"), user_message
+                topics.join(", "),
+                recent_messages.join("\n"),
+                user_message
             ),
             ..Default::default()
         };

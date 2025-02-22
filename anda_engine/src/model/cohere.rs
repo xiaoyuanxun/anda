@@ -5,7 +5,7 @@
 //! Cohere embedding models and handles API communication, error handling,
 //! and response parsing.
 
-use anda_core::{BoxError, BoxPinFut, Embedding, CONTENT_TYPE_JSON};
+use anda_core::{BoxError, BoxPinFut, CONTENT_TYPE_JSON, Embedding};
 use serde::Deserialize;
 use serde_json::json;
 use std::time::Duration;
@@ -39,7 +39,7 @@ pub struct Client {
 
 impl Client {
     /// Creates a new Cohere API client with the provided API key
-    /// 
+    ///
     /// # Arguments
     /// * `api_key` - Cohere API key for authentication
     pub fn new(api_key: &str) -> Self {
@@ -73,7 +73,7 @@ impl Client {
     }
 
     /// Creates a POST request builder for the specified API path
-    /// 
+    ///
     /// # Arguments
     /// * `path` - API endpoint path (e.g., "/v1/embed")
     pub fn post(&self, path: &str) -> reqwest::RequestBuilder {
@@ -82,10 +82,10 @@ impl Client {
     }
 
     /// Creates an embedding model instance with default dimensions
-    /// 
+    ///
     /// # Arguments
     /// * `model` - Model identifier (e.g., EMBED_MULTILINGUAL_V3)
-    /// 
+    ///
     /// # Returns
     /// EmbeddingModel instance with appropriate dimensions
     pub fn embedding_model(&self, model: &str) -> EmbeddingModel {
@@ -201,7 +201,7 @@ pub struct EmbeddingModel {
 
 impl EmbeddingModel {
     /// Creates a new embedding model instance
-    /// 
+    ///
     /// # Arguments
     /// * `client` - Cohere API client
     /// * `model` - Model identifier
@@ -223,13 +223,13 @@ impl EmbeddingFeaturesDyn for EmbeddingModel {
     }
 
     /// Generates embeddings for a batch of texts
-    /// 
+    ///
     /// # Arguments
     /// * `texts` - Vector of text strings to embed
-    /// 
+    ///
     /// # Returns
     /// Future resolving to a vector of Embedding structs
-    /// 
+    ///
     /// https://docs.cohere.com/reference/embed
     /// Maximum number of texts per call is 96.
     /// Tecommend reducing the length of each text to be under 512 tokens for optimal quality.
@@ -265,10 +265,10 @@ impl EmbeddingFeaturesDyn for EmbeddingModel {
     }
 
     /// Generates an embedding for a single query text
-    /// 
+    ///
     /// # Arguments
     /// * `text` - Query text to embed
-    /// 
+    ///
     /// # Returns
     /// Future resolving to a single Embedding struct
     fn embed_query(&self, text: String) -> BoxPinFut<Result<Embedding, BoxError>> {

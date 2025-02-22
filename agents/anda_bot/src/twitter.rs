@@ -445,6 +445,15 @@ impl TwitterDaemon {
     }
 }
 
+fn remove_quotes(s: String) -> String {
+    let mut chars = s.chars();
+    if chars.next() == Some('"') && chars.next_back() == Some('"') {
+        chars.collect()
+    } else {
+        s
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -509,14 +518,5 @@ mod tests {
         }
         // let tweets = serde_json::to_string_pretty(&tweets).unwrap();
         // std::fs::write("home_timeline_tweets.json", tweets).unwrap();
-    }
-}
-
-fn remove_quotes(s: String) -> String {
-    let mut chars = s.chars();
-    if chars.next() == Some('"') && chars.next_back() == Some('"') {
-        chars.collect()
-    } else {
-        s
     }
 }

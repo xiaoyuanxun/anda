@@ -27,11 +27,11 @@
 //!     .build("default_agent".to_string())?;
 //! ```
 
-use anda_core::{fix_json_schema, BoxError, FunctionDefinition, HttpFeatures, Tool};
+use anda_core::{BoxError, FunctionDefinition, HttpFeatures, Tool, fix_json_schema};
 use http::header;
-use schemars::{schema_for, JsonSchema};
+use schemars::{JsonSchema, schema_for};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use url::Url;
 
 use crate::context::BaseCtx;

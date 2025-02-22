@@ -1,6 +1,6 @@
 use ic_crypto_standalone_sig_verifier::{
-    user_public_key_from_bytes, verify_basic_sig_by_public_key, verify_canister_sig,
-    KeyBytesContentType,
+    KeyBytesContentType, user_public_key_from_bytes, verify_basic_sig_by_public_key,
+    verify_canister_sig,
 };
 use ic_types::crypto::threshold_sig::IcRootOfTrust;
 use lazy_static::lazy_static;

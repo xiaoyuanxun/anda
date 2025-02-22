@@ -3,11 +3,11 @@
 //! This module provides functionality for querying account balances on the ICP network.
 //! It implements the [`Tool`] trait to enable AI agents to interact with ICP ledgers.
 
-use anda_core::{fix_json_schema, BoxError, FunctionDefinition, Tool};
+use anda_core::{BoxError, FunctionDefinition, Tool, fix_json_schema};
 use anda_engine::context::BaseCtx;
-use schemars::{schema_for, JsonSchema};
+use schemars::{JsonSchema, schema_for};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use super::ICPLedgers;
@@ -61,9 +61,9 @@ impl Tool<BaseCtx> for BalanceOfTool {
             .map(|k| k.as_str())
             .collect::<Vec<_>>();
         format!(
-                "Query the balance of the specified account on ICP blockchain for the following tokens: {}",
-                tokens.join(", ")
-            )
+            "Query the balance of the specified account on ICP blockchain for the following tokens: {}",
+            tokens.join(", ")
+        )
     }
 
     fn definition(&self) -> FunctionDefinition {

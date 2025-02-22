@@ -28,7 +28,7 @@ use candid::{Nat, Principal};
 use icrc_ledger_types::{
     icrc::generic_metadata_value::MetadataValue,
     icrc1::{
-        account::{principal_to_subaccount, Account},
+        account::{Account, principal_to_subaccount},
         transfer::{TransferArg, TransferError},
     },
 };

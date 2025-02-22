@@ -32,7 +32,7 @@ use ciborium::from_reader;
 use ic_cose_types::to_cbor_bytes;
 use moka::{future::Cache, policy::Expiry};
 use object_store::path::Path;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use std::{
     future::Future,
     sync::Arc,
@@ -45,11 +45,11 @@ pub struct CacheService {
 }
 
 /// CacheService provides an in-memory LRU cache with expiration for AI Agent system's agents and tools.
-/// 
+///
 /// In the Anda Engine implementation, the `path` parameter is derived from agents' or tools' `name`,
 /// ensuring that each agent or tool has isolated cache storage.
-/// 
-/// Note: Data is cached only in memory and will be lost upon system restart. 
+///
+/// Note: Data is cached only in memory and will be lost upon system restart.
 /// For persistent storage, use `StoreFeatures`.
 impl CacheService {
     /// Creates a new CacheService instance with specified maximum capacity

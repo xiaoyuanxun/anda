@@ -27,7 +27,7 @@
 //! ```
 
 use anda_core::{
-    evaluate_tokens, Agent, AgentOutput, BoxError, CompletionFeatures, Tool, ToolCall,
+    Agent, AgentOutput, BoxError, CompletionFeatures, Tool, ToolCall, evaluate_tokens,
 };
 use schemars::JsonSchema;
 
@@ -70,7 +70,8 @@ impl DocumentSegmenter {
         let tool = SubmitTool::<SegmentOutput>::new();
         let tool_name = tool.name();
         let max_tokens_guard = max_tokens - 100;
-        let system = format!("\
+        let system = format!(
+            "\
             You are an expert in summarizing and segmenting long documents. Your task is to take a lengthy knowledge document and break it into multiple concise segments. Each segment should meet the following requirements:\n\n\
             1. Token Limit per Segment: Each segment must not exceed {segment_tokens} tokens.\n\
             2. Total Token Limit: The combined tokens of all segments must not exceed {max_tokens_guard} tokens.\n\
@@ -79,7 +80,8 @@ impl DocumentSegmenter {
             5. Clarity: Each segment should be easy to understand and free from unnecessary repetition.\n\n\
             Output Format:\n\
             Use the `{tool_name}` tool to return the segments as a JSON array of strings. Each string represents a segment, and the total tokens of all segments must not exceed {max_tokens_guard}.\
-        ");
+        "
+        );
 
         let extractor = Extractor::new_with_tool(tool, Some(max_tokens), Some(system));
         Self {
@@ -127,7 +129,8 @@ impl DocumentSegmenter {
         let tool_name = &self.tool_name;
         let segment_tokens = self.segment_tokens;
         let max_tokens_guard = self.max_tokens - 100;
-        let prompt = format!("\
+        let prompt = format!(
+            "\
             Document Content:\n\
             {content}\n\n\
             Token Limit per Segment: {segment_tokens}\n\

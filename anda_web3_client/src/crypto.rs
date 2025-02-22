@@ -1,5 +1,6 @@
 use ic_cose::rand_bytes;
 use ic_cose_types::{
+    BoxError,
     cose::kdf::derive_a256gcm_key,
     cose::{
         ecdh::ecdh_x25519,
@@ -7,7 +8,6 @@ use ic_cose_types::{
         mac3_256,
     },
     types::{ECDHInput, ECDHOutput},
-    BoxError,
 };
 use serde_bytes::{ByteArray, ByteBuf};
 
