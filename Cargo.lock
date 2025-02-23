@@ -192,7 +192,7 @@ dependencies = [
 
 [[package]]
 name = "anda_engine_cli"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anda_core",
  "anda_web3_client",
