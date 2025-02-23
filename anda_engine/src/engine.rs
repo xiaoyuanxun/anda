@@ -56,6 +56,8 @@ pub struct Engine {
     ctx: AgentCtx,
     name: String, // engine name
     default_agent: String,
+    export_agents: BTreeSet<String>,
+    export_tools: BTreeSet<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -127,7 +129,7 @@ impl Engine {
         user: Option<String>,
     ) -> Result<AgentCtx, BoxError> {
         let name = agent_name.to_ascii_lowercase();
-        if !self.ctx.agents.contains(&name) {
+        if !self.export_agents.contains(&name) || !self.ctx.agents.contains(&name) {
             return Err(format!("agent {} not found", name).into());
         }
 
@@ -170,7 +172,7 @@ impl Engine {
         caller: Principal,
         user: Option<String>,
     ) -> Result<(String, bool), BoxError> {
-        if !self.ctx.tools.contains(&name) {
+        if !self.export_tools.contains(&name) || !self.ctx.tools.contains(&name) {
             return Err(format!("tool {} not found", name).into());
         }
 
@@ -194,13 +196,34 @@ impl Engine {
         self.ctx.tools.definitions(names)
     }
 
-    pub fn information(&self) -> Information {
+    /// Returns information about the engine, including agent and tool definitions.
+    pub fn information(&self, with_detail: bool) -> Information {
         Information {
             id: self.id,
             name: self.name.clone(),
             default_agent: self.default_agent.clone(),
-            agent_definitions: self.agent_definitions(None),
-            tool_definitions: self.tool_definitions(None),
+            agent_definitions: if with_detail {
+                self.agent_definitions(Some(
+                    self.export_agents
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>()
+                        .as_slice(),
+                ))
+            } else {
+                vec![]
+            },
+            tool_definitions: if with_detail {
+                self.tool_definitions(Some(
+                    self.export_tools
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>()
+                        .as_slice(),
+                ))
+            } else {
+                vec![]
+            },
         }
     }
 }
@@ -216,6 +239,8 @@ pub struct EngineBuilder {
     store: Store,
     web3: Arc<Web3SDK>,
     cancellation_token: CancellationToken,
+    export_agents: BTreeSet<String>,
+    export_tools: BTreeSet<String>,
 }
 
 impl Default for EngineBuilder {
@@ -237,6 +262,8 @@ impl EngineBuilder {
             store: Store::new(mstore),
             web3: Arc::new(Web3SDK::Web3(Web3Client::not_implemented())),
             cancellation_token: CancellationToken::new(),
+            export_agents: BTreeSet::new(),
+            export_tools: BTreeSet::new(),
         }
     }
 
@@ -336,21 +363,40 @@ impl EngineBuilder {
         Ok(self)
     }
 
+    /// Exports agents by name.
+    pub fn export_agents(mut self, agents: &[&str]) -> Self {
+        for agent in agents {
+            self.export_agents.insert(agent.to_ascii_lowercase());
+        }
+        self
+    }
+
+    /// Exports tools by name.
+    pub fn export_tools(mut self, tools: &[&str]) -> Self {
+        for tool in tools {
+            self.export_tools.insert(tool.to_string());
+        }
+        self
+    }
+
     /// Finalizes the builder and creates an Engine instance.
     /// Requires a default agent name to be specified.
     /// Returns an error if the default agent is not found.
-    pub fn build(self, default_agent: String) -> Result<Engine, BoxError> {
+    pub fn build(mut self, default_agent: String) -> Result<Engine, BoxError> {
         if !self.agents.contains(&default_agent) {
             return Err(format!("default agent {} not found", default_agent).into());
         }
+        self.export_agents
+            .insert(default_agent.to_ascii_lowercase());
 
-        let names: BTreeSet<Path> = self
+        let mut names: BTreeSet<Path> = self
             .tools
             .set
             .keys()
             .chain(self.agents.set.keys())
             .map(|s| Path::from(s.as_str()))
             .collect();
+        names.insert(Path::from(ROOT_PATH));
         let ctx = BaseCtx::new(
             self.id,
             self.cancellation_token,
@@ -365,20 +411,22 @@ impl EngineBuilder {
             ctx,
             name: self.name,
             default_agent,
+            export_agents: self.export_agents,
+            export_tools: self.export_tools,
         })
     }
 
     /// Creates a mock context for testing purposes.
     #[cfg(test)]
     pub fn mock_ctx(self) -> AgentCtx {
-        let names: BTreeSet<Path> = self
+        let mut names: BTreeSet<Path> = self
             .tools
             .set
             .keys()
             .chain(self.agents.set.keys())
             .map(|s| Path::from(s.as_str()))
             .collect();
-
+        names.insert(Path::from(ROOT_PATH));
         let ctx = BaseCtx::new(
             Principal::anonymous(),
             self.cancellation_token,

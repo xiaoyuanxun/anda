@@ -42,7 +42,7 @@ use std::{
 };
 
 #[derive(Debug)]
-pub struct CacheService {
+pub(crate) struct CacheService {
     #[allow(clippy::type_complexity)]
     cache_store: HashMap<Path, Cache<String, Arc<(Bytes, Option<CacheExpiry>)>>>,
 }

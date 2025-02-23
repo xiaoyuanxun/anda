@@ -6,6 +6,7 @@ use anda_engine::{
     store::Store,
 };
 use anda_engine_server::{ServerBuilder, shutdown_signal};
+use anda_icp::ledger::BalanceOfTool;
 use anda_lancedb::lancedb::InMemory;
 use anda_web3_client::client::{Client as Web3Client, load_identity};
 use clap::Parser;
@@ -159,7 +160,8 @@ async fn main() -> Result<(), BoxError> {
         .with_model(model)
         .with_store(Store::new(object_store))
         .register_tools(agent.tools()?)?
-        .register_agent(agent)?;
+        .register_agent(agent)?
+        .export_tools(&[BalanceOfTool::NAME]);
 
     // Initialize and start the server
     let engine = engine.build(ICPLedgerAgent::NAME.to_string())?;

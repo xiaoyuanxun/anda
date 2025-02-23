@@ -92,6 +92,10 @@ impl ServerBuilder {
         let app = Router::new()
             .route("/", routing::get(get_information))
             .route("/.well-known/information", routing::get(get_information))
+            .route(
+                "/.well-known/information/{id}",
+                routing::get(get_engine_information),
+            )
             .route("/{*id}", routing::post(anda_engine))
             .with_state(state);
 

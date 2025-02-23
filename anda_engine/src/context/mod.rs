@@ -9,7 +9,6 @@ mod web3;
 
 pub use agent::*;
 pub use base::*;
-pub use cache::*;
 pub use web3::*;
 
 /// Mock implementations for testing purposes.

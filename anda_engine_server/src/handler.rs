@@ -1,4 +1,4 @@
-use anda_engine::engine::Engine;
+use anda_engine::engine::{Engine, InformationJSON};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -40,7 +40,11 @@ pub async fn get_information(
     };
 
     let info = AppInformation {
-        engines: app.engines.iter().map(|(_, e)| e.information()).collect(),
+        engines: app
+            .engines
+            .iter()
+            .map(|(_, e)| e.information(false))
+            .collect(),
         default_engine: app.default_engine,
         start_time_ms: app.start_time_ms,
         caller,
@@ -52,6 +56,32 @@ pub async fn get_information(
     }
 }
 
+/// GET /.well-known/information/{id}
+pub async fn get_engine_information(
+    State(app): State<AppState>,
+    headers: http::HeaderMap,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let id = if &id == "default" {
+        app.default_engine
+    } else if let Ok(id) = Principal::from_text(&id) {
+        id
+    } else {
+        return (StatusCode::BAD_REQUEST, format!("invalid engine id: {id}")).into_response();
+    };
+
+    match app.engines.get(&id) {
+        Some(engine) => {
+            let info = engine.information(true);
+            match Content::from(&headers) {
+                Content::CBOR(_, _) => Content::CBOR(info, None).into_response(),
+                _ => Content::JSON(InformationJSON::from(info), None).into_response(),
+            }
+        }
+        None => (StatusCode::NOT_FOUND, format!("engine {id} not found")).into_response(),
+    }
+}
+
 /// POST /{*id}
 pub async fn anda_engine(
     State(app): State<AppState>,
@@ -59,7 +89,14 @@ pub async fn anda_engine(
     Path(id): Path<String>,
     ct: ContentWithSHA3<RPCRequest>,
 ) -> impl IntoResponse {
-    let id = Principal::from_text(&id).unwrap_or(app.default_engine);
+    let id = if &id == "default" {
+        app.default_engine
+    } else if let Ok(id) = Principal::from_text(&id) {
+        id
+    } else {
+        return (StatusCode::BAD_REQUEST, format!("invalid engine id: {id}")).into_response();
+    };
+
     let (req, hash) = match ct {
         ContentWithSHA3::CBOR(req, hash) => (req, hash),
         ContentWithSHA3::JSON(_, _) => {
@@ -117,6 +154,12 @@ async fn engine_run(
                 .map_err(|err| format!("failed to call tool: {err:?}"))?;
             Ok(to_cbor_bytes(&res).into())
         }
-        _ => Err(format!("engine {id} not implemented")),
+        "information" => {
+            let args: (bool,) = from_reader(req.params.as_slice())
+                .map_err(|err| format!("failed to decode params: {err:?}"))?;
+            let res = engine.information(args.0);
+            Ok(to_cbor_bytes(&res).into())
+        }
+        method => Err(format!("{method} on engine {id} not implemented")),
     }
 }
