@@ -18,6 +18,7 @@ use crate::handler::ServiceStatus;
 
 const MAX_HISTORY_TWEETS: i64 = 21;
 const MAX_SEEN_TWEET_IDS: usize = 10000;
+static IGNORE_COMMAND: &str = "IGNORE";
 
 pub struct TwitterDaemon {
     engine: Arc<Engine>,
@@ -131,7 +132,7 @@ impl TwitterDaemon {
                 _ = cancel_token.cancelled() => {
                     return Ok(());
                 },
-                _ = sleep(Duration::from_secs(rand_number(min_interval_secs..=3 * min_interval_secs))) => {},
+                _ = sleep(Duration::from_secs(rand_number(min_interval_secs..=5 * min_interval_secs))) => {},
             }
         }
     }
@@ -179,7 +180,7 @@ impl TwitterDaemon {
         let ctx = self.engine.ctx_with(
             &self.agent.as_ref().name(),
             ANONYMOUS,
-            Some(self.agent.character.username.clone()),
+            Some(NAME.to_string()),
         )?;
 
         let mut seen_tweet_ids: Vec<String> = ctx.cache_store_get("seen_tweet_ids").await?;
@@ -378,7 +379,7 @@ impl TwitterDaemon {
                     Respond the tweet AS **{}** would - only reply if your persona deems it necessary. When engaging:\n\
                     1. Use your character's unique voice and communication style naturally\n\
                     2. Keep responses to one authentic-sentence without hashtags\n\
-                    3. Return empty if your persona wouldn't respond to this tweet\n\n\
+                    3. Return {IGNORE_COMMAND} if your persona wouldn't respond to this tweet\n\n\
                     ## Tweet Content:\n{:?}\
                 ", self.agent.character.name, tweet_content),
                 Some(NAME.to_string()),
@@ -386,22 +387,19 @@ impl TwitterDaemon {
 
         let res = ctx.completion(req).await?;
         match res.failed_reason {
-            Some(reason) => {
-                return Err(format!("Failed to generate response for tweet: {reason}").into());
-            }
+            Some(reason) => Err(format!("Failed to generate response for tweet: {reason}").into()),
             None => {
                 let content = remove_quotes(res.content);
-                if !content.is_empty() {
-                    let _ = self
-                        .scraper
-                        .send_tweet(&content, Some(tweet_id), None)
-                        .await?;
-                    return Ok(true);
+                if content.is_empty() || content.contains(IGNORE_COMMAND) {
+                    return Err("Ignore this tweet".into());
                 }
+                let _ = self
+                    .scraper
+                    .send_tweet(&content, Some(tweet_id), None)
+                    .await?;
+                Ok(true)
             }
         }
-
-        Ok(false)
     }
 
     async fn handle_quote(
@@ -410,7 +408,8 @@ impl TwitterDaemon {
         tweet_content: &str,
         tweet_id: &str,
     ) -> Result<bool, BoxError> {
-        let req = self
+        if self.agent.attention.should_quote(ctx, tweet_content).await {
+            let req = self
             .agent
             .character
             .to_request(
@@ -418,20 +417,22 @@ impl TwitterDaemon {
                     Respond the tweet AS **{}** would - only reply if your persona deems it necessary. When engaging:\n\
                     1. Use your character's unique voice and communication style naturally\n\
                     2. Keep responses to one authentic-sentence without hashtags\n\
-                    3. Return empty if your persona wouldn't respond to this tweet\n\n\
+                    3. Return {IGNORE_COMMAND} if your persona wouldn't respond to this tweet\n\n\
                     ## Tweet Content:\n{:?}\
                 ", self.agent.character.name, tweet_content),
                 Some(NAME.to_string()),
             );
 
-        let res = ctx.completion(req).await?;
-        match res.failed_reason {
-            Some(reason) => {
-                return Err(format!("Failed to generate response for tweet: {reason}").into());
-            }
-            None => {
-                let content = remove_quotes(res.content);
-                if !content.is_empty() {
+            let res = ctx.completion(req).await?;
+            match res.failed_reason {
+                Some(reason) => {
+                    return Err(format!("Failed to generate response for tweet: {reason}").into());
+                }
+                None => {
+                    let content = remove_quotes(res.content);
+                    if content.is_empty() || content.contains(IGNORE_COMMAND) {
+                        return Err("Ignore this tweet".into());
+                    }
                     let _ = self
                         .scraper
                         .send_tweet(&content, Some(tweet_id), None)
@@ -440,7 +441,6 @@ impl TwitterDaemon {
                 }
             }
         }
-
         Ok(false)
     }
 }

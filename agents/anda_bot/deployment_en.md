@@ -24,7 +24,7 @@ cargo run -p anda_bot -- start-local
 
 3. Download the executable directly on Linux:
    ```sh
-   wget https://github.com/ldclabs/anda/releases/download/v0.4.4/anda_bot
+   wget https://github.com/ldclabs/anda/releases/download/v0.4.5/anda_bot
    chmod +x anda_bot
    ```
 
