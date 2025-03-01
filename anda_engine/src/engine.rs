@@ -394,8 +394,13 @@ impl EngineBuilder {
             .tools
             .set
             .keys()
-            .chain(self.agents.set.keys())
-            .map(|s| Path::from(s.as_str()))
+            .map(|p| Path::from(format!("T:{}", p)))
+            .chain(
+                self.agents
+                    .set
+                    .keys()
+                    .map(|p| Path::from(format!("A:{}", p))),
+            )
             .collect();
         names.insert(Path::from(ROOT_PATH));
         let ctx = BaseCtx::new(
