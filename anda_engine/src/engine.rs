@@ -47,6 +47,7 @@ use crate::{
 };
 
 pub static ROOT_PATH: &str = "_";
+pub static NAME: &str = "Anda Engine";
 
 /// Engine is the core component that manages agents, tools, and execution context.
 /// It provides methods to interact with agents, call tools, and manage execution.

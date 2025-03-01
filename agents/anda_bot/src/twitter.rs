@@ -1,8 +1,8 @@
 use agent_twitter_client::{models::Tweet, scraper::Scraper, search::SearchMode};
 use anda_core::{Agent, BoxError, CompletionFeatures, StateFeatures};
 use anda_engine::{
-    context::{AgentCtx, CacheStoreFeatures, ANONYMOUS},
-    engine::Engine,
+    context::{ANONYMOUS, AgentCtx, CacheStoreFeatures},
+    engine::{Engine, NAME},
     extension::character::CharacterAgent,
     rand_number,
 };
@@ -10,7 +10,7 @@ use anda_lancedb::knowledge::KnowledgeStore;
 use std::sync::Arc;
 use tokio::{
     sync::RwLock,
-    time::{sleep, Duration},
+    time::{Duration, sleep},
 };
 use tokio_util::sync::CancellationToken;
 
@@ -146,7 +146,7 @@ impl TwitterDaemon {
         let ctx = self.engine.ctx_with(
             &self.agent.as_ref().name(),
             ANONYMOUS,
-            Some(self.agent.character.username.clone()),
+            Some(NAME.to_string()),
         )?;
         let req = self
             .agent
@@ -157,7 +157,7 @@ impl TwitterDaemon {
                 Be direct and concise. No questions, hashtags, or emojis.\
                 "
                 .to_string(),
-                ctx.user(),
+                Some(NAME.to_string()),
             )
             .append_documents(knowledges.into());
         let res = ctx.completion(req).await?;
@@ -301,9 +301,11 @@ impl TwitterDaemon {
         let res = self.agent.run(ctx.clone(), tweet_text, None).await?;
         if res.failed_reason.is_none() {
             // Reply to the original tweet
-            let tweet: Option<&str> = tweet.id.as_deref();
             let content = remove_quotes(res.content);
-            let _ = self.scraper.send_tweet(&content, tweet, None).await?;
+            let _ = self
+                .scraper
+                .send_tweet(&content, Some(&tweet_id), None)
+                .await?;
 
             log::info!(
                 tweet_user = tweet_user,
@@ -368,40 +370,37 @@ impl TwitterDaemon {
         tweet_content: &str,
         tweet_id: &str,
     ) -> Result<bool, BoxError> {
-        if self
+        let req = self
             .agent
-            .attention
-            .should_retweet(ctx, tweet_content)
-            .await
-        {
-            let req = self
-                .agent
-                .character
-                .to_request(
-                    "\
-                    Reply the tweet with a single clear, natural sentence. No hashtags.\
-                    "
-                    .to_string(),
-                    ctx.user(),
-                )
-                .context(
-                    tweet_id.to_string(),
-                    format!("Tweet content:\n{tweet_content}"),
-                );
-            let res = ctx.completion(req).await?;
-            match res.failed_reason {
-                Some(reason) => {
-                    return Err(format!("Failed to generate response for tweet: {reason}").into());
-                }
-                None => {
+            .character
+            .to_request(
+                format!("\
+                    Respond the tweet AS **{}** would - only reply if your persona deems it necessary. When engaging:\n\
+                    1. Use your character's unique voice and communication style naturally\n\
+                    2. Keep responses to one authentic-sentence without hashtags\n\
+                    3. Return empty if your persona wouldn't respond to this tweet\n\n\
+                    ## Tweet Content:\n{:?}\
+                ", self.agent.character.name, tweet_content),
+                Some(NAME.to_string()),
+            );
+
+        let res = ctx.completion(req).await?;
+        match res.failed_reason {
+            Some(reason) => {
+                return Err(format!("Failed to generate response for tweet: {reason}").into());
+            }
+            None => {
+                let content = remove_quotes(res.content);
+                if !content.is_empty() {
                     let _ = self
                         .scraper
-                        .send_tweet(&remove_quotes(res.content), Some(tweet_id), None)
+                        .send_tweet(&content, Some(tweet_id), None)
                         .await?;
                     return Ok(true);
                 }
             }
         }
+
         Ok(false)
     }
 
@@ -411,30 +410,31 @@ impl TwitterDaemon {
         tweet_content: &str,
         tweet_id: &str,
     ) -> Result<bool, BoxError> {
-        if self.agent.attention.should_quote(ctx, tweet_content).await {
-            let req = self
-                .agent
-                .character
-                .to_request(
-                    "\
-                    Quote the tweet with a single clear, natural sentence. No hashtags.\
-                    "
-                    .to_string(),
-                    ctx.user(),
-                )
-                .context(
-                    tweet_id.to_string(),
-                    format!("Tweet content:\n{tweet_content}"),
-                );
-            let res = ctx.completion(req).await?;
-            match res.failed_reason {
-                Some(reason) => {
-                    return Err(format!("Failed to generate response for tweet: {reason}").into());
-                }
-                None => {
+        let req = self
+            .agent
+            .character
+            .to_request(
+                format!("\
+                    Respond the tweet AS **{}** would - only reply if your persona deems it necessary. When engaging:\n\
+                    1. Use your character's unique voice and communication style naturally\n\
+                    2. Keep responses to one authentic-sentence without hashtags\n\
+                    3. Return empty if your persona wouldn't respond to this tweet\n\n\
+                    ## Tweet Content:\n{:?}\
+                ", self.agent.character.name, tweet_content),
+                Some(NAME.to_string()),
+            );
+
+        let res = ctx.completion(req).await?;
+        match res.failed_reason {
+            Some(reason) => {
+                return Err(format!("Failed to generate response for tweet: {reason}").into());
+            }
+            None => {
+                let content = remove_quotes(res.content);
+                if !content.is_empty() {
                     let _ = self
                         .scraper
-                        .send_quote_tweet(&remove_quotes(res.content), tweet_id, None)
+                        .send_tweet(&content, Some(tweet_id), None)
                         .await?;
                     return Ok(true);
                 }

@@ -409,22 +409,13 @@ impl CompletionFeaturesDyn for CompletionModel {
                 vec![]
             };
 
-            // Add context documents to chat history
-            if !req.documents.is_empty() {
-                full_history.push(json!(Message {
-                    role: "user".into(),
-                    content: format!("{}", req.documents).into(),
-                    ..Default::default()
-                }));
-            }
-
             // Extend existing chat history
             full_history.append(&mut req.chat_history);
 
-            if !req.prompt.is_empty() {
+            if let Some(prompt) = req.prompt_with_context() {
                 full_history.push(json!(Message {
                     role: "user".into(),
-                    content: req.prompt.into(),
+                    content: prompt.into(),
                     name: req.prompter_name,
                     ..Default::default()
                 }));

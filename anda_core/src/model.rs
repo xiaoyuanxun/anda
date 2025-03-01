@@ -234,6 +234,7 @@ pub struct CompletionRequest {
 }
 
 impl CompletionRequest {
+    /// Adds a document to the request
     pub fn context(mut self, id: String, text: String) -> Self {
         self.documents.0.push(Document {
             id,
@@ -243,14 +244,31 @@ impl CompletionRequest {
         self
     }
 
+    /// Adds multiple documents to the request
     pub fn append_documents(mut self, docs: Documents) -> Self {
         self.documents.0.extend(docs.0);
         self
     }
 
+    /// Adds multiple tools to the request
     pub fn append_tools(mut self, tools: Vec<FunctionDefinition>) -> Self {
         self.tools.extend(tools);
         self
+    }
+
+    /// Returns the prompt with context if available
+    pub fn prompt_with_context(&self) -> Option<String> {
+        if self.documents.0.is_empty() && self.prompt.is_empty() {
+            return None;
+        }
+
+        if self.documents.0.is_empty() {
+            Some(self.prompt.clone())
+        } else if self.prompt.is_empty() {
+            Some(format!("{}", self.documents))
+        } else {
+            Some(format!("{}\n\n{}", self.documents, self.prompt))
+        }
     }
 }
 
@@ -298,6 +316,7 @@ pub fn evaluate_tokens(content: &str) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::{json, to_string};
 
     #[test]
     fn test_prompt() {
@@ -321,11 +340,22 @@ mod tests {
             .into(),
             ..Default::default()
         };
-        let prompt = format!("{}\n\n{}", req.documents, req.prompt);
+        let prompt = req.prompt_with_context().unwrap();
         println!("{}", prompt);
         assert_eq!(
             prompt,
             "<attachments>\n<doc id=\"1\">\n\"Test document 1.\"\n</doc>\n<doc id=\"2\">\n<meta a=\"b\" key=\"value\" />\n\"Test document 2.\"\n</doc>\n</attachments>\n\nThis is a test prompt."
+        );
+
+        let msg = json!(Message {
+            role: "user".into(),
+            content: prompt.into(),
+            name: req.prompter_name,
+            ..Default::default()
+        });
+        assert_eq!(
+            to_string(&msg).unwrap(),
+            r#"{"content":"<attachments>\n<doc id=\"1\">\n\"Test document 1.\"\n</doc>\n<doc id=\"2\">\n<meta a=\"b\" key=\"value\" />\n\"Test document 2.\"\n</doc>\n</attachments>\n\nThis is a test prompt.","role":"user"}"#
         );
     }
 }

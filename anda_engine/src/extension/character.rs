@@ -42,7 +42,7 @@ use super::{
     segmenter::DocumentSegmenter,
 };
 
-use crate::{context::AgentCtx, store::MAX_STORE_OBJECT_SIZE};
+use crate::{context::AgentCtx, engine::NAME, store::MAX_STORE_OBJECT_SIZE};
 
 const MAX_CHAT_HISTORY: usize = 42;
 const CHAT_HISTORY_TTI: Duration = Duration::from_secs(3600 * 24 * 7);
@@ -275,10 +275,9 @@ impl Character {
 
         CompletionRequest {
             system: Some(system),
-            system_name: Some(self.name.clone()),
             prompt,
             prompter_name,
-            temperature: Some(1.3),
+            temperature: Some(1.5),
             ..Default::default()
         }
     }
@@ -385,7 +384,7 @@ impl<K: KnowledgeFeatures + VectorSearchFeatures> CharacterAgent<K> {
                 ",
                 content,
             ),
-            None,
+            Some(NAME.to_string()),
         );
 
         match ctx.completion(req).await {
