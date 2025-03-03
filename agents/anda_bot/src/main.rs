@@ -1,7 +1,8 @@
 use agent_twitter_client::scraper::Scraper;
 use anda_core::{BoxError, EmbeddingFeatures, Path};
 use anda_engine::{
-    context::{derivation_path_with, TEEClient, Web3SDK},
+    APP_USER_AGENT,
+    context::{TEEClient, Web3SDK, derivation_path_with},
     engine::{Engine, EngineBuilder, ROOT_PATH},
     extension::{
         attention::Attention,
@@ -9,28 +10,27 @@ use anda_engine::{
         google::GoogleSearchTool,
         segmenter::DocumentSegmenter,
     },
-    model::{cohere, deepseek, openai, Model},
+    model::{Model, cohere, deepseek, openai},
     store::Store,
-    APP_USER_AGENT,
 };
 use anda_icp::ledger::{BalanceOfTool, ICPLedgers};
 use anda_lancedb::{
     knowledge::KnowledgeStore,
     lancedb::{DynObjectStore, LanceVectorStore, LocalFileSystem},
 };
-use anda_web3_client::client::{load_identity, Client as Web3Client};
-use axum::{routing, Router};
+use anda_web3_client::client::{Client as Web3Client, load_identity};
+use axum::{Router, routing};
 use candid::Principal;
 use clap::{Parser, Subcommand};
 use ed25519_consensus::SigningKey;
 use ic_agent::{
-    identity::{BasicIdentity, Identity},
     Agent,
+    identity::{BasicIdentity, Identity},
 };
 use ic_cose::client::CoseSDK;
 use ic_cose_types::{
-    types::{object_store::CHUNK_SIZE, setting::SettingPath},
     CanisterCaller,
+    types::{object_store::CHUNK_SIZE, setting::SettingPath},
 };
 use ic_object_store::{
     agent::build_agent,
@@ -39,7 +39,7 @@ use ic_object_store::{
 use ic_tee_agent::setting::decrypt_payload;
 use std::collections::BTreeSet;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
-use structured_logger::{async_json::new_writer, get_env_level, unix_ms, Builder};
+use structured_logger::{Builder, async_json::new_writer, get_env_level, unix_ms};
 use tokio::{net::TcpStream, signal, sync::RwLock};
 use tokio_util::sync::CancellationToken;
 
@@ -348,7 +348,7 @@ async fn bootstrap_tee(
     engine = engine.register_agent(agent.clone())?;
 
     let agent = Arc::new(agent);
-    let engine = Arc::new(engine.build(default_agent.clone())?);
+    let engine = Arc::new(engine.build(default_agent.clone()).await?);
     let x_status = Arc::new(RwLock::new(handler::ServiceStatus::Running));
     let app_state = handler::AppState {
         web3: Arc::new(handler::Web3SDK::Tee(tee)),
@@ -472,7 +472,7 @@ async fn bootstrap_local(
     engine = engine.register_agent(agent.clone())?;
 
     let agent = Arc::new(agent);
-    let engine = Arc::new(engine.build(default_agent.clone())?);
+    let engine = Arc::new(engine.build(default_agent.clone()).await?);
     let x_status = Arc::new(RwLock::new(handler::ServiceStatus::Running));
     let app_state = handler::AppState {
         web3: Arc::new(handler::Web3SDK::Web3(web3)),

@@ -27,11 +27,12 @@
 //! These reference implementations share a common feature: they automatically generate the JSON Schema
 //! required for LLMs Function Calling.
 
-use ic_cose_types::validate_str;
 use serde::{Serialize, de::DeserializeOwned};
 use std::{collections::BTreeMap, future::Future, marker::PhantomData, sync::Arc};
 
-use crate::{BoxError, BoxPinFut, context::BaseContext, model::FunctionDefinition};
+use crate::{
+    BoxError, BoxPinFut, context::BaseContext, model::FunctionDefinition, validate_function_name,
+};
 
 /// Core trait for implementing tools that can be used by the AI Agent system
 ///
@@ -50,12 +51,13 @@ where
     type Output: Serialize;
 
     /// Returns the tool's name
-    /// This name should be unique within the engine.
     ///
     /// # Rules
     /// - Must not be empty
-    /// - Length must be ≤ 64 characters
+    /// - Must not exceed 64 characters
+    /// - Must start with a lowercase letter
     /// - Can only contain: lowercase letters (a-z), digits (0-9), and underscores (_)
+    /// - Unique within the engine
     fn name(&self) -> String;
 
     /// Returns the tool's capabilities description in a short string
@@ -66,6 +68,12 @@ where
     /// # Returns
     /// - `FunctionDefinition`: The schema definition of the tool's parameters and metadata
     fn definition(&self) -> FunctionDefinition;
+
+    /// Initializes the tool with the given context.
+    /// It will be called once when building the engine.
+    fn init(&self, _ctx: C) -> impl Future<Output = Result<(), BoxError>> + Send {
+        futures::future::ready(Ok(()))
+    }
 
     /// Executes the tool with given context and arguments
     ///
@@ -128,6 +136,9 @@ where
     /// Provides the tool's definition including its parameters schema
     fn definition(&self) -> FunctionDefinition;
 
+    /// Initializes the tool with the given context
+    fn init(&self, ctx: C) -> BoxPinFut<Result<(), BoxError>>;
+
     /// Executes the tool with given context and arguments using dynamic dispatch
     fn call(&self, ctx: C, args: String) -> BoxPinFut<Result<(String, bool), BoxError>>;
 }
@@ -149,6 +160,11 @@ where
 
     fn definition(&self) -> FunctionDefinition {
         self.0.definition()
+    }
+
+    fn init(&self, ctx: C) -> BoxPinFut<Result<(), BoxError>> {
+        let tool = self.0.clone();
+        Box::pin(async move { tool.init(ctx).await })
     }
 
     fn call(&self, ctx: C, args: String) -> BoxPinFut<Result<(String, bool), BoxError>> {
@@ -223,7 +239,7 @@ where
         T: Tool<C> + Send + Sync + 'static,
     {
         let name = tool.name();
-        validate_str(&name)?;
+        validate_function_name(&name)?;
         if self.set.contains_key(&name) {
             return Err(format!("tool {} already exists", name).into());
         }

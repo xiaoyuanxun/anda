@@ -687,26 +687,46 @@ pub trait CacheStoreFeatures: StoreFeatures + CacheFeatures + Send + Sync + 'sta
     /// Sets a value in cache and store, without waiting for store completion
     async fn cache_store_set<T>(self, key: &str, val: T)
     where
-        T: Serialize + Send,
+        T: DeserializeOwned + Serialize + Send,
     {
         let data = to_cbor_bytes(&val);
         self.cache_set(key, (val, None)).await;
         let p = Path::from(key);
         tokio::spawn(async move {
-            let _ = self.store_put(&p, PutMode::Overwrite, data.into()).await;
+            if self
+                .store_put(&p, PutMode::Overwrite, data.into())
+                .await
+                .is_ok()
+            {
+                if let Ok((val, _)) = self.store_get(&p).await {
+                    if let Ok(val) = from_reader::<T, _>(&val[..]) {
+                        self.cache_set(p.as_ref(), (val, None)).await;
+                    }
+                }
+            }
         });
     }
 
     /// Sets a value in cache and store, waiting for store completion
     async fn cache_store_set_and_wait<T>(self, key: &str, val: T) -> Result<(), BoxError>
     where
-        T: Serialize + Send,
+        T: DeserializeOwned + Serialize + Send,
     {
         let data = to_cbor_bytes(&val);
         self.cache_set(key, (val, None)).await;
         let p = Path::from(key);
         let _ = self.store_put(&p, PutMode::Overwrite, data.into()).await?;
+        let (val, _) = self.store_get(&p).await?;
+        let val: T = from_reader(&val[..])?;
+        self.cache_set(key, (val, None)).await;
         Ok(())
+    }
+
+    /// Deletes a value from cache and store
+    async fn cache_store_delete(self, key: &str) -> Result<(), BoxError> {
+        self.cache_delete(key).await;
+        let p = Path::from(key);
+        self.store_delete(&p).await
     }
 }
 

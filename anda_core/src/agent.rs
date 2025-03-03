@@ -39,7 +39,7 @@ use crate::{
     BoxError, BoxPinFut,
     context::AgentContext,
     model::{AgentOutput, FunctionDefinition},
-    validate_path_part,
+    validate_function_name,
 };
 
 /// Core trait defining an AI agent's behavior
@@ -51,7 +51,14 @@ where
     C: AgentContext + Send + Sync,
 {
     /// Returns the agent's name as a String
-    /// The unique name of the agent. This name should be valid Path string ([`validate_path_part`]) and unique within the engine in lowercase.
+    /// The unique name of the agent, case-insensitive, must follow these rules in lowercase:
+    ///
+    /// # Rules
+    /// - Must not be empty
+    /// - Must not exceed 64 characters
+    /// - Must start with a lowercase letter
+    /// - Can only contain: lowercase letters (a-z), digits (0-9), and underscores (_)
+    /// - Unique within the engine in lowercase
     fn name(&self) -> String;
 
     /// Returns the agent's capabilities description in a short string
@@ -63,13 +70,24 @@ where
     /// - `FunctionDefinition`: The structured definition of the agent's capabilities
     fn definition(&self) -> FunctionDefinition {
         FunctionDefinition {
-            name: self.name(),
+            name: self.name().to_ascii_lowercase(),
             description: self.description(),
-            parameters: json!({"type":"string"}),
+            parameters: json!({
+                "type": "string",
+                "description": "optimized prompt or message.",
+            }),
             strict: None,
         }
     }
 
+    /// Initializes the tool with the given context.
+    /// It will be called once when building the engine.
+    fn init(&self, _ctx: C) -> impl Future<Output = Result<(), BoxError>> + Send {
+        futures::future::ready(Ok(()))
+    }
+
+    /// Returns a list of tool dependencies required by the agent.
+    /// The tool dependencies are checked when building the engine.
     fn tool_dependencies(&self) -> Vec<String> {
         Vec::new()
     }
@@ -105,6 +123,8 @@ where
 
     fn tool_dependencies(&self) -> Vec<String>;
 
+    fn init(&self, ctx: C) -> BoxPinFut<Result<(), BoxError>>;
+
     fn run(
         &self,
         ctx: C,
@@ -134,6 +154,11 @@ where
 
     fn tool_dependencies(&self) -> Vec<String> {
         self.0.tool_dependencies()
+    }
+
+    fn init(&self, ctx: C) -> BoxPinFut<Result<(), BoxError>> {
+        let agent = self.0.clone();
+        Box::pin(async move { agent.init(ctx).await })
     }
 
     fn run(
@@ -176,7 +201,7 @@ where
     pub fn definition(&self, name: &str) -> Option<FunctionDefinition> {
         self.set
             .get(&name.to_ascii_lowercase())
-            .map(|tool| tool.definition())
+            .map(|agent| agent.definition())
     }
 
     /// Returns definitions for all or specified agents
@@ -191,15 +216,15 @@ where
             names.map(|names| names.iter().map(|n| n.to_ascii_lowercase()).collect());
         self.set
             .iter()
-            .filter_map(|(name, tool)| match &names {
+            .filter_map(|(name, agent)| match &names {
                 Some(names) => {
                     if names.contains(name) {
-                        Some(tool.definition())
+                        Some(agent.definition())
                     } else {
                         None
                     }
                 }
-                None => Some(tool.definition()),
+                None => Some(agent.definition()),
             })
             .collect()
     }
@@ -216,7 +241,8 @@ where
         if self.set.contains_key(&name) {
             return Err(format!("agent {} already exists", name).into());
         }
-        validate_path_part(&name)?;
+
+        validate_function_name(&name)?;
         let agent_dyn = AgentWrapper(Arc::new(agent), PhantomData);
         self.set.insert(name, Box::new(agent_dyn));
         Ok(())

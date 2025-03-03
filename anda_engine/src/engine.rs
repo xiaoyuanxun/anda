@@ -383,7 +383,7 @@ impl EngineBuilder {
     /// Finalizes the builder and creates an Engine instance.
     /// Requires a default agent name to be specified.
     /// Returns an error if the default agent is not found.
-    pub fn build(mut self, default_agent: String) -> Result<Engine, BoxError> {
+    pub async fn build(mut self, default_agent: String) -> Result<Engine, BoxError> {
         if !self.agents.contains(&default_agent) {
             return Err(format!("default agent {} not found", default_agent).into());
         }
@@ -410,7 +410,20 @@ impl EngineBuilder {
             self.web3,
             self.store,
         );
-        let ctx = AgentCtx::new(ctx, self.model, Arc::new(self.tools), Arc::new(self.agents));
+
+        let tools = Arc::new(self.tools);
+        let agents = Arc::new(self.agents);
+        let ctx = AgentCtx::new(ctx, self.model, tools.clone(), agents.clone());
+
+        for (name, tool) in &tools.set {
+            let ct = ctx.child_base_with(name, self.id, Some(self.name.clone()))?;
+            tool.init(ct).await?;
+        }
+
+        for (name, agent) in &agents.set {
+            let ct = ctx.child_with(name, self.id, Some(self.name.clone()))?;
+            agent.init(ct).await?;
+        }
 
         Ok(Engine {
             id: self.id,

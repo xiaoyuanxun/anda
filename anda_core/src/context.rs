@@ -61,7 +61,12 @@ pub trait AgentContext: BaseContext + CompletionFeatures + EmbeddingFeatures {
     fn tool_definitions(&self, names: Option<&[&str]>) -> Vec<FunctionDefinition>;
 
     /// Gets definitions for multiple agents, optionally filtered by names
-    fn agent_definitions(&self, names: Option<&[&str]>) -> Vec<FunctionDefinition>;
+    /// `with_prefix` is a flag to add the prefix `LA_` to agent names to distinguish from tools
+    fn agent_definitions(
+        &self,
+        names: Option<&[&str]>,
+        with_prefix: bool,
+    ) -> Vec<FunctionDefinition>;
 
     /// Executes a local tool with provided arguments
     fn tool_call(

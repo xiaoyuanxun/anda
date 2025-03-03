@@ -270,19 +270,21 @@ mod tests {
         let definition = tool.definition();
         assert_eq!(definition.name, "submit_teststruct");
         let s = serde_json::to_string(&definition).unwrap();
-        assert!(s.contains(r#""required":["name"]"#));
-        assert!(!s.contains("$schema"));
         println!("{}", s);
         // {"name":"submit_teststruct","description":"Submit the structured data you extracted from the provided text.","parameters":{"properties":{"age":{"format":"uint8","minimum":0.0,"type":["integer","null"]},"name":{"type":"string"}},"required":["name"],"title":"TestStruct","type":"object"},"strict":true}
+        assert!(s.contains(r#""required":["name"]"#));
+        assert!(!s.contains("$schema"));
 
         let agent = Extractor::<TestStruct>::default();
         let definition = agent.definition();
         assert_eq!(definition.name, "teststruct_extractor");
         let s = serde_json::to_string(&definition).unwrap();
-        assert!(s.contains(r#""parameters":{"type":"string"}"#));
-        assert!(!s.contains("$schema"));
         println!("{}", s);
         // {"name":"teststruct_extractor","description":"Extract structured data from text using LLMs.","parameters":{"type":"string"}}
+        assert!(s.contains(
+            r#""parameters":{"description":"optimized prompt or message.","type":"string"}"#
+        ));
+        assert!(!s.contains("$schema"));
     }
 
     #[tokio::test]

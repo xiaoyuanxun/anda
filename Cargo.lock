@@ -140,7 +140,7 @@ dependencies = [
 
 [[package]]
 name = "anda_core"
-version = "0.4.6"
+version = "0.5.0"
 dependencies = [
  "bytes",
  "candid",
@@ -160,7 +160,7 @@ dependencies = [
 
 [[package]]
 name = "anda_engine"
-version = "0.4.7"
+version = "0.5.0"
 dependencies = [
  "anda_core",
  "async-trait",

@@ -155,11 +155,26 @@ impl AgentContext for AgentCtx {
     ///
     /// # Arguments
     /// * `names` - Optional filter for specific agent names
+    /// * `with_prefix` - Flag to add the prefix `LA_` to agent names to distinguish from tools
     ///
     /// # Returns
     /// Vector of function definitions for the requested agents
-    fn agent_definitions(&self, names: Option<&[&str]>) -> Vec<FunctionDefinition> {
-        self.agents.definitions(names)
+    fn agent_definitions(
+        &self,
+        names: Option<&[&str]>,
+        with_prefix: bool,
+    ) -> Vec<FunctionDefinition> {
+        let res = self.agents.definitions(names);
+        if with_prefix {
+            res.into_iter()
+                .map(|mut d| {
+                    d.name = format!("LA_{}", d.name);
+                    d
+                })
+                .collect()
+        } else {
+            res
+        }
     }
 
     /// Executes a tool call with the given arguments
@@ -183,15 +198,15 @@ impl AgentContext for AgentCtx {
     ///
     /// # Arguments
     /// * `endpoint` - Remote endpoint URL
-    /// * `tool_name` - Name of the tool to call
+    /// * `name` - Name of the tool to call
     /// * `args` - Arguments for the tool call as a JSON string
     async fn remote_tool_call(
         &self,
         endpoint: &str,
-        tool_name: &str,
+        name: &str,
         args: String,
     ) -> Result<(String, bool), BoxError> {
-        self.https_signed_rpc(endpoint, "tool_call", &(tool_name, args))
+        self.https_signed_rpc(endpoint, "tool_call", &(name, args))
             .await
     }
 
@@ -289,6 +304,28 @@ impl CompletionFeatures for AgentCtx {
                                     }));
                                 }
                                 tool.result = Some(val);
+                            }
+                            Err(err) => {
+                                res.failed_reason = Some(err.to_string());
+                                return Ok(res);
+                            }
+                        }
+                    } else if tool.name.starts_with("LA_") || self.agents.contains(&tool.name) {
+                        // local agent
+                        let name = if tool.name.starts_with("LA_") {
+                            &tool.name[3..]
+                        } else {
+                            &tool.name
+                        };
+
+                        match self.agent_run(name, tool.args.clone(), None).await {
+                            Ok(val) => {
+                                if val.failed_reason.is_some() {
+                                    res.failed_reason = val.failed_reason;
+                                    return Ok(res);
+                                }
+
+                                tool.result = Some(val.content);
                             }
                             Err(err) => {
                                 res.failed_reason = Some(err.to_string());

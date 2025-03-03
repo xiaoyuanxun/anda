@@ -26,6 +26,7 @@ pub type BoxPinFut<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 pub fn path_lowercase(path: &Path) -> Path {
     Path::from(path.as_ref().to_ascii_lowercase())
 }
+
 /// Validates a path part to ensure it doesn't contain the path delimiter
 /// agent name and user name should be validated.
 pub fn validate_path_part(part: &str) -> Result<(), BoxError> {
@@ -33,6 +34,35 @@ pub fn validate_path_part(part: &str) -> Result<(), BoxError> {
         return Err(format!("invalid path part: {}", part).into());
     }
 
+    Ok(())
+}
+
+/// Validates a function name to ensure it doesn't contain invalid characters
+///
+/// # Rules
+/// - Must not be empty
+/// - Must not exceed 64 characters
+/// - Must start with a lowercase letter
+/// - Can only contain: lowercase letters (a-z), digits (0-9), and underscores (_)
+pub fn validate_function_name(name: &str) -> Result<(), BoxError> {
+    if name.is_empty() {
+        return Err("empty string".into());
+    }
+
+    if name.len() > 64 {
+        return Err("string length exceeds the limit 64".into());
+    }
+
+    let mut iter = name.chars();
+    if !matches!(iter.next(), Some('a'..='z')) {
+        return Err("name must start with a lowercase letter".into());
+    }
+
+    for c in iter {
+        if !matches!(c, 'a'..='z' | '0'..='9' | '_' ) {
+            return Err(format!("invalid character: {}", c).into());
+        }
+    }
     Ok(())
 }
 

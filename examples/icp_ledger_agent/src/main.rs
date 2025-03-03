@@ -164,7 +164,7 @@ async fn main() -> Result<(), BoxError> {
         .export_tools(&[BalanceOfTool::NAME]);
 
     // Initialize and start the server
-    let engine = engine.build(ICPLedgerAgent::NAME.to_string())?;
+    let engine = engine.build(ICPLedgerAgent::NAME.to_string()).await?;
     let mut engines = BTreeMap::new();
     engines.insert(engine.id(), engine);
 
