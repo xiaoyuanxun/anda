@@ -161,7 +161,7 @@ async fn main() -> Result<(), BoxError> {
         .with_store(Store::new(object_store))
         .register_tools(agent.tools()?)?
         .register_agent(agent)?
-        .export_tools(&[BalanceOfTool::NAME]);
+        .export_tools(vec![BalanceOfTool::NAME.to_string()]);
 
     // Initialize and start the server
     let engine = engine.build(ICPLedgerAgent::NAME.to_string()).await?;

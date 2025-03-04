@@ -33,10 +33,10 @@ use anda_core::{
 };
 use bytes::Bytes;
 use candid::{CandidType, Principal, utils::ArgumentEncoder};
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_bytes::ByteBuf;
 use serde_json::json;
-use std::{future::Future, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, future::Future, sync::Arc, time::Duration};
 
 use super::base::{BaseCtx, CacheStoreFeatures};
 use crate::model::Model;
@@ -52,6 +52,17 @@ pub struct AgentCtx {
     pub(crate) tools: Arc<ToolSet<BaseCtx>>,
     /// Set of available agents that can be invoked
     pub(crate) agents: Arc<AgentSet<AgentCtx>>,
+    /// Registered remote engines for tool and agent execution
+    pub(crate) remote_engines: Arc<BTreeMap<String, EngineInformation>>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct EngineInformation {
+    pub id: Principal,
+    pub name: String,
+    pub endpoint: String,
+    pub agent_definitions: Vec<FunctionDefinition>,
+    pub tool_definitions: Vec<FunctionDefinition>,
 }
 
 impl AgentCtx {
@@ -67,12 +78,14 @@ impl AgentCtx {
         model: Model,
         tools: Arc<ToolSet<BaseCtx>>,
         agents: Arc<AgentSet<AgentCtx>>,
+        remote_engines: Arc<BTreeMap<String, EngineInformation>>,
     ) -> Self {
         Self {
             base,
             model,
             tools,
             agents,
+            remote_engines,
         }
     }
 
@@ -86,6 +99,7 @@ impl AgentCtx {
             model: self.model.clone(),
             tools: self.tools.clone(),
             agents: self.agents.clone(),
+            remote_engines: self.remote_engines.clone(),
         })
     }
 
@@ -116,6 +130,7 @@ impl AgentCtx {
             model: self.model.clone(),
             tools: self.tools.clone(),
             agents: self.agents.clone(),
+            remote_engines: self.remote_engines.clone(),
         })
     }
 
@@ -151,6 +166,66 @@ impl AgentContext for AgentCtx {
         self.tools.definitions(names)
     }
 
+    /// Retrieves definitions for available tools in the remote engines.
+    ///
+    /// # Arguments
+    /// * `endpoint` - Optional filter for specific remote engine endpoint
+    /// * `names` - Optional filter for specific tool names
+    ///
+    /// # Returns
+    /// Vector of function definitions for the requested tools
+    fn remote_tool_definitions(
+        &self,
+        endpoint: Option<&str>,
+        names: Option<&[&str]>,
+    ) -> Vec<FunctionDefinition> {
+        if let Some(endpoint) = endpoint {
+            for (prefix, engine) in self.remote_engines.iter() {
+                if endpoint == engine.endpoint {
+                    let prefix = format!("RT_{prefix}");
+                    return engine
+                        .tool_definitions
+                        .iter()
+                        .filter_map(|d| {
+                            if let Some(names) = names {
+                                if names.contains(&d.name.as_str()) {
+                                    Some(d.clone().name_with_prefix(&prefix))
+                                } else {
+                                    None
+                                }
+                            } else {
+                                Some(d.clone().name_with_prefix(&prefix))
+                            }
+                        })
+                        .collect();
+                }
+            }
+        }
+
+        let mut definitions = Vec::with_capacity(
+            self.remote_engines
+                .iter()
+                .map(|(_, e)| e.tool_definitions.len())
+                .sum(),
+        );
+        for (prefix, engine) in self.remote_engines.iter() {
+            let prefix = format!("RT_{prefix}");
+            definitions.extend(engine.tool_definitions.iter().filter_map(|d| {
+                if let Some(names) = names {
+                    if names.contains(&d.name.as_str()) {
+                        Some(d.clone().name_with_prefix(&prefix))
+                    } else {
+                        None
+                    }
+                } else {
+                    Some(d.clone().name_with_prefix(&prefix))
+                }
+            }));
+        }
+
+        definitions
+    }
+
     /// Retrieves definitions for available agents
     ///
     /// # Arguments
@@ -177,6 +252,66 @@ impl AgentContext for AgentCtx {
         }
     }
 
+    /// Retrieves definitions for available agents in the remote engines.
+    ///
+    /// # Arguments
+    /// * `endpoint` - Optional filter for specific remote engine endpoint
+    /// * `names` - Optional filter for specific agent names
+    ///
+    /// # Returns
+    /// Vector of function definitions for the requested agents
+    fn remote_agent_definitions(
+        &self,
+        endpoint: Option<&str>,
+        names: Option<&[&str]>,
+    ) -> Vec<FunctionDefinition> {
+        if let Some(endpoint) = endpoint {
+            for (prefix, engine) in self.remote_engines.iter() {
+                if endpoint == engine.endpoint {
+                    let prefix = format!("RT_{prefix}");
+                    return engine
+                        .agent_definitions
+                        .iter()
+                        .filter_map(|d| {
+                            if let Some(names) = names {
+                                if names.contains(&d.name.as_str()) {
+                                    Some(d.clone().name_with_prefix(&prefix))
+                                } else {
+                                    None
+                                }
+                            } else {
+                                Some(d.clone().name_with_prefix(&prefix))
+                            }
+                        })
+                        .collect();
+                }
+            }
+        }
+
+        let mut definitions = Vec::with_capacity(
+            self.remote_engines
+                .iter()
+                .map(|(_, e)| e.agent_definitions.len())
+                .sum(),
+        );
+        for (prefix, engine) in self.remote_engines.iter() {
+            let prefix = format!("RT_{prefix}");
+            definitions.extend(engine.agent_definitions.iter().filter_map(|d| {
+                if let Some(names) = names {
+                    if names.contains(&d.name.as_str()) {
+                        Some(d.clone().name_with_prefix(&prefix))
+                    } else {
+                        None
+                    }
+                } else {
+                    Some(d.clone().name_with_prefix(&prefix))
+                }
+            }));
+        }
+
+        definitions
+    }
+
     /// Executes a tool call with the given arguments
     ///
     /// # Arguments
@@ -186,12 +321,23 @@ impl AgentContext for AgentCtx {
     /// # Returns
     /// Tuple containing the result string and a boolean indicating if further processing is needed
     async fn tool_call(&self, name: &str, args: String) -> Result<(String, bool), BoxError> {
-        if !self.tools.contains(name) {
-            return Err(format!("tool {} not found", name).into());
+        // find registered remote tool and call it
+        if let Some(name) = name.strip_prefix("RT_") {
+            for (prefix, engine) in self.remote_engines.iter() {
+                if let Some(tool_name) = name.strip_prefix(prefix) {
+                    return self
+                        .remote_tool_call(&engine.endpoint, tool_name, args)
+                        .await;
+                }
+            }
         }
 
-        let ctx = self.child_base(name)?;
-        self.tools.call(name, ctx, args).await
+        if self.tools.contains(name) {
+            let ctx = self.child_base(name)?;
+            return self.tools.call(name, ctx, args).await;
+        }
+
+        Err(format!("tool {} not found", name).into())
     }
 
     /// Executes a remote tool call via HTTP RPC
@@ -225,12 +371,24 @@ impl AgentContext for AgentCtx {
         prompt: String,
         attachment: Option<Vec<u8>>,
     ) -> Result<AgentOutput, BoxError> {
-        if !self.agents.contains(name) {
-            return Err(format!("agent {} not found", name).into());
+        // find registered remote agent and run it
+        if let Some(name) = name.strip_prefix("RA_") {
+            for (prefix, engine) in self.remote_engines.iter() {
+                if let Some(agent_name) = name.strip_prefix(prefix) {
+                    return self
+                        .remote_agent_run(&engine.endpoint, agent_name, prompt, attachment)
+                        .await;
+                }
+            }
         }
 
-        let ctx = self.child(name)?;
-        self.agents.run(name, ctx, prompt, attachment).await
+        let name = name.strip_prefix("LA_").unwrap_or(name);
+        if self.agents.contains(name) {
+            let ctx = self.child(name)?;
+            return self.agents.run(name, ctx, prompt, attachment).await;
+        }
+
+        Err(format!("agent {} not found", name).into())
     }
 
     /// Runs a remote agent via HTTP RPC
@@ -291,7 +449,7 @@ impl CompletionFeatures for AgentCtx {
 
                     // remove called tool from req.tools
                     req.tools.retain(|t| t.name != tool.name);
-                    if self.tools.contains(&tool.name) {
+                    if self.tools.contains(&tool.name) || tool.name.starts_with("RT_") {
                         match self.tool_call(&tool.name, tool.args.clone()).await {
                             Ok((val, con)) => {
                                 if con {
@@ -310,15 +468,11 @@ impl CompletionFeatures for AgentCtx {
                                 return Ok(res);
                             }
                         }
-                    } else if tool.name.starts_with("LA_") || self.agents.contains(&tool.name) {
-                        // local agent
-                        let name = if tool.name.starts_with("LA_") {
-                            &tool.name[3..]
-                        } else {
-                            &tool.name
-                        };
-
-                        match self.agent_run(name, tool.args.clone(), None).await {
+                    } else if self.agents.contains(&tool.name)
+                        || tool.name.starts_with("LA_")
+                        || tool.name.starts_with("RA_")
+                    {
+                        match self.agent_run(&tool.name, tool.args.clone(), None).await {
                             Ok(val) => {
                                 if val.failed_reason.is_some() {
                                     res.failed_reason = val.failed_reason;
@@ -332,12 +486,8 @@ impl CompletionFeatures for AgentCtx {
                                 return Ok(res);
                             }
                         }
-                    } else {
-                        // TODO:
-                        // support remote_tool_call
-                        // support agent_run
-                        // support remote_agent_run
                     }
+                    // ignore unknown tool
                 }
 
                 tool_calls_result.append(tool_calls);

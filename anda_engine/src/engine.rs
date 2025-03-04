@@ -30,18 +30,21 @@
 //! ```
 
 use anda_core::{
-    Agent, AgentOutput, AgentSet, BoxError, FunctionDefinition, Path, Tool, ToolSet,
-    validate_path_part,
+    Agent, AgentOutput, AgentSet, BoxError, FunctionDefinition, HttpFeatures, Path, Tool, ToolSet,
+    validate_function_name, validate_path_part,
 };
 use candid::Principal;
 use object_store::memory::InMemory;
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
-use std::{collections::BTreeSet, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    context::{AgentCtx, BaseCtx, Web3Client, Web3SDK},
+    context::{AgentCtx, BaseCtx, EngineInformation, Web3Client, Web3SDK},
     model::Model,
     store::Store,
 };
@@ -61,6 +64,7 @@ pub struct Engine {
     export_tools: BTreeSet<String>,
 }
 
+/// Information about the engine, including agent and tool definitions.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Information {
     pub id: Principal,
@@ -70,6 +74,7 @@ pub struct Information {
     pub tool_definitions: Vec<FunctionDefinition>,
 }
 
+/// Information about the engine in JSON format.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct InformationJSON {
     pub id: String,
@@ -236,12 +241,22 @@ pub struct EngineBuilder {
     name: String,
     tools: ToolSet<BaseCtx>,
     agents: AgentSet<AgentCtx>,
+    remote_engines: BTreeMap<String, RemoteEngineInfo>,
     model: Model,
     store: Store,
     web3: Arc<Web3SDK>,
     cancellation_token: CancellationToken,
     export_agents: BTreeSet<String>,
     export_tools: BTreeSet<String>,
+}
+
+/// Information about a remote engine, including endpoint, agents, tools, and alias name.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RemoteEngineInfo {
+    pub endpoint: String,
+    pub agents: Vec<String>,
+    pub tools: Vec<String>,
+    pub alias: Option<String>,
 }
 
 impl Default for EngineBuilder {
@@ -259,6 +274,7 @@ impl EngineBuilder {
             name: "Anda".to_string(),
             tools: ToolSet::new(),
             agents: AgentSet::new(),
+            remote_engines: BTreeMap::new(),
             model: Model::not_implemented(),
             store: Store::new(mstore),
             web3: Arc::new(Web3SDK::Web3(Web3Client::not_implemented())),
@@ -364,18 +380,32 @@ impl EngineBuilder {
         Ok(self)
     }
 
+    /// Registers a remote engine with given endpoint, optional agents, tools, and alias name.
+    pub fn register_remote_engine(mut self, engine: RemoteEngineInfo) -> Result<Self, BoxError> {
+        if self.remote_engines.contains_key(&engine.endpoint) {
+            return Err(format!("remote engine {} already exists", engine.endpoint).into());
+        }
+        if let Some(alias) = &engine.alias {
+            validate_function_name(alias).map_err(|err| format!("invalid alias: {}", err))?;
+        }
+
+        self.remote_engines.insert(engine.endpoint.clone(), engine);
+        Ok(self)
+    }
+
     /// Exports agents by name.
-    pub fn export_agents(mut self, agents: &[&str]) -> Self {
-        for agent in agents {
-            self.export_agents.insert(agent.to_ascii_lowercase());
+    pub fn export_agents(mut self, agents: Vec<String>) -> Self {
+        for mut agent in agents {
+            agent.make_ascii_lowercase();
+            self.export_agents.insert(agent);
         }
         self
     }
 
     /// Exports tools by name.
-    pub fn export_tools(mut self, tools: &[&str]) -> Self {
+    pub fn export_tools(mut self, tools: Vec<String>) -> Self {
         for tool in tools {
-            self.export_tools.insert(tool.to_string());
+            self.export_tools.insert(tool);
         }
         self
     }
@@ -411,9 +441,64 @@ impl EngineBuilder {
             self.store,
         );
 
+        let mut remote_engines: BTreeMap<String, EngineInformation> = BTreeMap::new();
+        for (_, engine) in self.remote_engines {
+            let info: Information = ctx
+                .https_signed_rpc(&engine.endpoint, "information", &(true,))
+                .await?;
+
+            let alias = engine
+                .alias
+                .unwrap_or_else(|| info.name.to_ascii_lowercase());
+            validate_function_name(&alias)
+                .map_err(|err| format!("invalid engine name {:?}: {}", &alias, err))?;
+            if remote_engines.contains_key(&alias) {
+                return Err(format!("remote engine {:?} already exists", alias).into());
+            }
+
+            let agent_definitions: Vec<FunctionDefinition> = info
+                .agent_definitions
+                .into_iter()
+                .filter(|d| engine.agents.is_empty() || engine.agents.contains(&d.name))
+                .collect();
+            for agent in engine.agents {
+                if !agent_definitions.iter().any(|d| d.name == agent) {
+                    return Err(format!("agent {:?} not found in engine {:?}", agent, alias).into());
+                }
+            }
+
+            let tool_definitions: Vec<FunctionDefinition> = info
+                .tool_definitions
+                .into_iter()
+                .filter(|d| engine.tools.is_empty() || engine.tools.contains(&d.name))
+                .collect();
+            for tool in engine.tools {
+                if !tool_definitions.iter().any(|d| d.name == tool) {
+                    return Err(format!("tool {:?} not found in engine {:?}", tool, alias).into());
+                }
+            }
+
+            remote_engines.insert(
+                alias,
+                EngineInformation {
+                    id: info.id,
+                    name: info.name,
+                    endpoint: engine.endpoint,
+                    agent_definitions,
+                    tool_definitions,
+                },
+            );
+        }
+
         let tools = Arc::new(self.tools);
         let agents = Arc::new(self.agents);
-        let ctx = AgentCtx::new(ctx, self.model, tools.clone(), agents.clone());
+        let ctx = AgentCtx::new(
+            ctx,
+            self.model,
+            tools.clone(),
+            agents.clone(),
+            Arc::new(remote_engines),
+        );
 
         for (name, tool) in &tools.set {
             let ct = ctx.child_base_with(name, self.id, Some(self.name.clone()))?;
@@ -453,6 +538,12 @@ impl EngineBuilder {
             self.web3,
             self.store,
         );
-        AgentCtx::new(ctx, self.model, Arc::new(self.tools), Arc::new(self.agents))
+        AgentCtx::new(
+            ctx,
+            self.model,
+            Arc::new(self.tools),
+            Arc::new(self.agents),
+            Arc::new(BTreeMap::new()),
+        )
     }
 }

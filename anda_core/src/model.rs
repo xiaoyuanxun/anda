@@ -85,6 +85,13 @@ pub struct FunctionDefinition {
     pub strict: Option<bool>,
 }
 
+impl FunctionDefinition {
+    pub fn name_with_prefix(mut self, prefix: &str) -> Self {
+        self.name = format!("{}{}", prefix, self.name);
+        self
+    }
+}
+
 /// Knowledge document with text and metadata
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Document {
