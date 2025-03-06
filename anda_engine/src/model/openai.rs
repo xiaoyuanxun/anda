@@ -8,7 +8,7 @@
 
 use anda_core::{
     AgentOutput, BoxError, BoxPinFut, CONTENT_TYPE_JSON, CompletionRequest, Embedding,
-    FunctionDefinition, Message, ToolCall,
+    FunctionDefinition, Message, ToolCall, Usage as ModelUsage,
 };
 use log::{Level::Debug, log_enabled};
 use serde::{Deserialize, Serialize};
@@ -130,7 +130,7 @@ pub struct EmbeddingResponse {
 }
 
 impl EmbeddingResponse {
-    fn try_into(self, texts: Vec<String>) -> Result<Vec<Embedding>, BoxError> {
+    fn try_into(self, texts: Vec<String>) -> Result<(Vec<Embedding>, ModelUsage), BoxError> {
         if self.data.len() != texts.len() {
             return Err(format!(
                 "Expected {} embeddings, got {}",
@@ -140,15 +140,23 @@ impl EmbeddingResponse {
             .into());
         }
 
-        Ok(self
-            .data
-            .into_iter()
-            .zip(texts)
-            .map(|(embedding, text)| Embedding {
-                text,
-                vec: embedding.embedding,
-            })
-            .collect())
+        Ok((
+            self.data
+                .into_iter()
+                .zip(texts)
+                .map(|(embedding, text)| Embedding {
+                    text,
+                    vec: embedding.embedding,
+                })
+                .collect(),
+            ModelUsage {
+                input_tokens: self.usage.prompt_tokens as u64,
+                output_tokens: self
+                    .usage
+                    .total_tokens
+                    .saturating_sub(self.usage.prompt_tokens) as u64,
+            },
+        ))
     }
 }
 
@@ -206,6 +214,14 @@ impl CompletionResponse {
                     .collect()
             }),
             full_history: Some(full_history),
+            usage: self
+                .usage
+                .as_ref()
+                .map(|u| ModelUsage {
+                    input_tokens: u.prompt_tokens as u64,
+                    output_tokens: u.total_tokens.saturating_sub(u.prompt_tokens) as u64,
+                })
+                .unwrap_or_default(),
             ..Default::default()
         };
 
@@ -281,7 +297,10 @@ impl EmbeddingFeaturesDyn for EmbeddingModel {
 
     /// Generates embeddings for multiple texts in a batch
     /// Returns a vector of Embedding structs in the same order as input texts
-    fn embed(&self, texts: Vec<String>) -> BoxPinFut<Result<Vec<Embedding>, BoxError>> {
+    fn embed(
+        &self,
+        texts: Vec<String>,
+    ) -> BoxPinFut<Result<(Vec<Embedding>, ModelUsage), BoxError>> {
         let model = self.model.clone();
         let client = self.client.clone();
         Box::pin(async move {
@@ -312,7 +331,7 @@ impl EmbeddingFeaturesDyn for EmbeddingModel {
 
     /// Generates a single embedding for a query text
     /// Optimized for single text embedding generation
-    fn embed_query(&self, text: String) -> BoxPinFut<Result<Embedding, BoxError>> {
+    fn embed_query(&self, text: String) -> BoxPinFut<Result<(Embedding, ModelUsage), BoxError>> {
         let model = self.model.clone();
         let client = self.client.clone();
         Box::pin(async move {
@@ -329,10 +348,20 @@ impl EmbeddingFeaturesDyn for EmbeddingModel {
                 match response.json::<EmbeddingResponse>().await {
                     Ok(mut res) => {
                         let data = res.data.pop().ok_or("no embedding data")?;
-                        Ok(Embedding {
-                            text: text.to_string(),
-                            vec: data.embedding,
-                        })
+                        Ok((
+                            Embedding {
+                                text: text.to_string(),
+                                vec: data.embedding,
+                            },
+                            ModelUsage {
+                                input_tokens: res.usage.prompt_tokens as u64,
+                                output_tokens: res
+                                    .usage
+                                    .total_tokens
+                                    .saturating_sub(res.usage.prompt_tokens)
+                                    as u64,
+                            },
+                        ))
                     }
                     Err(err) => Err(format!("OpenAI embeddings error: {}", err).into()),
                 }

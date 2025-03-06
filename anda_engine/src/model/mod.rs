@@ -16,7 +16,7 @@
 
 use anda_core::{
     AgentOutput, BoxError, BoxPinFut, CompletionFeatures, CompletionRequest, Embedding,
-    EmbeddingFeatures, ToolCall,
+    EmbeddingFeatures, ToolCall, Usage,
 };
 use serde::{Deserialize, Serialize};
 use std::{convert::Infallible, str::FromStr, sync::Arc};
@@ -38,10 +38,10 @@ pub trait EmbeddingFeaturesDyn: Send + Sync + 'static {
     fn ndims(&self) -> usize;
 
     /// Embeds multiple texts and returns a future with the resulting embeddings
-    fn embed(&self, texts: Vec<String>) -> BoxPinFut<Result<Vec<Embedding>, BoxError>>;
+    fn embed(&self, texts: Vec<String>) -> BoxPinFut<Result<(Vec<Embedding>, Usage), BoxError>>;
 
     /// Embeds a single query text and returns a future with the resulting embedding
-    fn embed_query(&self, text: String) -> BoxPinFut<Result<Embedding, BoxError>>;
+    fn embed_query(&self, text: String) -> BoxPinFut<Result<(Embedding, Usage), BoxError>>;
 }
 
 /// A placeholder implementation for unimplemented features
@@ -59,11 +59,11 @@ impl EmbeddingFeaturesDyn for NotImplemented {
         0
     }
 
-    fn embed(&self, _texts: Vec<String>) -> BoxPinFut<Result<Vec<Embedding>, BoxError>> {
+    fn embed(&self, _texts: Vec<String>) -> BoxPinFut<Result<(Vec<Embedding>, Usage), BoxError>> {
         Box::pin(futures::future::ready(Err("not implemented".into())))
     }
 
-    fn embed_query(&self, _text: String) -> BoxPinFut<Result<Embedding, BoxError>> {
+    fn embed_query(&self, _text: String) -> BoxPinFut<Result<(Embedding, Usage), BoxError>> {
         Box::pin(futures::future::ready(Err("not implemented".into())))
     }
 }
@@ -101,21 +101,27 @@ impl EmbeddingFeaturesDyn for MockImplemented {
         384 // EMBED_MULTILINGUAL_LIGHT_V3
     }
 
-    fn embed(&self, texts: Vec<String>) -> BoxPinFut<Result<Vec<Embedding>, BoxError>> {
-        Box::pin(futures::future::ready(Ok(texts
-            .into_iter()
-            .map(|text| Embedding {
-                text,
-                vec: vec![0.0; 384],
-            })
-            .collect())))
+    fn embed(&self, texts: Vec<String>) -> BoxPinFut<Result<(Vec<Embedding>, Usage), BoxError>> {
+        Box::pin(futures::future::ready(Ok((
+            texts
+                .into_iter()
+                .map(|text| Embedding {
+                    text,
+                    vec: vec![0.0; 384],
+                })
+                .collect(),
+            Usage::default(),
+        ))))
     }
 
-    fn embed_query(&self, _text: String) -> BoxPinFut<Result<Embedding, BoxError>> {
-        Box::pin(futures::future::ready(Ok(Embedding {
-            text: "test".to_string(),
-            vec: vec![0.0; 384],
-        })))
+    fn embed_query(&self, _text: String) -> BoxPinFut<Result<(Embedding, Usage), BoxError>> {
+        Box::pin(futures::future::ready(Ok((
+            Embedding {
+                text: "test".to_string(),
+                vec: vec![0.0; 384],
+            },
+            Usage::default(),
+        ))))
     }
 }
 
@@ -179,11 +185,11 @@ impl EmbeddingFeatures for Model {
     async fn embed(
         &self,
         texts: impl IntoIterator<Item = String> + Send,
-    ) -> Result<Vec<Embedding>, BoxError> {
+    ) -> Result<(Vec<Embedding>, Usage), BoxError> {
         self.embedder.embed(texts.into_iter().collect()).await
     }
 
-    async fn embed_query(&self, text: &str) -> Result<Embedding, BoxError> {
+    async fn embed_query(&self, text: &str) -> Result<(Embedding, Usage), BoxError> {
         self.embedder.embed_query(text.to_string()).await
     }
 }

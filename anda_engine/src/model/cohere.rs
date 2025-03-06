@@ -5,7 +5,7 @@
 //! Cohere embedding models and handles API communication, error handling,
 //! and response parsing.
 
-use anda_core::{BoxError, BoxPinFut, CONTENT_TYPE_JSON, Embedding};
+use anda_core::{BoxError, BoxPinFut, CONTENT_TYPE_JSON, Embedding, Usage};
 use serde::Deserialize;
 use serde_json::json;
 use std::time::Duration;
@@ -113,7 +113,7 @@ pub struct EmbeddingResponse {
 }
 
 impl EmbeddingResponse {
-    fn try_into(self, texts: Vec<String>) -> Result<Vec<Embedding>, BoxError> {
+    fn try_into(self, texts: Vec<String>) -> Result<(Vec<Embedding>, Usage), BoxError> {
         if self.embeddings.float.len() != texts.len() {
             return Err(format!(
                 "Expected {} embeddings, got {}",
@@ -123,13 +123,18 @@ impl EmbeddingResponse {
             .into());
         }
 
-        Ok(self
-            .embeddings
-            .float
-            .into_iter()
-            .zip(texts)
-            .map(|(vec, text)| Embedding { text, vec })
-            .collect())
+        Ok((
+            self.embeddings
+                .float
+                .into_iter()
+                .zip(texts)
+                .map(|(vec, text)| Embedding { text, vec })
+                .collect(),
+            self.meta.as_ref().map_or(Usage::default(), |m| Usage {
+                input_tokens: m.billed_units.input_tokens as u64,
+                output_tokens: m.billed_units.output_tokens as u64,
+            }),
+        ))
     }
 }
 
@@ -233,7 +238,7 @@ impl EmbeddingFeaturesDyn for EmbeddingModel {
     /// https://docs.cohere.com/reference/embed
     /// Maximum number of texts per call is 96.
     /// Tecommend reducing the length of each text to be under 512 tokens for optimal quality.
-    fn embed(&self, texts: Vec<String>) -> BoxPinFut<Result<Vec<Embedding>, BoxError>> {
+    fn embed(&self, texts: Vec<String>) -> BoxPinFut<Result<(Vec<Embedding>, Usage), BoxError>> {
         let model = self.model.clone();
         let client = self.client.clone();
         Box::pin(async move {
@@ -271,7 +276,7 @@ impl EmbeddingFeaturesDyn for EmbeddingModel {
     ///
     /// # Returns
     /// Future resolving to a single Embedding struct
-    fn embed_query(&self, text: String) -> BoxPinFut<Result<Embedding, BoxError>> {
+    fn embed_query(&self, text: String) -> BoxPinFut<Result<(Embedding, Usage), BoxError>> {
         let model = self.model.clone();
         let client = self.client.clone();
         Box::pin(async move {
@@ -290,7 +295,11 @@ impl EmbeddingFeaturesDyn for EmbeddingModel {
                 match response.json::<EmbeddingResponse>().await {
                     Ok(mut res) => {
                         let data = res.embeddings.float.pop().ok_or("no embedding data")?;
-                        Ok(Embedding { text, vec: data })
+                        let usage = res.meta.as_ref().map_or(Usage::default(), |m| Usage {
+                            input_tokens: m.billed_units.input_tokens as u64,
+                            output_tokens: m.billed_units.output_tokens as u64,
+                        });
+                        Ok((Embedding { text, vec: data }, usage))
                     }
                     Err(err) => Err(format!("Cohere embeddings error: {}", err).into()),
                 }

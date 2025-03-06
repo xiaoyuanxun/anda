@@ -114,14 +114,13 @@ impl DocumentSegmenter {
                 res,
                 AgentOutput {
                     content: "".to_string(),
-                    failed_reason: None,
                     tool_calls: Some(vec![ToolCall {
                         id: self.tool_name.clone(),
                         name: self.tool_name.clone(),
                         args: res_str.clone(),
                         result: Some(res_str),
                     }]),
-                    full_history: None,
+                    ..Default::default()
                 },
             ));
         }

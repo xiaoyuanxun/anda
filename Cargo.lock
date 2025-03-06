@@ -197,6 +197,7 @@ dependencies = [
  "anda_core",
  "anda_web3_client",
  "base64 0.22.1",
+ "ciborium",
  "clap",
  "const-hex",
  "dotenv",

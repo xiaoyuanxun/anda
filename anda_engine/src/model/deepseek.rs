@@ -7,7 +7,7 @@
 
 use anda_core::{
     AgentOutput, BoxError, BoxPinFut, CONTENT_TYPE_JSON, CompletionFeatures, CompletionRequest,
-    FunctionDefinition, Message, ToolCall,
+    FunctionDefinition, Message, ToolCall, Usage as ModelUsage,
 };
 use log::{Level::Debug, log_enabled};
 use serde::{Deserialize, Serialize};
@@ -144,6 +144,14 @@ impl CompletionResponse {
                     .collect()
             }),
             full_history: Some(full_history),
+            usage: self
+                .usage
+                .as_ref()
+                .map(|u| ModelUsage {
+                    input_tokens: u.prompt_tokens as u64,
+                    output_tokens: u.total_tokens.saturating_sub(u.prompt_tokens) as u64,
+                })
+                .unwrap_or_default(),
             ..Default::default()
         };
 

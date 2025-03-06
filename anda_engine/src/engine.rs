@@ -177,7 +177,7 @@ impl Engine {
         args: String,
         caller: Principal,
         user: Option<String>,
-    ) -> Result<(String, bool), BoxError> {
+    ) -> Result<String, BoxError> {
         if !self.export_tools.contains(&name) || !self.ctx.tools.contains(&name) {
             return Err(format!("tool {} not found", name).into());
         }

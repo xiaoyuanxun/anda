@@ -29,7 +29,7 @@ use anda_core::{
     AgentContext, AgentOutput, AgentSet, BaseContext, BoxError, CacheExpiry, CacheFeatures,
     CancellationToken, CanisterCaller, CompletionFeatures, CompletionRequest, Embedding,
     EmbeddingFeatures, FunctionDefinition, HttpFeatures, KeysFeatures, Message, ObjectMeta, Path,
-    PutMode, PutResult, StateFeatures, StoreFeatures, ToolCall, ToolSet, Value,
+    PutMode, PutResult, StateFeatures, StoreFeatures, ToolCall, ToolSet, Usage, Value,
 };
 use bytes::Bytes;
 use candid::{CandidType, Principal, utils::ArgumentEncoder};
@@ -268,7 +268,7 @@ impl AgentContext for AgentCtx {
         if let Some(endpoint) = endpoint {
             for (prefix, engine) in self.remote_engines.iter() {
                 if endpoint == engine.endpoint {
-                    let prefix = format!("RT_{prefix}");
+                    let prefix = format!("RA_{prefix}");
                     return engine
                         .agent_definitions
                         .iter()
@@ -295,7 +295,7 @@ impl AgentContext for AgentCtx {
                 .sum(),
         );
         for (prefix, engine) in self.remote_engines.iter() {
-            let prefix = format!("RT_{prefix}");
+            let prefix = format!("RA_{prefix}");
             definitions.extend(engine.agent_definitions.iter().filter_map(|d| {
                 if let Some(names) = names {
                     if names.contains(&d.name.as_str()) {
@@ -320,7 +320,7 @@ impl AgentContext for AgentCtx {
     ///
     /// # Returns
     /// Tuple containing the result string and a boolean indicating if further processing is needed
-    async fn tool_call(&self, name: &str, args: String) -> Result<(String, bool), BoxError> {
+    async fn tool_call(&self, name: &str, args: String) -> Result<String, BoxError> {
         // find registered remote tool and call it
         if let Some(name) = name.strip_prefix("RT_") {
             for (prefix, engine) in self.remote_engines.iter() {
@@ -351,7 +351,7 @@ impl AgentContext for AgentCtx {
         endpoint: &str,
         name: &str,
         args: String,
-    ) -> Result<(String, bool), BoxError> {
+    ) -> Result<String, BoxError> {
         self.https_signed_rpc(endpoint, "tool_call", &(name, args))
             .await
     }
@@ -436,11 +436,13 @@ impl CompletionFeatures for AgentCtx {
     /// 3. Returns final result when no more tool calls need processing
     async fn completion(&self, mut req: CompletionRequest) -> Result<AgentOutput, BoxError> {
         let mut tool_calls_result: Vec<ToolCall> = Vec::new();
+        let mut usage = Usage::default();
         loop {
-            let mut res = self.model.completion(req.clone()).await?;
+            let mut output = self.model.completion(req.clone()).await?;
+            usage.accumulate(&output.usage);
             // automatically executes tools calls
             let mut tool_calls_continue: Vec<Value> = Vec::new();
-            if let Some(tool_calls) = &mut res.tool_calls {
+            if let Some(tool_calls) = &mut output.tool_calls {
                 for tool in tool_calls.iter_mut() {
                     if !req.tools.iter().any(|t| t.name == tool.name) {
                         // tool already called, skip
@@ -451,21 +453,20 @@ impl CompletionFeatures for AgentCtx {
                     req.tools.retain(|t| t.name != tool.name);
                     if self.tools.contains(&tool.name) || tool.name.starts_with("RT_") {
                         match self.tool_call(&tool.name, tool.args.clone()).await {
-                            Ok((val, con)) => {
-                                if con {
-                                    // need to use LLM to continue processing tool_call result
-                                    tool_calls_continue.push(json!(Message {
-                                        role: "tool".to_string(),
-                                        content: val.clone().into(),
-                                        name: None,
-                                        tool_call_id: Some(tool.id.clone()),
-                                    }));
-                                }
-                                tool.result = Some(val);
+                            Ok(result) => {
+                                tool_calls_continue.push(json!(Message {
+                                    role: "tool".to_string(),
+                                    content: result.clone().into(),
+                                    name: None,
+                                    tool_call_id: Some(tool.id.clone()),
+                                }));
+
+                                tool.result = Some(result);
                             }
                             Err(err) => {
-                                res.failed_reason = Some(err.to_string());
-                                return Ok(res);
+                                output.failed_reason = Some(err.to_string());
+                                output.usage = usage;
+                                return Ok(output);
                             }
                         }
                     } else if self.agents.contains(&tool.name)
@@ -473,17 +474,25 @@ impl CompletionFeatures for AgentCtx {
                         || tool.name.starts_with("RA_")
                     {
                         match self.agent_run(&tool.name, tool.args.clone(), None).await {
-                            Ok(val) => {
-                                if val.failed_reason.is_some() {
-                                    res.failed_reason = val.failed_reason;
-                                    return Ok(res);
+                            Ok(res) => {
+                                usage.accumulate(&res.usage);
+                                if res.failed_reason.is_some() {
+                                    output.failed_reason = res.failed_reason;
+                                    return Ok(output);
                                 }
 
-                                tool.result = Some(val.content);
+                                tool_calls_continue.push(json!(Message {
+                                    role: "tool".to_string(),
+                                    content: res.content.clone().into(),
+                                    name: None,
+                                    tool_call_id: Some(tool.id.clone()),
+                                }));
+                                tool.result = Some(res.content);
                             }
                             Err(err) => {
-                                res.failed_reason = Some(err.to_string());
-                                return Ok(res);
+                                output.failed_reason = Some(err.to_string());
+                                output.usage = usage;
+                                return Ok(output);
                             }
                         }
                     }
@@ -494,18 +503,19 @@ impl CompletionFeatures for AgentCtx {
             }
 
             if tool_calls_continue.is_empty() {
-                res.tool_calls = if tool_calls_result.is_empty() {
+                output.tool_calls = if tool_calls_result.is_empty() {
                     None
                 } else {
                     Some(tool_calls_result)
                 };
-                return Ok(res);
+                output.usage = usage;
+                return Ok(output);
             }
 
             req.system = None;
             req.documents.clear();
             req.prompt = "".to_string();
-            req.chat_history = res.full_history.unwrap_or_default();
+            req.chat_history = output.full_history.unwrap_or_default();
             req.chat_history.append(&mut tool_calls_continue);
         }
     }
@@ -527,7 +537,7 @@ impl EmbeddingFeatures for AgentCtx {
     async fn embed(
         &self,
         texts: impl IntoIterator<Item = String> + Send,
-    ) -> Result<Vec<Embedding>, BoxError> {
+    ) -> Result<(Vec<Embedding>, Usage), BoxError> {
         self.model.embed(texts).await
     }
 
@@ -538,7 +548,7 @@ impl EmbeddingFeatures for AgentCtx {
     ///
     /// # Returns
     /// Embedding vector for the input text
-    async fn embed_query(&self, text: &str) -> Result<Embedding, BoxError> {
+    async fn embed_query(&self, text: &str) -> Result<(Embedding, Usage), BoxError> {
         self.model.embed_query(text).await
     }
 }

@@ -87,7 +87,7 @@ pub trait AgentContext: BaseContext + CompletionFeatures + EmbeddingFeatures {
         &self,
         tool_name: &str,
         args: String,
-    ) -> impl Future<Output = Result<(String, bool), BoxError>> + Send;
+    ) -> impl Future<Output = Result<String, BoxError>> + Send;
 
     /// Executes a remote tool on another agent
     fn remote_tool_call(
@@ -95,7 +95,7 @@ pub trait AgentContext: BaseContext + CompletionFeatures + EmbeddingFeatures {
         endpoint: &str,
         tool_name: &str,
         args: String,
-    ) -> impl Future<Output = Result<(String, bool), BoxError>> + Send;
+    ) -> impl Future<Output = Result<String, BoxError>> + Send;
 
     /// Runs a local agent with optional attachment
     fn agent_run(

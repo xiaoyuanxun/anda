@@ -55,7 +55,7 @@ pub async fn hybrid_search<const N: usize>(
         }
         q.execute().await?
     } else if let Some(embedder) = embedder {
-        let prompt_embedding = embedder.embed_query(query.clone()).await?;
+        let (prompt_embedding, _) = embedder.embed_query(query.clone()).await?;
         let mut q = table
             .vector_search(prompt_embedding.vec.clone())?
             .full_text_search(FullTextSearchQuery::new(query))

@@ -115,7 +115,6 @@ impl<T> Tool<BaseCtx> for SubmitTool<T>
 where
     T: JsonSchema + DeserializeOwned + Serialize + Send + Sync,
 {
-    const CONTINUE: bool = false;
     type Args = T;
     type Output = T;
 
@@ -302,13 +301,13 @@ mod tests {
             .unwrap()
             .mock_ctx();
 
-        let (res, _) = ctx
+        let res = ctx
             .tool_call(&tool_name, r#"{"name":"Anda","age": 1}"#.to_string())
             .await
             .unwrap();
         assert_eq!(res, r#"{"name":"Anda","age":1}"#);
 
-        let (res, _) = ctx
+        let res = ctx
             .tool_call(&tool_name, r#"{"name": "Anda"}"#.to_string())
             .await
             .unwrap();

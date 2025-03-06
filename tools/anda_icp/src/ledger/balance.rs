@@ -45,7 +45,6 @@ impl BalanceOfTool {
 /// Implementation of the [`Tool`]` trait for BalanceOfTool
 /// Enables AI Agent to query the balance of an account for a ICP token
 impl Tool<BaseCtx> for BalanceOfTool {
-    const CONTINUE: bool = true;
     type Args = BalanceOfArgs;
     type Output = f64;
 

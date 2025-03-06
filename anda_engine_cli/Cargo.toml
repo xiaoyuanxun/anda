@@ -18,5 +18,6 @@ dotenv = { workspace = true }
 tokio = { workspace = true }
 const-hex = { workspace = true }
 rand = { workspace = true }
+ciborium = { workspace = true }
 
 [dev-dependencies]

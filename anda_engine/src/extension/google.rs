@@ -161,7 +161,6 @@ impl GoogleSearchTool {
 }
 
 impl Tool<BaseCtx> for GoogleSearchTool {
-    const CONTINUE: bool = true;
     type Args = SearchArgs;
     type Output = Vec<SearchResultItem>;
 

@@ -493,7 +493,7 @@ where
                 let mut vecs: Vec<Embedding> = Vec::with_capacity(docs.segments.len());
                 for texts in docs.segments.chunks(16) {
                     match ctx.embed(texts.to_owned()).await {
-                        Ok(embeddings) => vecs.extend(embeddings),
+                        Ok((embeddings, _)) => vecs.extend(embeddings),
                         Err(err) => {
                             log::error!("Failed to embed segments: {}", err);
                         }

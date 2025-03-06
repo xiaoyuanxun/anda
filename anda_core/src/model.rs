@@ -17,6 +17,22 @@ use std::{collections::BTreeMap, future::Future};
 
 use crate::{BoxError, Knowledge};
 
+/// Represents the usage statistics for the agent or tool execution
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct Usage {
+    #[serde(default)]
+    pub input_tokens: u64,
+    #[serde(default)]
+    pub output_tokens: u64,
+}
+
+impl Usage {
+    pub fn accumulate(&mut self, other: &Usage) {
+        self.input_tokens = self.input_tokens.saturating_add(other.input_tokens);
+        self.output_tokens = self.output_tokens.saturating_add(other.output_tokens);
+    }
+}
+
 /// Represents the output of an agent execution
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct AgentOutput {
@@ -35,6 +51,10 @@ pub struct AgentOutput {
     /// but not be included in the engine's response
     #[serde(skip_serializing_if = "Option::is_none")]
     pub full_history: Option<Vec<Value>>,
+
+    /// The usage statistics for the agent execution
+    #[serde(default)]
+    pub usage: Usage,
 }
 
 /// Represents a tool call response with it's ID, function name, and arguments
@@ -308,11 +328,14 @@ pub trait EmbeddingFeatures: Sized {
     fn embed(
         &self,
         texts: impl IntoIterator<Item = String> + Send,
-    ) -> impl Future<Output = Result<Vec<Embedding>, BoxError>> + Send;
+    ) -> impl Future<Output = Result<(Vec<Embedding>, Usage), BoxError>> + Send;
 
     /// Generates a single embedding for a query text
     /// Optimized for single text embedding generation
-    fn embed_query(&self, text: &str) -> impl Future<Output = Result<Embedding, BoxError>> + Send;
+    fn embed_query(
+        &self,
+        text: &str,
+    ) -> impl Future<Output = Result<(Embedding, Usage), BoxError>> + Send;
 }
 
 /// Returns the number of tokens in the given content in the simplest way

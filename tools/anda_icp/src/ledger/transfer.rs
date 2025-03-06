@@ -52,7 +52,6 @@ impl TransferTool {
 /// Implementation of the [`Tool`] trait for TransferTool
 /// Enables AI Agent to perform ICP token transfers
 impl Tool<BaseCtx> for TransferTool {
-    const CONTINUE: bool = true;
     type Args = TransferToArgs;
     type Output = String;
 

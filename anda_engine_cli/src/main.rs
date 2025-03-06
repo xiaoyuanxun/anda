@@ -1,6 +1,7 @@
 use anda_core::{AgentOutput, BoxError, HttpFeatures};
 use anda_web3_client::client::{Client as Web3Client, load_identity};
 use base64::{Engine, prelude::BASE64_URL_SAFE_NO_PAD};
+use ciborium::value::Value;
 use clap::{Parser, Subcommand};
 use rand::{RngCore, thread_rng};
 use std::sync::Arc;
@@ -120,8 +121,8 @@ async fn main() -> Result<(), BoxError> {
             println!("principal: {}", web3.get_principal());
             let args = args.clone().unwrap_or_default();
 
-            let res: String = web3.https_signed_rpc(endpoint, method, &args).await?;
-            println!("{}", res);
+            let res: Value = web3.https_signed_rpc(endpoint, method, &args).await?;
+            println!("{:?}", res);
         }
 
         Some(Commands::AgentRun {
@@ -162,7 +163,7 @@ async fn main() -> Result<(), BoxError> {
 
             println!("principal: {}", web3.get_principal());
 
-            let res: (String, bool) = web3
+            let res: String = web3
                 .https_signed_rpc(endpoint, "tool_call", &(&name, &args))
                 .await?;
             println!("{:?}", res);

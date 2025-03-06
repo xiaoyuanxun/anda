@@ -42,9 +42,6 @@ pub trait Tool<C>: Send + Sync
 where
     C: BaseContext + Send + Sync,
 {
-    /// A constant flag indicating whether the agent should continue processing the tool result
-    /// with completion model after execution
-    const CONTINUE: bool;
     /// The arguments type of the tool.
     type Args: DeserializeOwned + Send;
     /// The output type of the tool.
@@ -114,10 +111,10 @@ where
         &self,
         ctx: C,
         args: String,
-    ) -> impl Future<Output = Result<(String, bool), BoxError>> + Send {
+    ) -> impl Future<Output = Result<String, BoxError>> + Send {
         async move {
             let result = self.call_string(ctx, args).await?;
-            Ok((serde_json::to_string(&result)?, Self::CONTINUE))
+            Ok(serde_json::to_string(&result)?)
         }
     }
 }
@@ -140,7 +137,7 @@ where
     fn init(&self, ctx: C) -> BoxPinFut<Result<(), BoxError>>;
 
     /// Executes the tool with given context and arguments using dynamic dispatch
-    fn call(&self, ctx: C, args: String) -> BoxPinFut<Result<(String, bool), BoxError>>;
+    fn call(&self, ctx: C, args: String) -> BoxPinFut<Result<String, BoxError>>;
 }
 
 /// Wrapper to convert static Tool implementation to dynamic dispatch
@@ -167,7 +164,7 @@ where
         Box::pin(async move { tool.init(ctx).await })
     }
 
-    fn call(&self, ctx: C, args: String) -> BoxPinFut<Result<(String, bool), BoxError>> {
+    fn call(&self, ctx: C, args: String) -> BoxPinFut<Result<String, BoxError>> {
         let tool = self.0.clone();
         Box::pin(async move { tool.call_raw(ctx, args).await })
     }
@@ -259,12 +256,7 @@ where
     /// # Returns
     /// - A future resolving to the tool's output as a JSON value
     /// - Returns an error if the tool is not found
-    pub fn call(
-        &self,
-        name: &str,
-        ctx: C,
-        args: String,
-    ) -> BoxPinFut<Result<(String, bool), BoxError>> {
+    pub fn call(&self, name: &str, ctx: C, args: String) -> BoxPinFut<Result<String, BoxError>> {
         if let Some(tool) = self.set.get(name) {
             tool.call(ctx, args)
         } else {
