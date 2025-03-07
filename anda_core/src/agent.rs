@@ -32,6 +32,7 @@
 //! 3. [`CharacterAgent`](https://github.com/ldclabs/anda/blob/main/anda_engine/src/extension/character.rs) -
 //!    A role-playing AI agent, also serving as the core agent for [`anda_bot`](https://github.com/ldclabs/anda/blob/main/agents/anda_bot/README.md)
 
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{collections::BTreeMap, future::Future, marker::PhantomData, sync::Arc};
 
@@ -41,6 +42,13 @@ use crate::{
     model::{AgentOutput, FunctionDefinition},
     validate_function_name,
 };
+
+/// Arguments for an AI agent
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AgentArgs {
+    /// optimized prompt or message.
+    pub prompt: String,
+}
 
 /// Core trait defining an AI agent's behavior
 ///
@@ -73,8 +81,11 @@ where
             name: self.name().to_ascii_lowercase(),
             description: self.description(),
             parameters: json!({
-                "type": "string",
-                "description": "optimized prompt or message.",
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string", "description": "optimized prompt or message."},
+                },
+                "required": ["prompt"],
             }),
             strict: None,
         }

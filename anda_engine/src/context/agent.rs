@@ -26,10 +26,11 @@
 //! agents or tools while maintaining access to the core functionality.
 
 use anda_core::{
-    AgentContext, AgentOutput, AgentSet, BaseContext, BoxError, CacheExpiry, CacheFeatures,
-    CancellationToken, CanisterCaller, CompletionFeatures, CompletionRequest, Embedding,
-    EmbeddingFeatures, FunctionDefinition, HttpFeatures, KeysFeatures, Message, ObjectMeta, Path,
-    PutMode, PutResult, StateFeatures, StoreFeatures, ToolCall, ToolSet, Usage, Value,
+    AgentArgs, AgentContext, AgentOutput, AgentSet, BaseContext, BoxError, CacheExpiry,
+    CacheFeatures, CancellationToken, CanisterCaller, CompletionFeatures, CompletionRequest,
+    Embedding, EmbeddingFeatures, FunctionDefinition, HttpFeatures, KeysFeatures, Message,
+    ObjectMeta, Path, PutMode, PutResult, StateFeatures, StoreFeatures, ToolCall, ToolSet, Usage,
+    Value,
 };
 use bytes::Bytes;
 use candid::{CandidType, Principal, utils::ArgumentEncoder};
@@ -473,7 +474,8 @@ impl CompletionFeatures for AgentCtx {
                         || tool.name.starts_with("LA_")
                         || tool.name.starts_with("RA_")
                     {
-                        match self.agent_run(&tool.name, tool.args.clone(), None).await {
+                        let args: AgentArgs = serde_json::from_str(&tool.args)?;
+                        match self.agent_run(&tool.name, args.prompt, None).await {
                             Ok(res) => {
                                 usage.accumulate(&res.usage);
                                 if res.failed_reason.is_some() {
