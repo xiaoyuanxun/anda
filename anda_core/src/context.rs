@@ -65,7 +65,7 @@ pub trait AgentContext: BaseContext + CompletionFeatures + EmbeddingFeatures {
         &self,
         endpoint: Option<&str>,
         names: Option<&[&str]>,
-    ) -> Vec<FunctionDefinition>;
+    ) -> impl Future<Output = Result<Vec<FunctionDefinition>, BoxError>> + Send;
 
     /// Gets definitions for multiple agents, optionally filtered by names
     /// `with_prefix` is a flag to add the prefix `LA_` to agent names to distinguish from tools
@@ -80,7 +80,7 @@ pub trait AgentContext: BaseContext + CompletionFeatures + EmbeddingFeatures {
         &self,
         endpoint: Option<&str>,
         names: Option<&[&str]>,
-    ) -> Vec<FunctionDefinition>;
+    ) -> impl Future<Output = Result<Vec<FunctionDefinition>, BoxError>> + Send;
 
     /// Executes a local tool with provided arguments
     fn tool_call(
