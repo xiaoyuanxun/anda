@@ -56,6 +56,7 @@ impl Client {
                 .http2_keep_alive_while_idle(true)
                 .connect_timeout(Duration::from_secs(10))
                 .timeout(Duration::from_secs(180))
+                .gzip(true)
                 .user_agent(APP_USER_AGENT)
                 .default_headers({
                     let mut headers = reqwest::header::HeaderMap::new();

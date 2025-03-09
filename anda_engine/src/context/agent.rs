@@ -262,7 +262,8 @@ impl AgentContext for AgentCtx {
     async fn tool_call(&self, name: &str, args: String) -> Result<String, BoxError> {
         if self.tools.contains(name) {
             let ctx = self.child_base(name)?;
-            return self.tools.call(name, ctx, args).await;
+            let tool = self.tools.get(name).expect("tool not found");
+            return tool.call(ctx, args).await;
         }
 
         // find registered remote tool and call it
@@ -314,14 +315,16 @@ impl AgentContext for AgentCtx {
         prompt: String,
         attachment: Option<Vec<u8>>,
     ) -> Result<AgentOutput, BoxError> {
-        let name_ = name.strip_prefix("LA_").unwrap_or(name);
+        let name = name.to_ascii_lowercase();
+        let name_ = name.strip_prefix("LA_").unwrap_or(&name);
         if self.agents.contains(name_) {
             let ctx = self.child(name_)?;
-            return self.agents.run(name_, ctx, prompt, attachment).await;
+            let agent = self.agents.get(name_).expect("agent not found");
+            return agent.run(ctx, prompt, attachment).await;
         }
 
         // find registered remote agent and run it
-        if let Some((endpoint, agent_name)) = self.remote.get_agent_endpoint(name) {
+        if let Some((endpoint, agent_name)) = self.remote.get_agent_endpoint(&name) {
             return self
                 .remote_agent_run(&endpoint, &agent_name, prompt, attachment)
                 .await;
@@ -332,7 +335,7 @@ impl AgentContext for AgentCtx {
             .cache_store_get::<RemoteEngines>(DYNAMIC_REMOTE_ENGINES)
             .await
         {
-            if let Some((endpoint, agent_name)) = engines.get_agent_endpoint(name) {
+            if let Some((endpoint, agent_name)) = engines.get_agent_endpoint(&name) {
                 return self
                     .remote_agent_run(&endpoint, &agent_name, prompt, attachment)
                     .await;

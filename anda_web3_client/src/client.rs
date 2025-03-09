@@ -103,6 +103,7 @@ impl Default for ClientBuilder {
                 .http2_keep_alive_while_idle(true)
                 .connect_timeout(Duration::from_secs(10))
                 .timeout(Duration::from_secs(360))
+                .gzip(true)
                 .user_agent(APP_USER_AGENT)
                 .build()
                 .expect("Could not create HTTP client"),

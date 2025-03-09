@@ -259,33 +259,8 @@ where
         Ok(())
     }
 
-    /// Executes a specific agent with given parameters
-    ///
-    /// # Arguments
-    /// - `name`: The name of the agent to execute
-    /// - `ctx`: The execution context
-    /// - `prompt`: The input prompt
-    /// - `attachment`: Optional additional data
-    ///
-    /// # Returns
-    /// - A boxed future resolving to `Result<AgentOutput, BoxError>`
-    ///
-    /// # Errors
-    /// - Returns an error if the agent is not found
-    pub fn run(
-        &self,
-        name: &str,
-        ctx: C,
-        prompt: String,
-        attachment: Option<Vec<u8>>,
-    ) -> BoxPinFut<Result<AgentOutput, BoxError>> {
-        if let Some(agent) = self.set.get(&name.to_ascii_lowercase()) {
-            agent.run(ctx, prompt, attachment)
-        } else {
-            Box::pin(futures::future::ready(Err(format!(
-                "agent {name} not found"
-            )
-            .into())))
-        }
+    /// Retrieves an agent by name
+    pub fn get(&self, name: &str) -> Option<&Box<dyn AgentDyn<C>>> {
+        self.set.get(name)
     }
 }

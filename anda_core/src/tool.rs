@@ -246,24 +246,8 @@ where
         Ok(())
     }
 
-    /// Calls a tool by name with the given context and arguments
-    ///
-    /// # Arguments
-    /// - `name`: The name of the tool to call
-    /// - `ctx`: The execution context
-    /// - `args`: JSON value containing the input arguments
-    ///
-    /// # Returns
-    /// - A future resolving to the tool's output as a JSON value
-    /// - Returns an error if the tool is not found
-    pub fn call(&self, name: &str, ctx: C, args: String) -> BoxPinFut<Result<String, BoxError>> {
-        if let Some(tool) = self.set.get(name) {
-            tool.call(ctx, args)
-        } else {
-            Box::pin(futures::future::ready(Err(format!(
-                "tool {name} not found"
-            )
-            .into())))
-        }
+    /// Retrieves a tool by name
+    pub fn get(&self, name: &str) -> Option<&Box<dyn ToolDyn<C>>> {
+        self.set.get(name)
     }
 }

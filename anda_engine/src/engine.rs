@@ -33,6 +33,7 @@ use anda_core::{
     Agent, AgentOutput, AgentSet, BoxError, FunctionDefinition, Path, Tool, ToolSet,
     validate_function_name, validate_path_part,
 };
+use async_trait::async_trait;
 use candid::Principal;
 use object_store::memory::InMemory;
 use serde_bytes::ByteBuf;
@@ -63,6 +64,105 @@ pub struct Engine {
     default_agent: String,
     export_agents: BTreeSet<String>,
     export_tools: BTreeSet<String>,
+    hooks: Arc<Hooks>,
+}
+
+/// Hook trait for customizing engine behavior.
+/// Hooks can be used to intercept and modify agent and tool execution.
+#[async_trait]
+pub trait Hook: Send + Sync {
+    /// Called before an agent is executed.
+    async fn before_agent_run(&self, _ctx: &AgentCtx, _agent_name: &str) -> Result<(), BoxError> {
+        Ok(())
+    }
+
+    /// Called after an agent is executed.
+    async fn after_agent_run(
+        &self,
+        _ctx: &AgentCtx,
+        _agent: &str,
+        output: AgentOutput,
+    ) -> Result<AgentOutput, BoxError> {
+        Ok(output)
+    }
+
+    /// Called before a tool is called.
+    async fn before_tool_call(&self, _ctx: &BaseCtx, _tool_name: &str) -> Result<(), BoxError> {
+        Ok(())
+    }
+
+    /// Called after a tool is called.
+    async fn after_tool_call(
+        &self,
+        _ctx: &BaseCtx,
+        _tool: &str,
+        output: String,
+    ) -> Result<String, BoxError> {
+        Ok(output)
+    }
+}
+
+/// Hooks struct for managing multiple hooks.
+pub struct Hooks {
+    hooks: Vec<Box<dyn Hook>>,
+}
+
+impl Default for Hooks {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Hooks {
+    pub fn new() -> Self {
+        Self { hooks: Vec::new() }
+    }
+
+    /// Adds a new hook to the list of hooks.
+    pub fn add(&mut self, hook: Box<dyn Hook>) {
+        self.hooks.push(hook);
+    }
+}
+
+#[async_trait]
+impl Hook for Hooks {
+    async fn before_agent_run(&self, ctx: &AgentCtx, agent_name: &str) -> Result<(), BoxError> {
+        for hook in &self.hooks {
+            hook.before_agent_run(ctx, agent_name).await?;
+        }
+        Ok(())
+    }
+
+    async fn after_agent_run(
+        &self,
+        ctx: &AgentCtx,
+        agent: &str,
+        mut output: AgentOutput,
+    ) -> Result<AgentOutput, BoxError> {
+        for hook in &self.hooks {
+            output = hook.after_agent_run(ctx, agent, output).await?;
+        }
+        Ok(output)
+    }
+
+    async fn before_tool_call(&self, ctx: &BaseCtx, tool_name: &str) -> Result<(), BoxError> {
+        for hook in &self.hooks {
+            hook.before_tool_call(ctx, tool_name).await?;
+        }
+        Ok(())
+    }
+
+    async fn after_tool_call(
+        &self,
+        ctx: &BaseCtx,
+        tool: &str,
+        mut output: String,
+    ) -> Result<String, BoxError> {
+        for hook in &self.hooks {
+            output = hook.after_tool_call(ctx, tool, output).await?;
+        }
+        Ok(output)
+    }
 }
 
 impl Engine {
@@ -126,16 +226,23 @@ impl Engine {
         caller: Principal,
         user: Option<String>,
     ) -> Result<AgentOutput, BoxError> {
-        let name = agent_name.unwrap_or_else(|| self.default_agent.clone());
-        let ctx = self.ctx_with(&name, caller, user)?;
+        let name = agent_name
+            .unwrap_or_else(|| self.default_agent.clone())
+            .to_ascii_lowercase();
 
-        let mut res = self
+        let agent = self
             .ctx
             .agents
-            .run(&name, ctx, prompt, attachment.map(|v| v.into_vec()))
+            .get(&name)
+            .ok_or_else(|| format!("agent {} not found", name))?;
+        let ctx = self.ctx_with(&name, caller, user)?;
+
+        self.hooks.before_agent_run(&ctx, &name).await?;
+        let mut res = agent
+            .run(ctx.clone(), prompt, attachment.map(|v| v.into_vec()))
             .await?;
         res.full_history = None; // clear full history
-        Ok(res)
+        self.hooks.after_agent_run(&ctx, &name, res).await
     }
 
     /// Calls a tool by name with the specified arguments.
@@ -155,8 +262,16 @@ impl Engine {
             validate_path_part(user)?;
         }
 
+        let tool = self
+            .ctx
+            .tools
+            .get(&name)
+            .ok_or_else(|| format!("tool {} not found", name))?;
+
         let ctx = self.ctx.child_base_with(&name, caller, user)?;
-        self.ctx.tools.call(&name, ctx, args).await
+        self.hooks.before_tool_call(&ctx, &name).await?;
+        let res = tool.call(ctx.clone(), args).await?;
+        self.hooks.after_tool_call(&ctx, &name, res).await
     }
 
     /// Returns function definitions for the specified agents.
@@ -215,6 +330,7 @@ pub struct EngineBuilder {
     model: Model,
     store: Store,
     web3: Arc<Web3SDK>,
+    hooks: Arc<Hooks>,
     cancellation_token: CancellationToken,
     export_agents: BTreeSet<String>,
     export_tools: BTreeSet<String>,
@@ -239,6 +355,7 @@ impl EngineBuilder {
             model: Model::not_implemented(),
             store: Store::new(mstore),
             web3: Arc::new(Web3SDK::Web3(Web3Client::not_implemented())),
+            hooks: Arc::new(Hooks { hooks: Vec::new() }),
             cancellation_token: CancellationToken::new(),
             export_agents: BTreeSet::new(),
             export_tools: BTreeSet::new(),
@@ -371,6 +488,12 @@ impl EngineBuilder {
         self
     }
 
+    /// Sets the hooks for the engine.
+    pub fn with_hooks(mut self, hooks: Arc<Hooks>) -> Self {
+        self.hooks = hooks;
+        self
+    }
+
     /// Finalizes the builder and creates an Engine instance.
     /// Requires a default agent name to be specified.
     /// Returns an error if the default agent is not found.
@@ -378,6 +501,7 @@ impl EngineBuilder {
         if !self.agents.contains(&default_agent) {
             return Err(format!("default agent {} not found", default_agent).into());
         }
+
         self.export_agents
             .insert(default_agent.to_ascii_lowercase());
 
@@ -434,6 +558,7 @@ impl EngineBuilder {
             default_agent,
             export_agents: self.export_agents,
             export_tools: self.export_tools,
+            hooks: self.hooks,
         })
     }
 
