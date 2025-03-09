@@ -256,7 +256,14 @@ impl CompletionFeaturesDyn for CompletionModel {
             // Extend existing chat history
             full_history.append(&mut req.chat_history);
 
-            if let Some(prompt) = req.prompt_with_context() {
+            if !req.content_parts.is_empty() {
+                full_history.push(json!(Message {
+                    role: "user".into(),
+                    content: json!(req.content_parts),
+                    name: req.prompter_name,
+                    ..Default::default()
+                }));
+            } else if let Some(prompt) = req.prompt_with_context() {
                 full_history.push(json!(Message {
                     role: "user".into(),
                     content: prompt.into(),

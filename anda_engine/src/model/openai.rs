@@ -173,6 +173,8 @@ pub struct EmbeddingData {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Usage {
     pub prompt_tokens: usize,
+    #[serde(default)]
+    pub completion_tokens: usize, // no completion_tokens in embeddings API
     pub total_tokens: usize,
 }
 
@@ -180,8 +182,8 @@ impl std::fmt::Display for Usage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Prompt tokens: {} Total tokens: {}",
-            self.prompt_tokens, self.total_tokens
+            "Prompt tokens: {}, completion tokens: {}",
+            self.prompt_tokens, self.completion_tokens
         )
     }
 }
@@ -220,7 +222,7 @@ impl CompletionResponse {
                 .as_ref()
                 .map(|u| ModelUsage {
                     input_tokens: u.prompt_tokens as u64,
-                    output_tokens: u.total_tokens.saturating_sub(u.prompt_tokens) as u64,
+                    output_tokens: u.completion_tokens as u64,
                 })
                 .unwrap_or_default(),
             ..Default::default()
@@ -442,7 +444,14 @@ impl CompletionFeaturesDyn for CompletionModel {
             // Extend existing chat history
             full_history.append(&mut req.chat_history);
 
-            if let Some(prompt) = req.prompt_with_context() {
+            if !req.content_parts.is_empty() {
+                full_history.push(json!(Message {
+                    role: "user".into(),
+                    content: json!(req.content_parts),
+                    name: req.prompter_name,
+                    ..Default::default()
+                }));
+            } else if let Some(prompt) = req.prompt_with_context() {
                 full_history.push(json!(Message {
                     role: "user".into(),
                     content: prompt.into(),

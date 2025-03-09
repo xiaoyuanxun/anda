@@ -13,7 +13,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::{collections::BTreeMap, future::Future};
+use std::{collections::BTreeMap, convert::Infallible, future::Future, str::FromStr};
 
 use crate::{BoxError, Knowledge};
 
@@ -41,6 +41,7 @@ pub struct AgentOutput {
 
     /// Indicates failure reason if present, None means successful execution
     /// Should be None when finish_reason is "stop" or "tool_calls"
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub failed_reason: Option<String>,
 
     /// Tool call that this message is responding to. If this message is a response to a tool call, this field should be set to the tool call ID.
@@ -234,6 +235,10 @@ pub struct CompletionRequest {
     /// It can be empty.
     pub prompt: String,
 
+    /// The content parts to be sent to the completion model provider.
+    /// prompt will be ignored if content_parts is not empty.
+    pub content_parts: Vec<ContentPart>,
+
     /// The name of the prompter
     pub prompter_name: Option<String>,
 
@@ -343,6 +348,51 @@ pub fn evaluate_tokens(content: &str) -> usize {
     content.len() / 3
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum ContentPart {
+    Text { text: String },
+    Image { image_url: ImageDetail },
+    Audio { input_audio: AudioDetail },
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct ImageDetail {
+    /// Either a URL of the image or the base64 encoded image data.
+    pub url: String,
+    /// low, high, and auto.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct AudioDetail {
+    /// Base64 encoded audio data.
+    pub data: String,
+    /// The format of the encoded audio data. Currently supports "wav" and "mp3".
+    pub format: String,
+}
+
+impl From<String> for ContentPart {
+    fn from(text: String) -> Self {
+        ContentPart::Text { text }
+    }
+}
+
+impl From<&str> for ContentPart {
+    fn from(text: &str) -> Self {
+        text.to_owned().into()
+    }
+}
+
+impl FromStr for ContentPart {
+    type Err = Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(s.into())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -386,6 +436,53 @@ mod tests {
         assert_eq!(
             to_string(&msg).unwrap(),
             r#"{"content":"<attachments>\n<doc id=\"1\">\n\"Test document 1.\"\n</doc>\n<doc id=\"2\">\n<meta a=\"b\" key=\"value\" />\n\"Test document 2.\"\n</doc>\n</attachments>\n\nThis is a test prompt.","role":"user"}"#
+        );
+    }
+
+    #[test]
+    fn test_content_part() {
+        let content = ContentPart::Text {
+            text: "Hello, world!".to_string(),
+        };
+        let json = serde_json::to_string(&content).unwrap();
+        assert_eq!(json, r#"{"type":"text","text":"Hello, world!"}"#);
+
+        let ct: ContentPart = serde_json::from_str(&json).unwrap();
+        assert_eq!(ct, content);
+
+        let ct = ContentPart::from("Hello, world!");
+        assert_eq!(ct, content);
+
+        let content = ContentPart::Image {
+            image_url: ImageDetail {
+                url: "https://example.com/image.jpg".to_string(),
+                detail: Some("high".to_string()),
+            },
+        };
+
+        let json = serde_json::to_string(&content).unwrap();
+        assert_eq!(
+            json,
+            r#"{"type":"image","image_url":{"url":"https://example.com/image.jpg","detail":"high"}}"#
+        );
+
+        let ct: ContentPart = serde_json::from_str(&json).unwrap();
+        assert_eq!(ct, content);
+        let json = serde_json::to_string(&json!(vec![
+            ContentPart::Text {
+                text: "What's in this image?".to_string(),
+            },
+            ContentPart::Image {
+                image_url: ImageDetail {
+                    url: "https://example.com/image.jpg".to_string(),
+                    detail: None,
+                },
+            }
+        ]))
+        .unwrap();
+        assert_eq!(
+            json,
+            r#"[{"text":"What's in this image?","type":"text"},{"image_url":{"url":"https://example.com/image.jpg"},"type":"image"}]"#
         );
     }
 }
