@@ -42,8 +42,8 @@
 //! - These traits can be easily derived using the `derive` macro
 
 use anda_core::{
-    Agent, AgentOutput, BoxError, CompletionFeatures, CompletionRequest, FunctionDefinition, Tool,
-    fix_json_schema,
+    Agent, AgentOutput, BoxError, CompletionFeatures, CompletionRequest, FunctionDefinition,
+    Resource, Tool, fix_json_schema,
 };
 use schemars::{JsonSchema, schema_for};
 use serde_json::{Value, json};
@@ -243,7 +243,7 @@ where
         &self,
         ctx: AgentCtx,
         prompt: String,
-        _attachment: Option<Vec<u8>>,
+        _resources: Option<Vec<Resource>>,
     ) -> Result<AgentOutput, BoxError> {
         let (_, res) = self.extract(&ctx, prompt).await?;
         Ok(res)

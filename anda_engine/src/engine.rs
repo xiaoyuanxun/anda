@@ -30,13 +30,12 @@
 //! ```
 
 use anda_core::{
-    Agent, AgentOutput, AgentSet, BoxError, FunctionDefinition, Path, Tool, ToolSet,
+    Agent, AgentOutput, AgentSet, BoxError, FunctionDefinition, Path, Resource, Tool, ToolSet,
     validate_function_name, validate_path_part,
 };
 use async_trait::async_trait;
 use candid::Principal;
 use object_store::memory::InMemory;
-use serde_bytes::ByteBuf;
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
@@ -222,7 +221,7 @@ impl Engine {
         &self,
         agent_name: Option<String>,
         prompt: String,
-        attachment: Option<ByteBuf>,
+        resources: Option<Vec<Resource>>,
         caller: Principal,
         user: Option<String>,
     ) -> Result<AgentOutput, BoxError> {
@@ -238,9 +237,7 @@ impl Engine {
         let ctx = self.ctx_with(&name, caller, user)?;
 
         self.hooks.before_agent_run(&ctx, &name).await?;
-        let mut res = agent
-            .run(ctx.clone(), prompt, attachment.map(|v| v.into_vec()))
-            .await?;
+        let mut res = agent.run(ctx.clone(), prompt, resources).await?;
         res.full_history = None; // clear full history
         self.hooks.after_agent_run(&ctx, &name, res).await
     }

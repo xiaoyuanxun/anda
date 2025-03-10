@@ -29,13 +29,12 @@ use anda_core::{
     AgentArgs, AgentContext, AgentOutput, AgentSet, BaseContext, BoxError, CacheExpiry,
     CacheFeatures, CancellationToken, CanisterCaller, CompletionFeatures, CompletionRequest,
     Embedding, EmbeddingFeatures, FunctionDefinition, HttpFeatures, KeysFeatures, Message,
-    ObjectMeta, Path, PutMode, PutResult, StateFeatures, StoreFeatures, ToolCall, ToolSet, Usage,
-    Value,
+    ObjectMeta, Path, PutMode, PutResult, Resource, StateFeatures, StoreFeatures, ToolCall,
+    ToolSet, Usage, Value,
 };
 use bytes::Bytes;
 use candid::{CandidType, Principal, utils::ArgumentEncoder};
 use serde::{Serialize, de::DeserializeOwned};
-use serde_bytes::ByteBuf;
 use serde_json::json;
 use std::{future::Future, sync::Arc, time::Duration};
 
@@ -300,12 +299,12 @@ impl AgentContext for AgentCtx {
             .await
     }
 
-    /// Runs an agent with the given prompt and optional attachment
+    /// Runs an agent with the given prompt and optional resources
     ///
     /// # Arguments
     /// * `name` - Name of the agent to run
     /// * `prompt` - Input prompt for the agent
-    /// * `attachment` - Optional binary attachment
+    /// * `resources`: Optional additional resources
     ///
     /// # Returns
     /// [`AgentOutput`] containing the result of the agent execution
@@ -313,20 +312,20 @@ impl AgentContext for AgentCtx {
         &self,
         name: &str,
         prompt: String,
-        attachment: Option<Vec<u8>>,
+        resources: Option<Vec<Resource>>,
     ) -> Result<AgentOutput, BoxError> {
         let name = name.to_ascii_lowercase();
         let name_ = name.strip_prefix("LA_").unwrap_or(&name);
         if self.agents.contains(name_) {
             let ctx = self.child(name_)?;
             let agent = self.agents.get(name_).expect("agent not found");
-            return agent.run(ctx, prompt, attachment).await;
+            return agent.run(ctx, prompt, resources).await;
         }
 
         // find registered remote agent and run it
         if let Some((endpoint, agent_name)) = self.remote.get_agent_endpoint(&name) {
             return self
-                .remote_agent_run(&endpoint, &agent_name, prompt, attachment)
+                .remote_agent_run(&endpoint, &agent_name, prompt, resources)
                 .await;
         }
 
@@ -337,7 +336,7 @@ impl AgentContext for AgentCtx {
         {
             if let Some((endpoint, agent_name)) = engines.get_agent_endpoint(&name) {
                 return self
-                    .remote_agent_run(&endpoint, &agent_name, prompt, attachment)
+                    .remote_agent_run(&endpoint, &agent_name, prompt, resources)
                     .await;
             }
         }
@@ -357,14 +356,10 @@ impl AgentContext for AgentCtx {
         endpoint: &str,
         agent_name: &str,
         prompt: String,
-        attachment: Option<Vec<u8>>,
+        resources: Option<Vec<Resource>>,
     ) -> Result<AgentOutput, BoxError> {
-        self.https_signed_rpc(
-            endpoint,
-            "agent_run",
-            &(agent_name, prompt, attachment.map(ByteBuf::from)),
-        )
-        .await
+        self.https_signed_rpc(endpoint, "agent_run", &(agent_name, prompt, resources))
+            .await
     }
 }
 

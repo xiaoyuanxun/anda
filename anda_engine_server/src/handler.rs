@@ -1,3 +1,4 @@
+use anda_core::Resource;
 use anda_engine::engine::{Engine, InformationJSON};
 use axum::{
     extract::{Path, State},
@@ -11,7 +12,6 @@ use ic_tee_agent::{
     RPCRequest, RPCResponse,
     http::{ANONYMOUS_PRINCIPAL, Content, ContentWithSHA3, UserSignature},
 };
-use serde_bytes::ByteBuf;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use structured_logger::unix_ms;
@@ -136,7 +136,7 @@ async fn engine_run(
 
     match req.method.as_str() {
         "agent_run" => {
-            let args: (Option<String>, String, Option<ByteBuf>) =
+            let args: (Option<String>, String, Option<Vec<Resource>>) =
                 from_reader(req.params.as_slice())
                     .map_err(|err| format!("failed to decode params: {err:?}"))?;
             let res = engine

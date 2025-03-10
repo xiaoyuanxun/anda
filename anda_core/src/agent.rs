@@ -39,7 +39,7 @@ use std::{collections::BTreeMap, future::Future, marker::PhantomData, sync::Arc}
 use crate::{
     BoxError, BoxPinFut,
     context::AgentContext,
-    model::{AgentOutput, FunctionDefinition},
+    model::{AgentOutput, FunctionDefinition, Resource},
     validate_function_name,
 };
 
@@ -108,7 +108,7 @@ where
     /// # Arguments
     /// - `ctx`: The execution context implementing `AgentContext`
     /// - `prompt`: The input prompt or message for the agent
-    /// - `attachment`: Optional additional data in JSON format
+    /// - `resources`: Optional additional resources
     ///
     /// # Returns
     /// - A future resolving to `Result<AgentOutput, BoxError>`
@@ -116,7 +116,7 @@ where
         &self,
         ctx: C,
         prompt: String,
-        attachment: Option<Vec<u8>>,
+        resources: Option<Vec<Resource>>,
     ) -> impl Future<Output = Result<AgentOutput, BoxError>> + Send;
 }
 
@@ -140,7 +140,7 @@ where
         &self,
         ctx: C,
         prompt: String,
-        attachment: Option<Vec<u8>>,
+        resources: Option<Vec<Resource>>,
     ) -> BoxPinFut<Result<AgentOutput, BoxError>>;
 }
 
@@ -176,10 +176,10 @@ where
         &self,
         ctx: C,
         prompt: String,
-        attachment: Option<Vec<u8>>,
+        resources: Option<Vec<Resource>>,
     ) -> BoxPinFut<Result<AgentOutput, BoxError>> {
         let agent = self.0.clone();
-        Box::pin(async move { agent.run(ctx, prompt, attachment).await })
+        Box::pin(async move { agent.run(ctx, prompt, resources).await })
     }
 }
 

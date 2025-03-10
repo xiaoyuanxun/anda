@@ -30,7 +30,7 @@
 use anda_core::{
     Agent, AgentContext, AgentOutput, BoxError, CacheExpiry, CacheFeatures, CompletionFeatures,
     CompletionRequest, Documents, Embedding, EmbeddingFeatures, Knowledge, KnowledgeFeatures,
-    KnowledgeInput, Message, StateFeatures, VectorSearchFeatures, evaluate_tokens,
+    KnowledgeInput, Message, Resource, StateFeatures, VectorSearchFeatures, evaluate_tokens,
 };
 use ic_cose_types::to_cbor_bytes;
 use serde::{Deserialize, Serialize};
@@ -416,14 +416,14 @@ where
     /// # Arguments
     /// * `ctx` - Agent context containing environment and state
     /// * `prompt` - User input message
-    /// * `_attachment` - Optional binary attachment (currently unused)
+    /// * `resources` - Optional additional resources (currently unused)
     /// # Returns
     /// Result with AgentOutput containing response or error
     async fn run(
         &self,
         ctx: AgentCtx,
         prompt: String,
-        _attachment: Option<Vec<u8>>,
+        _resources: Option<Vec<Resource>>,
     ) -> Result<AgentOutput, BoxError> {
         // read chat history from store
         let mut chat_history = if let Some(user) = ctx.user() {

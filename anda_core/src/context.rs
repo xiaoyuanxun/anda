@@ -97,12 +97,12 @@ pub trait AgentContext: BaseContext + CompletionFeatures + EmbeddingFeatures {
         args: String,
     ) -> impl Future<Output = Result<String, BoxError>> + Send;
 
-    /// Runs a local agent with optional attachment
+    /// Runs a local agent with optional resources
     fn agent_run(
         &self,
         agent_name: &str,
         prompt: String,
-        attachment: Option<Vec<u8>>,
+        resources: Option<Vec<Resource>>,
     ) -> impl Future<Output = Result<AgentOutput, BoxError>> + Send;
 
     /// Runs a remote agent on another endpoint
@@ -111,7 +111,7 @@ pub trait AgentContext: BaseContext + CompletionFeatures + EmbeddingFeatures {
         endpoint: &str,
         agent_name: &str,
         prompt: String,
-        attachment: Option<Vec<u8>>,
+        resources: Option<Vec<Resource>>,
     ) -> impl Future<Output = Result<AgentOutput, BoxError>> + Send;
 }
 

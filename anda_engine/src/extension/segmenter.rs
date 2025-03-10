@@ -27,7 +27,7 @@
 //! ```
 
 use anda_core::{
-    Agent, AgentOutput, BoxError, CompletionFeatures, Tool, ToolCall, evaluate_tokens,
+    Agent, AgentOutput, BoxError, CompletionFeatures, Resource, Tool, ToolCall, evaluate_tokens,
 };
 use schemars::JsonSchema;
 
@@ -159,12 +159,12 @@ impl Agent<AgentCtx> for DocumentSegmenter {
     /// # Arguments
     /// * `ctx` - Agent context
     /// * `prompt` - Input document content
-    /// * `_attachment` - Optional binary attachment (not used in this implementation)
+    /// * `resources` - Optional additional resources (not used in this implementation)
     async fn run(
         &self,
         ctx: AgentCtx,
         prompt: String,
-        _attachment: Option<Vec<u8>>,
+        _resources: Option<Vec<Resource>>,
     ) -> Result<AgentOutput, BoxError> {
         let (_, res) = self.segment(&ctx, &prompt).await?;
         Ok(res)

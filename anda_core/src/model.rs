@@ -12,10 +12,30 @@
 //! for seamless integration between different data representations.
 
 use serde::{Deserialize, Serialize};
+use serde_bytes::ByteBuf;
 use serde_json::Value;
 use std::{collections::BTreeMap, convert::Infallible, future::Future, str::FromStr};
 
 use crate::{BoxError, Knowledge};
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct ToolReqeust {
+    /// tool name
+    pub name: String,
+    /// arguments in JSON string
+    pub args: String,
+    // pub payment: Option<ByteBuf>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct AgentReqeust {
+    pub content: Vec<ContentPart>,
+    pub attachment: Option<ByteBuf>,
+    /// agent name
+    pub name: Option<String>,
+    pub user: Option<String>,
+    // pub payment: Option<ByteBuf>,
+}
 
 /// Represents the usage statistics for the agent or tool execution
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -348,6 +368,22 @@ pub fn evaluate_tokens(content: &str) -> usize {
     content.len() / 3
 }
 
+#[derive(Debug, Default, Serialize, Deserialize, Clone)]
+pub struct Resource {
+    /// The URI of this resource.
+    pub uri: String,
+    /// A human-readable name for this resource.
+    pub name: String,
+    /// A description of what this resource represents.
+    /// This can be used by clients to improve the LLM's understanding of available resources.
+    pub description: String,
+    /// https://developer.mozilla.org/zh-CN/docs/Web/HTTP/MIME_types/Common_types
+    pub mime_type: String,
+    /// The binary data of this resource.
+    pub blob: Option<ByteBuf>,
+}
+
+/// OpenAI style content part for the completion request
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ContentPart {
@@ -359,6 +395,8 @@ pub enum ContentPart {
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct ImageDetail {
     /// Either a URL of the image or the base64 encoded image data.
+    /// https://platform.openai.com/docs/guides/vision
+    /// PNG (.png), JPEG (.jpeg and .jpg), WEBP (.webp), and non-animated GIF (.gif).
     pub url: String,
     /// low, high, and auto.
     #[serde(skip_serializing_if = "Option::is_none")]

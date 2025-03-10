@@ -1,6 +1,6 @@
 use anda_core::{
     Agent, AgentContext, AgentOutput, BoxError, CanisterCaller, CompletionFeatures,
-    CompletionRequest, StateFeatures, ToolSet,
+    CompletionRequest, Resource, StateFeatures, ToolSet,
 };
 use anda_engine::context::{ANONYMOUS, AgentCtx, BaseCtx};
 use anda_icp::ledger::{BalanceOfTool, ICPLedgers, TransferTool};
@@ -77,7 +77,7 @@ impl Agent<AgentCtx> for ICPLedgerAgent {
     /// # Arguments
     /// * `ctx` - The agent context containing execution environment.
     /// * `prompt` - The user's input prompt.
-    /// * `_attachment` - Optional binary attachment (not used).
+    /// * `resources`: Optional additional resources (not used).
     ///
     /// # Returns
     /// AgentOutput containing the response or an error if execution fails.
@@ -85,7 +85,7 @@ impl Agent<AgentCtx> for ICPLedgerAgent {
         &self,
         ctx: AgentCtx,
         prompt: String,
-        _attachment: Option<Vec<u8>>,
+        _resources: Option<Vec<Resource>>,
     ) -> Result<AgentOutput, BoxError> {
         let caller = ctx.caller();
         if caller == ANONYMOUS {
