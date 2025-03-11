@@ -8,7 +8,6 @@ use tokio::signal;
 use tokio_util::sync::CancellationToken;
 
 mod handler;
-mod ic_sig_verifier;
 mod types;
 
 use handler::*;

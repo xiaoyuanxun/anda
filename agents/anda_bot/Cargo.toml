@@ -35,9 +35,11 @@ log = { workspace = true }
 ed25519-consensus = { workspace = true }
 const-hex = { workspace = true }
 lazy_static = { workspace = true }
+ic_auth_verifier = { workspace = true, features = ["full"] }
 config = "0.15"
 agent-twitter-client = { git = "https://github.com/ldclabs/agent-twitter-client.git", rev = "717bd0d8dc4febfece0065c972801924ecae2639" }
-ic-types = { git = "https://github.com/dfinity/ic/", rev = "5d202894864f4db4a5a46f44422aebc80c3d321b" }
-ic-crypto-standalone-sig-verifier = { git = "https://github.com/dfinity/ic/", rev = "5d202894864f4db4a5a46f44422aebc80c3d321b" }
 
 [dev-dependencies]
+
+[patch.crates-io]
+candid = { git = "https://github.com/ldclabs/candid.git", rev = "4cf7d02bad9530172cb4cafe733cb1e80689b793" } # remove check_recursion on stack for TEE

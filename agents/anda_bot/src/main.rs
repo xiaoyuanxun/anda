@@ -45,7 +45,6 @@ use tokio_util::sync::CancellationToken;
 
 mod config;
 mod handler;
-mod ic_sig_verifier;
 mod twitter;
 
 const APP_NAME: &str = env!("CARGO_PKG_NAME");

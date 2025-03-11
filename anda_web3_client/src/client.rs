@@ -7,6 +7,7 @@ use candid::{
 use ciborium::from_reader;
 use ed25519_consensus::SigningKey;
 use ic_agent::identity::{AnonymousIdentity, BasicIdentity, Secp256k1Identity};
+use ic_auth_verifier::envelope::SignedEnvelope;
 use ic_cose::client::CoseSDK;
 use ic_cose_types::{
     CanisterCaller,
@@ -17,13 +18,12 @@ use ic_cose_types::{
     },
     to_cbor_bytes,
 };
-use ic_tee_agent::http::sign_digest_to_headers;
+use ic_tee_gateway_sdk::crypto;
 use serde::{Serialize, de::DeserializeOwned};
 use std::{sync::Arc, time::Duration};
 
 pub use ic_agent::{Agent, Identity};
 
-use crate::crypto;
 use anda_engine::APP_USER_AGENT;
 
 /// Client for interacting with outside services (includes ICP and other blockchains)
@@ -461,10 +461,12 @@ impl Web3ClientFeatures for Client {
             )));
         }
 
+        let se = match SignedEnvelope::sign_digest(self.identity.as_ref(), message_digest.into()) {
+            Ok(se) => se,
+            Err(err) => return Box::pin(futures::future::ready(Err(err.into()))),
+        };
         let mut headers = headers.unwrap_or_default();
-        if let Err(err) =
-            sign_digest_to_headers(self.identity.as_ref(), &mut headers, &message_digest)
-        {
+        if let Err(err) = se.to_headers(&mut headers) {
             return Box::pin(futures::future::ready(Err(err.into())));
         }
 
@@ -498,10 +500,15 @@ impl Web3ClientFeatures for Client {
         };
         let body = to_cbor_bytes(&req);
         let digest: [u8; 32] = sha3_256(&body);
+        let se = match SignedEnvelope::sign_digest(self.identity.as_ref(), digest.into()) {
+            Ok(se) => se,
+            Err(err) => return Box::pin(futures::future::ready(Err(err.into()))),
+        };
         let mut headers = http::HeaderMap::new();
-        if let Err(err) = sign_digest_to_headers(self.identity.as_ref(), &mut headers, &digest) {
+        if let Err(err) = se.to_headers(&mut headers) {
             return Box::pin(futures::future::ready(Err(err.into())));
         }
+
         let outer_http = self.outer_http.clone();
         Box::pin(async move {
             let res = cbor_rpc(&outer_http, &endpoint, &method, Some(headers), body).await?;
@@ -558,8 +565,10 @@ impl HttpFeatures for Client {
         if !self.allow_http && !url.starts_with("https://") {
             return Err("Invalid url, must start with https://".into());
         }
+
+        let se = SignedEnvelope::sign_digest(self.identity.as_ref(), message_digest.into())?;
         let mut headers = headers.unwrap_or_default();
-        sign_digest_to_headers(self.identity.as_ref(), &mut headers, &message_digest)?;
+        se.to_headers(&mut headers)?;
 
         let mut req = self.outer_http.request(method, url);
         req = req.headers(headers);
@@ -595,8 +604,9 @@ impl HttpFeatures for Client {
         };
         let body = to_cbor_bytes(&req);
         let digest: [u8; 32] = sha3_256(&body);
+        let se = SignedEnvelope::sign_digest(self.identity.as_ref(), digest.into())?;
         let mut headers = http::HeaderMap::new();
-        sign_digest_to_headers(self.identity.as_ref(), &mut headers, &digest)?;
+        se.to_headers(&mut headers)?;
         let res = cbor_rpc(&self.outer_http, endpoint, &method, Some(headers), body).await?;
         let res = from_reader(&res[..])?;
         Ok(res)

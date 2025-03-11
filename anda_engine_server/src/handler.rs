@@ -7,16 +7,16 @@ use axum::{
 };
 use candid::Principal;
 use ciborium::from_reader;
+use ic_auth_verifier::envelope::{ANONYMOUS_PRINCIPAL, SignedEnvelope, unix_ms};
 use ic_cose_types::to_cbor_bytes;
 use ic_tee_agent::{
     RPCRequest, RPCResponse,
-    http::{ANONYMOUS_PRINCIPAL, Content, ContentWithSHA3, UserSignature},
+    http::{Content, ContentWithSHA3},
 };
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use structured_logger::unix_ms;
 
-use crate::{ic_sig_verifier::verify_sig, types::*};
+use crate::types::*;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -30,9 +30,9 @@ pub async fn get_information(
     State(app): State<AppState>,
     headers: http::HeaderMap,
 ) -> impl IntoResponse {
-    let caller = if let Some(sig) = UserSignature::try_from(&headers) {
-        match sig.verify_with(unix_ms(), verify_sig, None, None) {
-            Ok(_) => sig.user,
+    let caller = if let Some(se) = SignedEnvelope::try_from(&headers) {
+        match se.verify(unix_ms(), None, None) {
+            Ok(_) => se.sender(),
             Err(_) => ANONYMOUS_PRINCIPAL,
         }
     } else {
@@ -104,9 +104,9 @@ pub async fn anda_engine(
         }
     };
 
-    let caller = if let Some(sig) = UserSignature::try_from(&headers) {
-        match sig.verify_with(unix_ms(), verify_sig, Some(id), Some(hash.as_slice())) {
-            Ok(_) => sig.user,
+    let caller = if let Some(se) = SignedEnvelope::try_from(&headers) {
+        match se.verify(unix_ms(), Some(id), Some(hash.as_slice())) {
+            Ok(_) => se.sender(),
             Err(_) => ANONYMOUS_PRINCIPAL,
         }
     } else {

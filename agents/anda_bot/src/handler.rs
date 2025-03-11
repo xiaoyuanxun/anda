@@ -6,18 +6,13 @@ use axum::{
     response::IntoResponse,
 };
 use candid::Principal;
+use ic_auth_verifier::envelope::{ANONYMOUS_PRINCIPAL, SignedEnvelope, extract_user, unix_ms};
 use ic_cose::client::CoseSDK;
 use ic_cose_types::to_cbor_bytes;
-use ic_tee_agent::{
-    http::{Content, UserSignature, ANONYMOUS_PRINCIPAL, HEADER_IC_TEE_CALLER},
-    RPCRequest, RPCResponse,
-};
+use ic_tee_agent::{RPCRequest, RPCResponse, http::Content};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use structured_logger::unix_ms;
 use tokio::sync::RwLock;
-
-use crate::ic_sig_verifier::verify_sig;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -39,7 +34,7 @@ impl AppState {
         match self.web3.as_ref() {
             Web3SDK::Tee(cli) => {
                 // signature is verified by the TEE gateway
-                let caller = get_caller(headers);
+                let caller = extract_user(headers);
                 caller != ANONYMOUS_PRINCIPAL
                     && cli
                         .namespace_is_member(&self.cose_namespace, "manager", &caller)
@@ -48,9 +43,9 @@ impl AppState {
             }
             Web3SDK::Web3(_cli) => {
                 // verify signature
-                let caller = if let Some(sig) = UserSignature::try_from(headers) {
-                    match sig.verify_with(unix_ms(), verify_sig, Some(self.info.id), None) {
-                        Ok(_) => sig.user,
+                let caller = if let Some(se) = SignedEnvelope::try_from(headers) {
+                    match se.verify(unix_ms(), Some(self.info.id), None) {
+                        Ok(_) => se.sender(),
                         Err(_) => {
                             return false;
                         }
@@ -95,7 +90,7 @@ pub struct AppInformationJSON {
 pub async fn get_information(State(app): State<AppState>, req: Request) -> impl IntoResponse {
     let mut info = app.info.as_ref().clone();
     let headers = req.headers();
-    info.caller = get_caller(headers);
+    info.caller = extract_user(headers);
     match Content::from(headers) {
         Content::CBOR(_, _) => Content::CBOR(info, None).into_response(),
         _ => Content::JSON(
@@ -163,17 +158,5 @@ async fn handle_proposal(req: &RPCRequest, app: &AppState) -> RPCResponse {
             Ok(to_cbor_bytes(&"Ok").into())
         }
         _ => Err(format!("unsupported method {}", req.method)),
-    }
-}
-
-fn get_caller(headers: &http::HeaderMap) -> Principal {
-    if let Some(caller) = headers.get(&HEADER_IC_TEE_CALLER) {
-        if let Ok(caller) = Principal::from_text(caller.to_str().unwrap_or_default()) {
-            caller
-        } else {
-            ANONYMOUS_PRINCIPAL
-        }
-    } else {
-        ANONYMOUS_PRINCIPAL
     }
 }

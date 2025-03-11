@@ -2,8 +2,8 @@
 name = "anda_engine_server"
 description = "A http server to serve multiple Anda engines."
 repository = "https://github.com/ldclabs/anda/tree/main/anda_engine_server"
-publish = false
-version = "0.1.2"
+publish = true
+version = "0.2.0"
 edition.workspace = true
 keywords.workspace = true
 categories.workspace = true
@@ -25,7 +25,7 @@ structured-logger = { workspace = true }
 tokio = { workspace = true }
 log = { workspace = true }
 lazy_static = { workspace = true }
-ic-types = { git = "https://github.com/dfinity/ic/", rev = "5d202894864f4db4a5a46f44422aebc80c3d321b" }
-ic-crypto-standalone-sig-verifier = { git = "https://github.com/dfinity/ic/", rev = "5d202894864f4db4a5a46f44422aebc80c3d321b" }
+ic_auth_types = { workspace = true }
+ic_auth_verifier = { workspace = true, features = ["full"] }
 
 [dev-dependencies]
