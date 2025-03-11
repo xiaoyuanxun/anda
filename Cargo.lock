@@ -138,8 +138,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "anda_cli"
+version = "0.2.0"
+dependencies = [
+ "anda_core",
+ "anda_web3_client",
+ "base64 0.22.1",
+ "ciborium",
+ "clap",
+ "const-hex",
+ "dotenv",
+ "rand",
+ "tokio",
+]
+
+[[package]]
 name = "anda_core"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "bytes",
  "candid",
@@ -159,7 +174,7 @@ dependencies = [
 
 [[package]]
 name = "anda_engine"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anda_core",
  "async-trait",
@@ -187,21 +202,6 @@ dependencies = [
  "tokio-util",
  "toml",
  "url",
-]
-
-[[package]]
-name = "anda_engine_cli"
-version = "0.2.0"
-dependencies = [
- "anda_core",
- "anda_web3_client",
- "base64 0.22.1",
- "ciborium",
- "clap",
- "const-hex",
- "dotenv",
- "rand",
- "tokio",
 ]
 
 [[package]]
