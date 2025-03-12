@@ -1,4 +1,6 @@
-use anda_core::{BoxError, Knowledge, KnowledgeFeatures, KnowledgeInput, VectorSearchFeatures};
+use anda_core::{
+    BoxError, Knowledge, KnowledgeFeatures, KnowledgeInput, Path, VectorSearchFeatures,
+};
 use anda_engine::unix_ms;
 use std::{sync::Arc, vec};
 
@@ -255,6 +257,7 @@ impl KnowledgeFeatures for KnowledgeStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anda_engine::store::InMemory;
     use candid::Principal;
     use ed25519_consensus::SigningKey;
     use ic_agent::{Identity, identity::BasicIdentity};

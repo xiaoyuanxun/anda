@@ -117,7 +117,6 @@ pub trait Agent<C: AgentContext> {
 ```rust
 // simplified Tool trait definition
 pub trait Tool<BaseContext> {
-    const CONTINUE: bool;
     type Args: DeserializeOwned;
     type Output: Serialize;
 

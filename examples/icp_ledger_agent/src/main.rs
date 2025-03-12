@@ -3,11 +3,10 @@ use anda_engine::{
     context::Web3SDK,
     engine::EngineBuilder,
     model::{Model, openai, xai},
-    store::Store,
+    store::{InMemory, Store},
 };
 use anda_engine_server::{ServerBuilder, shutdown_signal};
 use anda_icp::ledger::BalanceOfTool;
-use anda_lancedb::lancedb::InMemory;
 use anda_web3_client::client::{Client as Web3Client, load_identity};
 use clap::Parser;
 use std::{collections::BTreeMap, sync::Arc, time::Duration};

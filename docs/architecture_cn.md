@@ -101,7 +101,6 @@ pub trait Agent<C: AgentContext> {
 ```rust
 // 简化的 Tool 特性定义
 pub trait Tool<BaseContext> {
-    const CONTINUE: bool;
     type Args: DeserializeOwned;
     type Output: Serialize;
 

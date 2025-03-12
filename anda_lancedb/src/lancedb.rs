@@ -1,5 +1,6 @@
-use anda_core::{BoxError, BoxPinFut};
+use anda_core::{BoxError, BoxPinFut, Path};
 use futures::TryStreamExt;
+use object_store::DynObjectStore;
 use std::{collections::BTreeMap, sync::Arc};
 
 pub use anda_engine::{model::EmbeddingFeaturesDyn, store::VectorSearchFeaturesDyn};
@@ -13,13 +14,11 @@ pub use lance_io::object_store::{
 };
 pub use lancedb::{
     Table,
-    connection::{ConnectBuilder, Connection, CreateTableMode},
+    connection::{ConnectBuilder, Connection},
+    database::CreateTableMode,
     index::{Index, scalar::FtsIndexBuilder},
     query::{ExecutableQuery, QueryBase, Select},
     table::OptimizeAction,
-};
-pub use object_store::{
-    DynObjectStore, ObjectStore, local::LocalFileSystem, memory::InMemory, path::Path,
 };
 
 #[derive(Clone)]

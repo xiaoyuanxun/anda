@@ -12,11 +12,11 @@ cp example.env .env
 cargo run -p icp_ledger_agent
 ```
 
-Build CLI tool and run agent:
+Install CLI tool and run agent:
 ```sh
-cargo build -p anda_engine_cli
-./target/debug/anda_engine_cli agent-run -p 'Please check my PANDA balance'
-./target/debug/anda_engine_cli tool-call -n icp_ledger_balance_of -a '{"account":"535yc-uxytb-gfk7h-tny7p-vjkoe-i4krp-3qmcl-uqfgr-cpgej-yqtjq-rqe","symbol":"PANDA"}'
+cargo install anda_cli
+anda_cli agent-run -p 'Please check my PANDA balance'
+anda_cli tool-call -n icp_ledger_balance_of -a '{"account":"535yc-uxytb-gfk7h-tny7p-vjkoe-i4krp-3qmcl-uqfgr-cpgej-yqtjq-rqe","symbol":"PANDA"}'
 ```
 
 **Notice**: The current version only supports OpenAI and Grok. Deepseek's Function Calling capabilitity is unstable. https://api-docs.deepseek.com/guides/function_calling

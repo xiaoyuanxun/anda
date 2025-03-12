@@ -11,13 +11,10 @@ use anda_engine::{
         segmenter::DocumentSegmenter,
     },
     model::{Model, cohere, deepseek, openai},
-    store::Store,
+    store::{LocalFileSystem, ObjectStore, Store},
 };
 use anda_icp::ledger::{BalanceOfTool, ICPLedgers};
-use anda_lancedb::{
-    knowledge::KnowledgeStore,
-    lancedb::{DynObjectStore, LanceVectorStore, LocalFileSystem},
-};
+use anda_lancedb::{knowledge::KnowledgeStore, lancedb::LanceVectorStore};
 use anda_web3_client::client::{Client as Web3Client, load_identity};
 use axum::{Router, routing};
 use candid::Principal;
@@ -543,7 +540,7 @@ async fn connect_object_store(
 }
 
 async fn connect_knowledge_store(
-    object_store: Arc<DynObjectStore>,
+    object_store: Arc<dyn ObjectStore>,
     namespace: Path,
     model: &Model,
 ) -> Result<KnowledgeStore, BoxError> {
