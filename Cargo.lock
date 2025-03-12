@@ -105,7 +105,7 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "anda_bot"
-version = "0.4.6"
+version = "0.4.7"
 dependencies = [
  "agent-twitter-client",
  "anda_core",
@@ -137,7 +137,7 @@ dependencies = [
 
 [[package]]
 name = "anda_cli"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anda_core",
  "anda_web3_client",
@@ -152,7 +152,7 @@ dependencies = [
 
 [[package]]
 name = "anda_core"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "bytes",
  "candid",
@@ -203,7 +203,7 @@ dependencies = [
 
 [[package]]
 name = "anda_engine_server"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anda_core",
  "anda_engine",
@@ -223,7 +223,7 @@ dependencies = [
 
 [[package]]
 name = "anda_icp"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "anda_core",
  "anda_engine",
@@ -263,7 +263,7 @@ dependencies = [
 
 [[package]]
 name = "anda_web3_client"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anda_core",
  "anda_engine",
