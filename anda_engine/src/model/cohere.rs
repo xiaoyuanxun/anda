@@ -134,6 +134,7 @@ impl EmbeddingResponse {
             self.meta.as_ref().map_or(Usage::default(), |m| Usage {
                 input_tokens: m.billed_units.input_tokens as u64,
                 output_tokens: m.billed_units.output_tokens as u64,
+                requests: 1,
             }),
         ))
     }
@@ -299,6 +300,7 @@ impl EmbeddingFeaturesDyn for EmbeddingModel {
                         let usage = res.meta.as_ref().map_or(Usage::default(), |m| Usage {
                             input_tokens: m.billed_units.input_tokens as u64,
                             output_tokens: m.billed_units.output_tokens as u64,
+                            requests: 1,
                         });
                         Ok((Embedding { text, vec: data }, usage))
                     }

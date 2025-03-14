@@ -27,7 +27,9 @@
 //!     .build("default_agent".to_string())?;
 //! ```
 
-use anda_core::{BoxError, FunctionDefinition, HttpFeatures, Tool, fix_json_schema};
+use anda_core::{
+    BoxError, FunctionDefinition, HttpFeatures, Resource, Tool, ToolOutput, fix_json_schema,
+};
 use http::header;
 use schemars::{JsonSchema, schema_for};
 use serde::{Deserialize, Serialize};
@@ -189,8 +191,14 @@ impl Tool<BaseCtx> for GoogleSearchTool {
     ///
     /// # Returns
     /// Vector of search results or an error
-    async fn call(&self, ctx: BaseCtx, args: Self::Args) -> Result<Self::Output, BoxError> {
-        self.search(&ctx, args).await
+    async fn call(
+        &self,
+        ctx: BaseCtx,
+        args: Self::Args,
+        _resources: Option<Vec<Resource>>,
+    ) -> Result<ToolOutput<Self::Output>, BoxError> {
+        let res = self.search(&ctx, args).await?;
+        Ok(ToolOutput::new(res))
     }
 }
 

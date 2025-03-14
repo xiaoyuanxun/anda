@@ -1,103 +1,257 @@
-//! Core data models and traits for the AI agent system
+//! Core data models and traits for the AI agent system.
 //!
 //! This module defines the fundamental data structures and interfaces used throughout the AI agent system.
 //! It includes:
-//! - Core message and conversation structures ([`AgentOutput`], [`Message`], [`ToolCall`])
-//! - Function definition and tooling support ([`FunctionDefinition`])
-//! - Knowledge and document handling ([`Document`], [`Documents`])
-//! - Completion request and response structures ([`CompletionRequest`], [`Embedding`])
-//! - Core AI capabilities traits ([`CompletionFeatures`], [`EmbeddingFeatures`])
-//!
-//! The module provides serialization support through `serde` and implements various conversion traits
-//! for seamless integration between different data representations.
+//! - Core message and conversation structures ([`AgentOutput`], [`Message`], [`ToolCall`]).
+//! - Function definition and tooling support ([`FunctionDefinition`]).
+//! - Knowledge and document handling ([`Document`], [`Documents`]).
+//! - Completion request and response structures ([`CompletionRequest`], [`Embedding`]).
+//! - Core AI capabilities traits ([`CompletionFeatures`], [`EmbeddingFeatures`]).
 
+use candid::Principal;
 use serde::{Deserialize, Serialize};
-use serde_bytes::ByteBuf;
+use serde_bytes::{ByteArray, ByteBuf};
 use serde_json::Value;
-use std::{collections::BTreeMap, convert::Infallible, future::Future, str::FromStr};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    convert::Infallible,
+    future::Future,
+    str::FromStr,
+};
 
 use crate::{BoxError, Knowledge};
 
+pub const ANONYMOUS: Principal = Principal::anonymous();
+
+/// Represents a request to an agent for processing.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct ToolReqeust {
-    /// tool name
+pub struct AgentInput {
+    /// agent name, use default agent if empty.
     pub name: String,
-    /// arguments in JSON string
-    pub args: String,
-    // pub payment: Option<ByteBuf>,
+
+    /// agent prompt or message.
+    pub prompt: String,
+
+    /// The resources to process by the agent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resources: Option<Vec<Resource>>,
+
+    /// The metadata for the agent request
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meta: Option<Metadata>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct AgentReqeust {
-    pub content: Vec<ContentPart>,
-    pub attachment: Option<ByteBuf>,
-    /// agent name
-    pub name: Option<String>,
-    pub user: Option<String>,
-    // pub payment: Option<ByteBuf>,
-}
-
-/// Represents the usage statistics for the agent or tool execution
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-pub struct Usage {
-    #[serde(default)]
-    pub input_tokens: u64,
-    #[serde(default)]
-    pub output_tokens: u64,
-}
-
-impl Usage {
-    pub fn accumulate(&mut self, other: &Usage) {
-        self.input_tokens = self.input_tokens.saturating_add(other.input_tokens);
-        self.output_tokens = self.output_tokens.saturating_add(other.output_tokens);
+impl AgentInput {
+    /// Creates a new agent input with the given name and prompt.
+    pub fn new(name: String, prompt: String) -> Self {
+        Self {
+            name,
+            prompt,
+            resources: None,
+            meta: None,
+        }
     }
 }
 
-/// Represents the output of an agent execution
+/// Represents the output of an agent execution.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct AgentOutput {
-    /// The output content from the agent, may be empty
+    /// The unique identifier for the thread.
+    pub thread: ThreadId,
+
+    /// The output content from the agent, may be empty.
     pub content: String,
 
-    /// Indicates failure reason if present, None means successful execution
-    /// Should be None when finish_reason is "stop" or "tool_calls"
+    /// The usage statistics for the agent execution.
+    pub usage: Usage,
+
+    /// Indicates failure reason if present, None means successful execution.
+    /// Should be None when finish_reason is "stop" or "tool_calls".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub failed_reason: Option<String>,
 
-    /// Tool call that this message is responding to. If this message is a response to a tool call, this field should be set to the tool call ID.
+    /// Tool calls returned by the LLM function calling.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCall>>,
 
-    /// full_history will be included in `ctx.completion`'s response,
-    /// but not be included in the engine's response
+    /// full_history will be included in `ctx.completion` response,
+    /// but not be included in the engine response.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub full_history: Option<Vec<Value>>,
 
-    /// The usage statistics for the agent execution
+    /// The resources generated by the agent execution.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resources: Option<Vec<Resource>>,
+}
+
+/// Represents a request to a tool for processing.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct ToolInput<T> {
+    /// tool name.
+    pub name: String,
+
+    /// arguments in JSON format.
+    pub args: T,
+
+    /// The resources to process by the tool.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resources: Option<Vec<Resource>>,
+
+    /// The metadata for the tool request.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meta: Option<Metadata>,
+}
+
+impl<T> ToolInput<T> {
+    /// Creates a new tool input with the given name and arguments.
+    pub fn new(name: String, args: T) -> Self {
+        Self {
+            name,
+            args,
+            resources: None,
+            meta: None,
+        }
+    }
+}
+
+/// Represents the output of a tool execution.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct ToolOutput<T> {
+    /// The output from the tool.
+    pub output: T,
+
+    /// The resources generated by the tool execution.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resources: Option<Vec<Resource>>,
+
+    /// The usage statistics for the tool execution.
     #[serde(default)]
     pub usage: Usage,
 }
 
-/// Represents a tool call response with it's ID, function name, and arguments
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct ToolCall {
-    /// tool call id
-    pub id: String,
-    /// tool function name
-    pub name: String,
-    /// tool function  arguments
-    pub args: String,
-    /// The result of the tool call, auto processed by agents engine, if available
-    pub result: Option<String>,
+impl<T> ToolOutput<T> {
+    /// Creates a new tool output with the given output value.
+    pub fn new(output: T) -> Self {
+        Self {
+            output,
+            resources: None,
+            usage: Usage::default(),
+        }
+    }
 }
 
-/// Represents a message in the agent's conversation history
+/// Represents the metadata for a thread of conversation.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct ThreadMeta {
+    /// The unique identifier for the thread.
+    pub id: ThreadId,
+
+    /// The participants of the thread.
+    pub participants: BTreeSet<Principal>,
+
+    /// The title of the thread, can be generated by LLM from the conversation.
+    pub title: String,
+}
+
+impl ThreadMeta {
+    /// Check if the given principal has permission to access the thread.
+    pub fn has_permission(&self, id: Principal) -> bool {
+        self.id.creator == id || self.participants.contains(&id)
+    }
+}
+
+/// Represents a unique identifier of a thread.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct ThreadId {
+    /// 12 bytes raw xid::Id
+    pub id: ByteArray<12>,
+
+    /// The creator of the thread, typically the agent engine or user principal
+    pub creator: Principal,
+}
+
+impl From<&ThreadId> for xid::Id {
+    fn from(thread: &ThreadId) -> Self {
+        xid::Id(*thread.id)
+    }
+}
+
+impl Default for ThreadId {
+    fn default() -> Self {
+        Self {
+            id: ByteArray::default(),
+            creator: ANONYMOUS,
+        }
+    }
+}
+
+impl ThreadId {
+    /// returns the xid::Id of the thread
+    pub fn xid(&self) -> xid::Id {
+        xid::Id(*self.id)
+    }
+}
+
+/// Represents the metadata for an agent or tool request.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct Metadata {
+    /// The thread for the request. If not provided, a new thread will be created.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thread: Option<ThreadId>,
+
+    /// Gets the username from request context.
+    /// Note: This is not verified and should not be used as a trusted identifier.
+    /// For example, if triggered by a bot of X platform, this might be the username
+    /// of the user interacting with the bot.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
+}
+
+/// Represents the usage statistics for the agent or tool execution.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct Usage {
+    /// input tokens sent to the LLM
+    pub input_tokens: u64,
+
+    /// output tokens received from the LLM
+    pub output_tokens: u64,
+
+    /// number of requests made to agents and tools
+    pub requests: u64,
+}
+
+impl Usage {
+    /// Accumulates the usage statistics from another usage object.
+    pub fn accumulate(&mut self, other: &Usage) {
+        self.input_tokens = self.input_tokens.saturating_add(other.input_tokens);
+        self.output_tokens = self.output_tokens.saturating_add(other.output_tokens);
+        self.requests = self.requests.saturating_add(other.requests);
+    }
+}
+
+/// Represents a tool call response with it's ID, function name, and arguments.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct ToolCall {
+    /// tool call id.
+    pub id: String,
+
+    /// tool function name.
+    pub name: String,
+
+    /// tool function  arguments.
+    pub args: String,
+
+    /// The result of the tool call, auto processed by agents engine, if available.
+    pub result: Option<Value>,
+}
+
+/// Represents a message send to LLM for completion.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Message {
-    /// Message role: "developer", "system", "user", "assistant", "tool"
+    /// Message role: "system", "user", "assistant", "tool".
     pub role: String,
 
-    /// The content of the message, can be text or structured data
+    /// The content of the message, can be text or JSON array.
     pub content: Value,
 
     /// An optional name for the participant. Provides the model information to differentiate between participants of the same role.
@@ -109,16 +263,26 @@ pub struct Message {
     pub tool_call_id: Option<String>,
 }
 
-/// Defines a callable function with its metadata and schema
+/// Represents a function definition with its metadata.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct Function {
+    /// Definition of the function.
+    pub definition: FunctionDefinition,
+
+    /// The tags of resource that this function supports.
+    pub supported_resource_tags: Vec<String>,
+}
+
+/// Defines a callable function with its metadata and schema.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct FunctionDefinition {
-    /// Name of the function
+    /// Name of the function.
     pub name: String,
 
-    /// Description of what the function does
+    /// Description of what the function does.
     pub description: String,
 
-    /// JSON schema defining the function's parameters
+    /// JSON schema defining the function's parameters.
     pub parameters: Value,
 
     /// Whether to enable strict schema adherence when generating the function call. If set to true, the model will follow the exact schema defined in the parameters field. Only a subset of JSON Schema is supported when strict is true.
@@ -127,18 +291,23 @@ pub struct FunctionDefinition {
 }
 
 impl FunctionDefinition {
+    /// Modifies the function name with a prefix.
     pub fn name_with_prefix(mut self, prefix: &str) -> Self {
         self.name = format!("{}{}", prefix, self.name);
         self
     }
 }
 
-/// Knowledge document with text and metadata
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+/// Knowledge document with text and additional props.
+#[derive(Clone, Debug, Default)]
 pub struct Document {
+    /// The unique identifier for the document in local.
     pub id: String,
+
+    /// The text content of the document.
     pub text: String,
-    #[serde(flatten)]
+
+    /// Additional properties for the document.
     pub additional_props: BTreeMap<String, String>,
 }
 
@@ -160,7 +329,8 @@ impl From<Knowledge> for Document {
     }
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+/// Collection of knowledge documents.
+#[derive(Clone, Debug, Default)]
 pub struct Documents(pub Vec<Document>);
 
 impl From<Vec<String>> for Documents {
@@ -236,42 +406,42 @@ impl std::fmt::Display for Documents {
     }
 }
 
-/// Struct representing a general completion request that can be sent to a completion model provider.
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+/// Represents a general completion request that can be sent to a completion model provider.
+#[derive(Debug, Clone, Default)]
 pub struct CompletionRequest {
-    /// The system message to be sent to the completion model provider, as the "system" role
+    /// The system message to be sent to the completion model provider, as the "system" role.
     pub system: Option<String>,
 
-    /// The name of system role
+    /// The name of system role.
     pub system_name: Option<String>,
 
-    /// The chat history (raw message) to be sent to the completion model provider
+    /// The chat history (raw message) to be sent to the completion model provider.
     pub chat_history: Vec<Value>,
 
-    /// The documents to embed into the prompt
+    /// The documents to embed into the prompt.
     pub documents: Documents,
 
     /// The prompt to be sent to the completion model provider as "user" role
     /// It can be empty.
     pub prompt: String,
 
+    /// The name of the prompter.
+    pub prompter_name: Option<String>,
+
     /// The content parts to be sent to the completion model provider.
     /// prompt will be ignored if content_parts is not empty.
     pub content_parts: Vec<ContentPart>,
 
-    /// The name of the prompter
-    pub prompter_name: Option<String>,
-
-    /// The tools to be sent to the completion model provider
+    /// The tools to be sent to the completion model provider.
     pub tools: Vec<FunctionDefinition>,
 
-    /// Whether the tool choice is required
+    /// Whether the tool choice is required.
     pub tool_choice_required: bool,
 
-    /// The temperature to be sent to the completion model provider
+    /// The temperature to be sent to the completion model provider.
     pub temperature: Option<f64>,
 
-    /// The max tokens to be sent to the completion model provider
+    /// The max tokens to be sent to the completion model provider.
     pub max_tokens: Option<usize>,
 
     /// An object specifying the JSON format that the model must output.
@@ -281,34 +451,34 @@ pub struct CompletionRequest {
     /// `{ "type": "json_schema", "json_schema": {...} }`
     pub response_format: Option<Value>,
 
-    /// The stop sequence to be sent to the completion model provider
+    /// The stop sequence to be sent to the completion model provider.
     pub stop: Option<Vec<String>>,
 }
 
 impl CompletionRequest {
-    /// Adds a document to the request
+    /// Adds a document to the request.
     pub fn context(mut self, id: String, text: String) -> Self {
         self.documents.0.push(Document {
             id,
             text,
-            additional_props: BTreeMap::new(),
+            ..Default::default()
         });
         self
     }
 
-    /// Adds multiple documents to the request
+    /// Adds multiple documents to the request.
     pub fn append_documents(mut self, docs: Documents) -> Self {
         self.documents.0.extend(docs.0);
         self
     }
 
-    /// Adds multiple tools to the request
+    /// Adds multiple tools to the request.
     pub fn append_tools(mut self, tools: Vec<FunctionDefinition>) -> Self {
         self.tools.extend(tools);
         self
     }
 
-    /// Returns the prompt with context if available
+    /// Returns the prompt with context if available.
     pub fn prompt_with_context(&self) -> Option<String> {
         if self.documents.0.is_empty() && self.prompt.is_empty() {
             return None;
@@ -319,68 +489,90 @@ impl CompletionRequest {
         } else if self.prompt.is_empty() {
             Some(format!("{}", self.documents))
         } else {
-            Some(format!("{}\n\n{}", self.documents, self.prompt))
+            Some(format!("{}\n---\n{}", self.documents, self.prompt))
         }
     }
 }
 
-/// Represents a text embedding with its original text and vector representation
+/// Represents a text embedding with its original text and vector representation.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Embedding {
-    /// The original text that was embedded
+    /// The original text that was embedded.
     pub text: String,
 
-    /// The embedding vector (typically high-dimensional float array)
+    /// The embedding vector (typically high-dimensional float array).
     pub vec: Vec<f32>,
 }
 
-/// Provides LLM completion capabilities for agents
+/// Provides LLM completion capabilities for agents.
 pub trait CompletionFeatures: Sized {
-    /// Generates a completion based on the given prompt and context
+    /// Generates a completion based on the given request and optional resources.
     fn completion(
         &self,
         req: CompletionRequest,
+        resources: Option<Vec<Resource>>,
     ) -> impl Future<Output = Result<AgentOutput, BoxError>> + Send;
 }
 
-/// Provides text embedding capabilities for agents
+/// Provides text embedding capabilities for agents.
 pub trait EmbeddingFeatures: Sized {
     /// The number of dimensions in the embedding vector.
     fn ndims(&self) -> usize;
 
-    /// Generates embeddings for multiple texts in a batch
-    /// Returns a vector of Embedding structs in the same order as input texts
+    /// Generates embeddings for multiple texts in a batch.
+    /// Returns a vector of Embedding structs in the same order as input texts.
     fn embed(
         &self,
         texts: impl IntoIterator<Item = String> + Send,
     ) -> impl Future<Output = Result<(Vec<Embedding>, Usage), BoxError>> + Send;
 
-    /// Generates a single embedding for a query text
-    /// Optimized for single text embedding generation
+    /// Generates a single embedding for a query text.
+    /// Optimized for single text embedding generation.
     fn embed_query(
         &self,
         text: &str,
     ) -> impl Future<Output = Result<(Embedding, Usage), BoxError>> + Send;
 }
 
-/// Returns the number of tokens in the given content in the simplest way
+/// Returns the number of tokens in the given content in the simplest way.
 pub fn evaluate_tokens(content: &str) -> usize {
     content.len() / 3
 }
 
+/// Represents a resource that can be sent to agents or tools.
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct Resource {
+    /// A tag that identifies the type of this resource.
+    pub tag: String,
+
     /// The URI of this resource.
-    pub uri: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uri: Option<String>,
+
     /// A human-readable name for this resource.
-    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
     /// A description of what this resource represents.
     /// This can be used by clients to improve the LLM's understanding of available resources.
-    pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
     /// https://developer.mozilla.org/zh-CN/docs/Web/HTTP/MIME_types/Common_types
-    pub mime_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+
     /// The binary data of this resource.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub blob: Option<ByteBuf>,
+
+    /// The size of the resource in bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<usize>,
+
+    /// The SHA3-256 hash of the resource.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hash: Option<ByteArray<32>>,
 }
 
 /// OpenAI style content part for the completion request
@@ -462,7 +654,7 @@ mod tests {
         println!("{}", prompt);
         assert_eq!(
             prompt,
-            "<attachments>\n<doc id=\"1\">\n\"Test document 1.\"\n</doc>\n<doc id=\"2\">\n<meta a=\"b\" key=\"value\" />\n\"Test document 2.\"\n</doc>\n</attachments>\n\nThis is a test prompt."
+            "<attachments>\n<doc id=\"1\">\n\"Test document 1.\"\n</doc>\n<doc id=\"2\">\n<meta a=\"b\" key=\"value\" />\n\"Test document 2.\"\n</doc>\n</attachments>\n---\nThis is a test prompt."
         );
 
         let msg = json!(Message {
@@ -473,7 +665,7 @@ mod tests {
         });
         assert_eq!(
             to_string(&msg).unwrap(),
-            r#"{"content":"<attachments>\n<doc id=\"1\">\n\"Test document 1.\"\n</doc>\n<doc id=\"2\">\n<meta a=\"b\" key=\"value\" />\n\"Test document 2.\"\n</doc>\n</attachments>\n\nThis is a test prompt.","role":"user"}"#
+            r#"{"content":"<attachments>\n<doc id=\"1\">\n\"Test document 1.\"\n</doc>\n<doc id=\"2\">\n<meta a=\"b\" key=\"value\" />\n\"Test document 2.\"\n</doc>\n</attachments>\n---\nThis is a test prompt.","role":"user"}"#
         );
     }
 

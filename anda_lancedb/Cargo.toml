@@ -3,15 +3,15 @@ name = "anda_lancedb"
 description = "Anda vector store based on LanceDB"
 repository = "https://github.com/ldclabs/anda/tree/main/anda_lancedb"
 publish = false
-version = "0.2.0"
+version = "0.6.0"
 edition.workspace = true
 keywords.workspace = true
 categories.workspace = true
 license.workspace = true
 
 [dependencies]
-anda_core = { path = "../anda_core", version = "0.5" }
-anda_engine = { path = "../anda_engine", version = "0.5" }
+anda_core = { path = "../anda_core", version = "0.6" }
+anda_engine = { path = "../anda_engine", version = "0.6" }
 futures = { workspace = true }
 tokio = { workspace = true }
 object_store = { workspace = true }

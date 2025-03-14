@@ -6,8 +6,8 @@
 //! - Response parsing and conversion to Anda's internal formats
 
 use anda_core::{
-    AgentOutput, BoxError, BoxPinFut, CONTENT_TYPE_JSON, CompletionFeatures, CompletionRequest,
-    FunctionDefinition, Message, ToolCall,
+    AgentOutput, BoxError, BoxPinFut, CONTENT_TYPE_JSON, CompletionRequest, FunctionDefinition,
+    Message, ToolCall,
 };
 use log::{Level::Debug, log_enabled};
 use serde::{Deserialize, Serialize};
@@ -226,12 +226,6 @@ impl CompletionModel {
             client,
             model: model.to_string(),
         }
-    }
-}
-
-impl CompletionFeatures for CompletionModel {
-    async fn completion(&self, req: CompletionRequest) -> Result<AgentOutput, BoxError> {
-        CompletionFeaturesDyn::completion(self, req).await
     }
 }
 

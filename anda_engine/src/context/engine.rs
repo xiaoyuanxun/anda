@@ -1,4 +1,4 @@
-use anda_core::{BoxError, FunctionDefinition, HttpFeatures, validate_function_name};
+use anda_core::{BoxError, Function, FunctionDefinition, HttpFeatures, validate_function_name};
 use candid::Principal;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -10,13 +10,13 @@ pub struct Information {
     pub id: Principal,
     /// The name of the engine.
     pub name: String,
-    /// The default agent for the engine.
-    pub default_agent: String,
+    /// Description of the engine.
+    pub description: String,
     /// Definitions for agents in the engine.
-    pub agent_definitions: Vec<FunctionDefinition>,
+    pub agents: Vec<Function>,
     /// Definitions for tools in the engine.
-    pub tool_definitions: Vec<FunctionDefinition>,
-    /// The endpoint of the engine. It may be empty.
+    pub tools: Vec<Function>,
+    /// The endpoint of the engine. It can be empty if the engine is local.
     pub endpoint: String,
 }
 
@@ -25,9 +25,9 @@ pub struct Information {
 pub struct InformationJSON {
     pub id: String,
     pub name: String,
-    pub default_agent: String,
-    pub agent_definitions: Vec<FunctionDefinition>,
-    pub tool_definitions: Vec<FunctionDefinition>,
+    pub description: String,
+    pub agents: Vec<Function>,
+    pub tools: Vec<Function>,
     pub endpoint: String,
 }
 
@@ -36,9 +36,9 @@ impl From<Information> for InformationJSON {
         InformationJSON {
             id: info.id.to_text(),
             name: info.name,
-            default_agent: info.default_agent,
-            agent_definitions: info.agent_definitions,
-            tool_definitions: info.tool_definitions,
+            description: info.description,
+            agents: info.agents,
+            tools: info.tools,
             endpoint: info.endpoint,
         }
     }
@@ -90,32 +90,32 @@ impl RemoteEngines {
             .map_err(|err| format!("invalid engine name {:?}: {}", &name, err))?;
 
         if !args.agents.is_empty() {
-            let agent_definitions: Vec<FunctionDefinition> = info
-                .agent_definitions
+            let agents: Vec<Function> = info
+                .agents
                 .into_iter()
-                .filter(|d| args.agents.contains(&d.name))
+                .filter(|d| args.agents.contains(&d.definition.name))
                 .collect();
             for agent in args.agents {
-                if !agent_definitions.iter().any(|d| d.name == agent) {
+                if !agents.iter().any(|d| d.definition.name == agent) {
                     return Err(format!("agent {:?} not found in engine {:?}", agent, name).into());
                 }
             }
 
-            info.agent_definitions = agent_definitions;
+            info.agents = agents;
         }
 
         if !args.tools.is_empty() {
-            let tool_definitions: Vec<FunctionDefinition> = info
-                .tool_definitions
+            let tools: Vec<Function> = info
+                .tools
                 .into_iter()
-                .filter(|d| args.tools.is_empty() || args.tools.contains(&d.name))
+                .filter(|d| args.tools.is_empty() || args.tools.contains(&d.definition.name))
                 .collect();
             for tool in args.tools {
-                if !tool_definitions.iter().any(|d| d.name == tool) {
+                if !tools.iter().any(|d| d.definition.name == tool) {
                     return Err(format!("tool {:?} not found in engine {:?}", tool, name).into());
                 }
             }
-            info.tool_definitions = tool_definitions;
+            info.tools = tools;
         }
 
         info.endpoint = args.endpoint;
@@ -165,17 +165,17 @@ impl RemoteEngines {
                 if endpoint == engine.endpoint {
                     let prefix = format!("RT_{prefix}");
                     return engine
-                        .tool_definitions
+                        .tools
                         .iter()
                         .filter_map(|d| {
                             if let Some(names) = names {
-                                if names.contains(&d.name.as_str()) {
-                                    Some(d.clone().name_with_prefix(&prefix))
+                                if names.contains(&d.definition.name.as_str()) {
+                                    Some(d.definition.clone().name_with_prefix(&prefix))
                                 } else {
                                     None
                                 }
                             } else {
-                                Some(d.clone().name_with_prefix(&prefix))
+                                Some(d.definition.clone().name_with_prefix(&prefix))
                             }
                         })
                         .collect();
@@ -183,23 +183,20 @@ impl RemoteEngines {
             }
         }
 
-        let mut definitions = Vec::with_capacity(
-            self.engines
-                .values()
-                .map(|e| e.tool_definitions.len())
-                .sum(),
-        );
+        let mut definitions =
+            Vec::with_capacity(self.engines.values().map(|e| e.tools.len()).sum());
+
         for (prefix, engine) in self.engines.iter() {
             let prefix = format!("RT_{prefix}");
-            definitions.extend(engine.tool_definitions.iter().filter_map(|d| {
+            definitions.extend(engine.tools.iter().filter_map(|d| {
                 if let Some(names) = names {
-                    if names.contains(&d.name.as_str()) {
-                        Some(d.clone().name_with_prefix(&prefix))
+                    if names.contains(&d.definition.name.as_str()) {
+                        Some(d.definition.clone().name_with_prefix(&prefix))
                     } else {
                         None
                     }
                 } else {
-                    Some(d.clone().name_with_prefix(&prefix))
+                    Some(d.definition.clone().name_with_prefix(&prefix))
                 }
             }));
         }
@@ -225,17 +222,17 @@ impl RemoteEngines {
                 if endpoint == engine.endpoint {
                     let prefix = format!("RA_{prefix}");
                     return engine
-                        .agent_definitions
+                        .agents
                         .iter()
                         .filter_map(|d| {
                             if let Some(names) = names {
-                                if names.contains(&d.name.as_str()) {
-                                    Some(d.clone().name_with_prefix(&prefix))
+                                if names.contains(&d.definition.name.as_str()) {
+                                    Some(d.definition.clone().name_with_prefix(&prefix))
                                 } else {
                                     None
                                 }
                             } else {
-                                Some(d.clone().name_with_prefix(&prefix))
+                                Some(d.definition.clone().name_with_prefix(&prefix))
                             }
                         })
                         .collect();
@@ -243,23 +240,19 @@ impl RemoteEngines {
             }
         }
 
-        let mut definitions = Vec::with_capacity(
-            self.engines
-                .values()
-                .map(|e| e.agent_definitions.len())
-                .sum(),
-        );
+        let mut definitions =
+            Vec::with_capacity(self.engines.values().map(|e| e.agents.len()).sum());
         for (prefix, engine) in self.engines.iter() {
             let prefix = format!("RA_{prefix}");
-            definitions.extend(engine.agent_definitions.iter().filter_map(|d| {
+            definitions.extend(engine.agents.iter().filter_map(|d| {
                 if let Some(names) = names {
-                    if names.contains(&d.name.as_str()) {
-                        Some(d.clone().name_with_prefix(&prefix))
+                    if names.contains(&d.definition.name.as_str()) {
+                        Some(d.definition.clone().name_with_prefix(&prefix))
                     } else {
                         None
                     }
                 } else {
-                    Some(d.clone().name_with_prefix(&prefix))
+                    Some(d.definition.clone().name_with_prefix(&prefix))
                 }
             }));
         }

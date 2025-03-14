@@ -30,8 +30,8 @@
 //! ```
 
 use anda_core::{
-    Agent, AgentOutput, AgentSet, BoxError, FunctionDefinition, Path, Resource, Tool, ToolSet,
-    validate_function_name, validate_path_part,
+    Agent, AgentInput, AgentOutput, AgentSet, BoxError, Function, Metadata,
+    Path, Tool, ToolInput, ToolOutput, ToolSet, Value, validate_function_name,
 };
 use async_trait::async_trait;
 use candid::Principal;
@@ -51,7 +51,6 @@ use crate::{
 pub use crate::context::{Information, InformationJSON, RemoteEngineArgs, RemoteEngines};
 
 pub static ROOT_PATH: &str = "_";
-pub static NAME: &str = "Anda Engine";
 
 /// Engine is the core component that manages agents, tools, and execution context.
 /// It provides methods to interact with agents, call tools, and manage execution.
@@ -59,7 +58,8 @@ pub static NAME: &str = "Anda Engine";
 pub struct Engine {
     id: Principal,
     ctx: AgentCtx,
-    name: String, // engine name
+    name: String,
+    description: String,
     default_agent: String,
     export_agents: BTreeSet<String>,
     export_tools: BTreeSet<String>,
@@ -71,12 +71,12 @@ pub struct Engine {
 #[async_trait]
 pub trait Hook: Send + Sync {
     /// Called before an agent is executed.
-    async fn before_agent_run(&self, _ctx: &AgentCtx, _agent_name: &str) -> Result<(), BoxError> {
+    async fn on_agent_start(&self, _ctx: &AgentCtx, _agent: &str) -> Result<(), BoxError> {
         Ok(())
     }
 
     /// Called after an agent is executed.
-    async fn after_agent_run(
+    async fn on_agent_end(
         &self,
         _ctx: &AgentCtx,
         _agent: &str,
@@ -86,17 +86,17 @@ pub trait Hook: Send + Sync {
     }
 
     /// Called before a tool is called.
-    async fn before_tool_call(&self, _ctx: &BaseCtx, _tool_name: &str) -> Result<(), BoxError> {
+    async fn on_tool_start(&self, _ctx: &BaseCtx, _tool: &str) -> Result<(), BoxError> {
         Ok(())
     }
 
     /// Called after a tool is called.
-    async fn after_tool_call(
+    async fn on_tool_end(
         &self,
         _ctx: &BaseCtx,
         _tool: &str,
-        output: String,
-    ) -> Result<String, BoxError> {
+        output: ToolOutput<Value>,
+    ) -> Result<ToolOutput<Value>, BoxError> {
         Ok(output)
     }
 }
@@ -125,40 +125,40 @@ impl Hooks {
 
 #[async_trait]
 impl Hook for Hooks {
-    async fn before_agent_run(&self, ctx: &AgentCtx, agent_name: &str) -> Result<(), BoxError> {
+    async fn on_agent_start(&self, ctx: &AgentCtx, agent: &str) -> Result<(), BoxError> {
         for hook in &self.hooks {
-            hook.before_agent_run(ctx, agent_name).await?;
+            hook.on_agent_start(ctx, agent).await?;
         }
         Ok(())
     }
 
-    async fn after_agent_run(
+    async fn on_agent_end(
         &self,
         ctx: &AgentCtx,
         agent: &str,
         mut output: AgentOutput,
     ) -> Result<AgentOutput, BoxError> {
         for hook in &self.hooks {
-            output = hook.after_agent_run(ctx, agent, output).await?;
+            output = hook.on_agent_end(ctx, agent, output).await?;
         }
         Ok(output)
     }
 
-    async fn before_tool_call(&self, ctx: &BaseCtx, tool_name: &str) -> Result<(), BoxError> {
+    async fn on_tool_start(&self, ctx: &BaseCtx, tool: &str) -> Result<(), BoxError> {
         for hook in &self.hooks {
-            hook.before_tool_call(ctx, tool_name).await?;
+            hook.on_tool_start(ctx, tool).await?;
         }
         Ok(())
     }
 
-    async fn after_tool_call(
+    async fn on_tool_end(
         &self,
         ctx: &BaseCtx,
         tool: &str,
-        mut output: String,
-    ) -> Result<String, BoxError> {
+        mut output: ToolOutput<Value>,
+    ) -> Result<ToolOutput<Value>, BoxError> {
         for hook in &self.hooks {
-            output = hook.after_tool_call(ctx, tool, output).await?;
+            output = hook.on_tool_end(ctx, tool, output).await?;
         }
         Ok(output)
     }
@@ -170,6 +170,7 @@ impl Engine {
         EngineBuilder::new()
     }
 
+    /// Returns the engine ID.
     pub fn id(&self) -> Principal {
         self.id
     }
@@ -177,6 +178,11 @@ impl Engine {
     /// Returns the name of the engine.
     pub fn name(&self) -> String {
         self.name.clone()
+    }
+
+    /// Returns the description of the engine.
+    pub fn description(&self) -> String {
+        self.description.clone()
     }
 
     /// Returns the name of the default agent.
@@ -198,20 +204,16 @@ impl Engine {
     /// Returns an error if the agent is not found or if the user name is invalid.
     pub fn ctx_with(
         &self,
-        agent_name: &str,
         caller: Principal,
-        user: Option<String>,
+        agent_name: &str,
+        meta: Metadata,
     ) -> Result<AgentCtx, BoxError> {
         let name = agent_name.to_ascii_lowercase();
         if !self.export_agents.contains(&name) || !self.ctx.agents.contains(&name) {
             return Err(format!("agent {} not found", name).into());
         }
 
-        if let Some(user) = &user {
-            validate_path_part(user)?;
-        }
-
-        self.ctx.child_with(&name, caller, user)
+        self.ctx.child_with(caller, &name, meta)
     }
 
     /// Executes an agent with the specified parameters.
@@ -219,99 +221,89 @@ impl Engine {
     /// Returns the agent's output or an error if the agent is not found.
     pub async fn agent_run(
         &self,
-        agent_name: Option<String>,
-        prompt: String,
-        resources: Option<Vec<Resource>>,
         caller: Principal,
-        user: Option<String>,
+        mut input: AgentInput,
     ) -> Result<AgentOutput, BoxError> {
-        let name = agent_name
-            .unwrap_or_else(|| self.default_agent.clone())
-            .to_ascii_lowercase();
+        input.name = if input.name.is_empty() {
+            self.default_agent.clone()
+        } else {
+            input.name.to_ascii_lowercase()
+        };
 
         let agent = self
             .ctx
             .agents
-            .get(&name)
-            .ok_or_else(|| format!("agent {} not found", name))?;
-        let ctx = self.ctx_with(&name, caller, user)?;
+            .get(&input.name)
+            .ok_or_else(|| format!("agent {} not found", input.name))?;
+        let ctx = self.ctx_with(caller, &input.name, input.meta.unwrap_or_default())?;
 
-        self.hooks.before_agent_run(&ctx, &name).await?;
-        let mut res = agent.run(ctx.clone(), prompt, resources).await?;
+        self.hooks.on_agent_start(&ctx, &input.name).await?;
+        let mut res = agent
+            .run(ctx.clone(), input.prompt, input.resources)
+            .await?;
         res.full_history = None; // clear full history
-        self.hooks.after_agent_run(&ctx, &name, res).await
+        self.hooks.on_agent_end(&ctx, &input.name, res).await
     }
 
     /// Calls a tool by name with the specified arguments.
     /// Returns tuple containing the result string and a boolean indicating if further processing is needed.
     pub async fn tool_call(
         &self,
-        name: String,
-        args: String,
         caller: Principal,
-        user: Option<String>,
-    ) -> Result<String, BoxError> {
-        if !self.export_tools.contains(&name) || !self.ctx.tools.contains(&name) {
-            return Err(format!("tool {} not found", name).into());
-        }
-
-        if let Some(user) = &user {
-            validate_path_part(user)?;
+        input: ToolInput<Value>,
+    ) -> Result<ToolOutput<Value>, BoxError> {
+        if !self.export_tools.contains(&input.name) || !self.ctx.tools.contains(&input.name) {
+            return Err(format!("tool {} not found", &input.name).into());
         }
 
         let tool = self
             .ctx
             .tools
-            .get(&name)
-            .ok_or_else(|| format!("tool {} not found", name))?;
+            .get(&input.name)
+            .ok_or_else(|| format!("tool {} not found", &input.name))?;
 
-        let ctx = self.ctx.child_base_with(&name, caller, user)?;
-        self.hooks.before_tool_call(&ctx, &name).await?;
-        let res = tool.call(ctx.clone(), args).await?;
-        self.hooks.after_tool_call(&ctx, &name, res).await
+        let ctx = self
+            .ctx
+            .child_base_with(caller, &input.name, input.meta.unwrap_or_default())?;
+        self.hooks.on_tool_start(&ctx, &input.name).await?;
+        let args = serde_json::to_string(&input.args)?;
+        let res = tool.call(ctx.clone(), args, input.resources).await?;
+        self.hooks.on_tool_end(&ctx, &input.name, res).await
     }
 
     /// Returns function definitions for the specified agents.
     /// If no names are provided, returns definitions for all agents.
-    pub fn agent_definitions(&self, names: Option<&[&str]>) -> Vec<FunctionDefinition> {
-        self.ctx.agents.definitions(names)
+    pub fn agents(&self, names: Option<&[&str]>) -> Vec<Function> {
+        self.ctx.agents.functions(names)
     }
 
     /// Returns function definitions for the specified tools.
     /// If no names are provided, returns definitions for all tools.
-    pub fn tool_definitions(&self, names: Option<&[&str]>) -> Vec<FunctionDefinition> {
-        self.ctx.tools.definitions(names)
+    pub fn tools(&self, names: Option<&[&str]>) -> Vec<Function> {
+        self.ctx.tools.functions(names)
     }
 
     /// Returns information about the engine, including agent and tool definitions.
-    pub fn information(&self, with_detail: bool) -> Information {
+    pub fn information(&self) -> Information {
         Information {
             id: self.id,
             name: self.name.clone(),
-            default_agent: self.default_agent.clone(),
+            description: self.description.clone(),
             endpoint: "".to_string(),
-            agent_definitions: if with_detail {
-                self.agent_definitions(Some(
-                    self.export_agents
-                        .iter()
-                        .map(|s| s.as_str())
-                        .collect::<Vec<_>>()
-                        .as_slice(),
-                ))
-            } else {
-                vec![]
-            },
-            tool_definitions: if with_detail {
-                self.tool_definitions(Some(
-                    self.export_tools
-                        .iter()
-                        .map(|s| s.as_str())
-                        .collect::<Vec<_>>()
-                        .as_slice(),
-                ))
-            } else {
-                vec![]
-            },
+            agents: self.agents(Some(
+                self.export_agents
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+                    .as_slice(),
+            )),
+            tools: self.tools(Some(
+                self.export_tools
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+                    .as_slice(),
+            )),
         }
     }
 }
@@ -321,6 +313,7 @@ impl Engine {
 pub struct EngineBuilder {
     id: Principal,
     name: String,
+    description: String,
     tools: ToolSet<BaseCtx>,
     agents: AgentSet<AgentCtx>,
     remote: BTreeMap<String, RemoteEngineArgs>,
@@ -346,6 +339,7 @@ impl EngineBuilder {
         EngineBuilder {
             id: Principal::anonymous(),
             name: "Anda".to_string(),
+            description: "Anda Engine".to_string(),
             tools: ToolSet::new(),
             agents: AgentSet::new(),
             remote: BTreeMap::new(),
@@ -366,8 +360,14 @@ impl EngineBuilder {
     }
 
     /// Sets the engine name.
-    pub fn with_name(mut self, name: String) -> Self {
+    pub fn with_name(mut self, name: String) -> Result<Self, BoxError> {
+        validate_function_name(&name.to_ascii_lowercase())?;
         self.name = name;
+        Ok(self)
+    }
+
+    pub fn with_description(mut self, description: String) -> Self {
+        self.description = description;
         self
     }
 
@@ -495,12 +495,12 @@ impl EngineBuilder {
     /// Requires a default agent name to be specified.
     /// Returns an error if the default agent is not found.
     pub async fn build(mut self, default_agent: String) -> Result<Engine, BoxError> {
+        let default_agent = default_agent.to_ascii_lowercase();
         if !self.agents.contains(&default_agent) {
             return Err(format!("default agent {} not found", default_agent).into());
         }
 
-        self.export_agents
-            .insert(default_agent.to_ascii_lowercase());
+        self.export_agents.insert(default_agent.clone());
 
         let mut names: BTreeSet<Path> = self
             .tools
@@ -517,6 +517,7 @@ impl EngineBuilder {
         names.insert(Path::from(ROOT_PATH));
         let ctx = BaseCtx::new(
             self.id,
+            self.name.clone(),
             self.cancellation_token,
             names,
             self.web3,
@@ -538,13 +539,14 @@ impl EngineBuilder {
             Arc::new(remote),
         );
 
+        let meta = Metadata::default();
         for (name, tool) in &tools.set {
-            let ct = ctx.child_base_with(name, self.id, Some(self.name.clone()))?;
+            let ct = ctx.child_base_with(self.id, name, meta.clone())?;
             tool.init(ct).await?;
         }
 
         for (name, agent) in &agents.set {
-            let ct = ctx.child_with(name, self.id, Some(self.name.clone()))?;
+            let ct = ctx.child_with(self.id, name, meta.clone())?;
             agent.init(ct).await?;
         }
 
@@ -552,6 +554,7 @@ impl EngineBuilder {
             id: self.id,
             ctx,
             name: self.name,
+            description: self.description,
             default_agent,
             export_agents: self.export_agents,
             export_tools: self.export_tools,
@@ -571,7 +574,8 @@ impl EngineBuilder {
             .collect();
         names.insert(Path::from(ROOT_PATH));
         let ctx = BaseCtx::new(
-            Principal::anonymous(),
+            anda_core::ANONYMOUS,
+            "Mocker".to_string(),
             self.cancellation_token,
             names,
             self.web3,

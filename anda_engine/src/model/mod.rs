@@ -14,10 +14,7 @@
 //! while maintaining a consistent interface through the `CompletionFeaturesDyn` and
 //! `EmbeddingFeaturesDyn` traits.
 
-use anda_core::{
-    AgentOutput, BoxError, BoxPinFut, CompletionFeatures, CompletionRequest, Embedding,
-    EmbeddingFeatures, ToolCall, Usage,
-};
+use anda_core::{AgentOutput, BoxError, BoxPinFut, CompletionRequest, Embedding, ToolCall, Usage};
 use std::sync::Arc;
 
 pub mod cohere;
@@ -168,27 +165,23 @@ impl Model {
             embedder: Arc::new(MockImplemented),
         }
     }
-}
 
-impl CompletionFeatures for Model {
-    async fn completion(&self, req: CompletionRequest) -> Result<AgentOutput, BoxError> {
+    pub async fn completion(&self, req: CompletionRequest) -> Result<AgentOutput, BoxError> {
         self.completer.completion(req).await
     }
-}
 
-impl EmbeddingFeatures for Model {
-    fn ndims(&self) -> usize {
+    pub fn ndims(&self) -> usize {
         self.embedder.ndims()
     }
 
-    async fn embed(
+    pub async fn embed(
         &self,
         texts: impl IntoIterator<Item = String> + Send,
     ) -> Result<(Vec<Embedding>, Usage), BoxError> {
         self.embedder.embed(texts.into_iter().collect()).await
     }
 
-    async fn embed_query(&self, text: &str) -> Result<(Embedding, Usage), BoxError> {
+    pub async fn embed_query(&self, text: &str) -> Result<(Embedding, Usage), BoxError> {
         self.embedder.embed_query(text.to_string()).await
     }
 }

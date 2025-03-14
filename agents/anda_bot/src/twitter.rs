@@ -1,8 +1,8 @@
 use agent_twitter_client::{models::Tweet, scraper::Scraper, search::SearchMode};
-use anda_core::{Agent, BoxError, CompletionFeatures, StateFeatures};
+use anda_core::{ANONYMOUS, Agent, BoxError, CompletionFeatures, Metadata, StateFeatures};
 use anda_engine::{
-    context::{ANONYMOUS, AgentCtx, CacheStoreFeatures},
-    engine::{Engine, NAME},
+    context::{AgentCtx, CacheStoreFeatures},
+    engine::Engine,
     extension::character::CharacterAgent,
     rand_number,
 };
@@ -47,9 +47,11 @@ impl TwitterDaemon {
 
     pub async fn run(&self, cancel_token: CancellationToken) -> Result<(), BoxError> {
         {
-            let ctx = self
-                .engine
-                .ctx_with(&self.agent.as_ref().name(), ANONYMOUS, None)?;
+            let ctx = self.engine.ctx_with(
+                ANONYMOUS,
+                &self.agent.as_ref().name(),
+                Metadata::default(),
+            )?;
             // load seen_tweet_ids from store
             ctx.cache_store_init("seen_tweet_ids", async { Ok(Vec::<String>::new()) })
                 .await?;
@@ -145,9 +147,12 @@ impl TwitterDaemon {
 
         log::info!("post new tweet with {} knowledges", knowledges.len());
         let ctx = self.engine.ctx_with(
-            &self.agent.as_ref().name(),
             ANONYMOUS,
-            Some(NAME.to_string()),
+            &self.agent.as_ref().name(),
+            Metadata {
+                user: Some(self.engine.name()),
+                ..Default::default()
+            },
         )?;
         let req = self
             .agent
@@ -158,10 +163,10 @@ impl TwitterDaemon {
                 Be direct and concise. No questions, hashtags, or emojis.\
                 "
                 .to_string(),
-                Some(NAME.to_string()),
+                Some(self.engine.name()),
             )
             .append_documents(knowledges.into());
-        let res = ctx.completion(req).await?;
+        let res = ctx.completion(req, None).await?;
         match res.failed_reason {
             Some(reason) => Err(format!("Failed to generate response for tweet: {reason}").into()),
             None => {
@@ -178,9 +183,12 @@ impl TwitterDaemon {
 
     async fn handle_home_timeline(&self) -> Result<(), BoxError> {
         let ctx = self.engine.ctx_with(
-            &self.agent.as_ref().name(),
             ANONYMOUS,
-            Some(NAME.to_string()),
+            &self.agent.as_ref().name(),
+            Metadata {
+                user: Some(self.engine.name()),
+                ..Default::default()
+            },
         )?;
 
         let mut seen_tweet_ids: Vec<String> = ctx.cache_store_get("seen_tweet_ids").await?;
@@ -269,9 +277,12 @@ impl TwitterDaemon {
             return Ok(());
         }
         let ctx = self.engine.ctx_with(
-            &self.agent.as_ref().name(),
             ANONYMOUS,
-            Some(tweet_user.clone()),
+            &self.agent.as_ref().name(),
+            Metadata {
+                user: Some(tweet_user.clone()),
+                ..Default::default()
+            },
         )?;
         let mut seen_tweet_ids: Vec<String> = ctx.cache_store_get("seen_tweet_ids").await?;
 
@@ -382,10 +393,10 @@ impl TwitterDaemon {
                     3. Return {IGNORE_COMMAND} if your persona wouldn't respond to this tweet\n\n\
                     ## Tweet Content:\n{:?}\
                 ", self.agent.character.name, tweet_content),
-                Some(NAME.to_string()),
+                Some(ctx.name()),
             );
 
-        let res = ctx.completion(req).await?;
+        let res = ctx.completion(req, None).await?;
         match res.failed_reason {
             Some(reason) => Err(format!("Failed to generate response for tweet: {reason}").into()),
             None => {
@@ -420,10 +431,10 @@ impl TwitterDaemon {
                     3. Return {IGNORE_COMMAND} if your persona wouldn't respond to this tweet\n\n\
                     ## Tweet Content:\n{:?}\
                 ", self.agent.character.name, tweet_content),
-                Some(NAME.to_string()),
+                Some(ctx.name()),
             );
 
-            let res = ctx.completion(req).await?;
+            let res = ctx.completion(req, None).await?;
             match res.failed_reason {
                 Some(reason) => {
                     return Err(format!("Failed to generate response for tweet: {reason}").into());

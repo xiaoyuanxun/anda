@@ -118,7 +118,7 @@ impl DocumentSegmenter {
                         id: self.tool_name.clone(),
                         name: self.tool_name.clone(),
                         args: res_str.clone(),
-                        result: Some(res_str),
+                        result: Some(res_str.into()),
                     }]),
                     ..Default::default()
                 },

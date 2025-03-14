@@ -153,7 +153,7 @@ async fn main() -> Result<(), BoxError> {
     // Build agent engine with all configured components
     let engine = EngineBuilder::new()
         .with_id(my_principal)
-        .with_name(APP_NAME.to_string())
+        .with_name(APP_NAME.to_string())?
         .with_cancellation_token(global_cancel_token.clone())
         .with_web3_client(Arc::new(Web3SDK::from_web3(Arc::new(web3.clone()))))
         .with_model(model)

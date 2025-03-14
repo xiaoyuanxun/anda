@@ -7,7 +7,7 @@
 
 use anda_core::{
     AgentOutput, BoxError, BoxPinFut, CONTENT_TYPE_JSON, CompletionFeatures, CompletionRequest,
-    FunctionDefinition, Message, ToolCall, Usage as ModelUsage,
+    FunctionDefinition, Message, Resource, ToolCall, Usage as ModelUsage,
 };
 use log::{Level::Debug, log_enabled};
 use serde::{Deserialize, Serialize};
@@ -151,6 +151,7 @@ impl CompletionResponse {
                 .map(|u| ModelUsage {
                     input_tokens: u.prompt_tokens as u64,
                     output_tokens: u.completion_tokens as u64,
+                    requests: 1,
                 })
                 .unwrap_or_default(),
             ..Default::default()
@@ -238,7 +239,11 @@ impl CompletionModel {
 }
 
 impl CompletionFeatures for CompletionModel {
-    async fn completion(&self, req: CompletionRequest) -> Result<AgentOutput, BoxError> {
+    async fn completion(
+        &self,
+        req: CompletionRequest,
+        _resources: Option<Vec<Resource>>,
+    ) -> Result<AgentOutput, BoxError> {
         CompletionFeaturesDyn::completion(self, req).await
     }
 }
@@ -376,7 +381,9 @@ mod tests {
         let now = Instant::now();
         let model = client.completion_model(DEEKSEEK_V3);
         let req = character.to_request("I am Yan, glad to see you".into(), Some("Yan".into()));
-        let res = CompletionFeatures::completion(&model, req).await.unwrap();
+        let res = CompletionFeatures::completion(&model, req, None)
+            .await
+            .unwrap();
         println!("{}", res.content);
         println!("Took: {:?}", now.elapsed());
     }

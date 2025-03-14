@@ -85,33 +85,27 @@ pub trait AgentContext: BaseContext + CompletionFeatures + EmbeddingFeatures {
     /// Executes a local tool with provided arguments
     fn tool_call(
         &self,
-        tool_name: &str,
-        args: String,
-    ) -> impl Future<Output = Result<String, BoxError>> + Send;
+        input: ToolInput<Value>,
+    ) -> impl Future<Output = Result<ToolOutput<Value>, BoxError>> + Send;
 
     /// Executes a remote tool on another agent
     fn remote_tool_call(
         &self,
         endpoint: &str,
-        tool_name: &str,
-        args: String,
-    ) -> impl Future<Output = Result<String, BoxError>> + Send;
+        input: ToolInput<Value>,
+    ) -> impl Future<Output = Result<ToolOutput<Value>, BoxError>> + Send;
 
     /// Runs a local agent with optional resources
     fn agent_run(
         &self,
-        agent_name: &str,
-        prompt: String,
-        resources: Option<Vec<Resource>>,
+        input: AgentInput,
     ) -> impl Future<Output = Result<AgentOutput, BoxError>> + Send;
 
     /// Runs a remote agent on another endpoint
     fn remote_agent_run(
         &self,
         endpoint: &str,
-        agent_name: &str,
-        prompt: String,
-        resources: Option<Vec<Resource>>,
+        input: AgentInput,
     ) -> impl Future<Output = Result<AgentOutput, BoxError>> + Send;
 }
 
@@ -130,18 +124,20 @@ pub trait BaseContext:
 
 /// StateFeatures is one of the context feature sets available when calling Agent or Tool.
 pub trait StateFeatures: Sized {
-    /// Gets the engine ID, which comes from the TEE host
+    /// Gets the engine ID
     fn id(&self) -> Principal;
+
+    /// Gets the engine name
+    fn name(&self) -> String;
+
     /// Gets the verified caller principal if available.
-    /// A non anonymous Principal indicates the request has been verified
+    /// A non anonymous principal indicates the request has been verified
     /// using ICP blockchain's signature verification algorithm.
+    /// Details: https://github.com/ldclabs/ic-auth
     fn caller(&self) -> Principal;
 
-    /// Gets the username from request context.
-    /// Note: This is not verified and should not be used as a trusted identifier.
-    /// For example, if triggered by a bot of X platform, this might be the username
-    /// of the user interacting with the bot.
-    fn user(&self) -> Option<String>;
+    /// Gets the matadata of the request
+    fn meta<'a>(&'_ self) -> &'_ Metadata;
 
     /// Gets the cancellation token for the current execution context.
     /// Each call level has its own token scope.

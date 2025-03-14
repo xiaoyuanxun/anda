@@ -7,7 +7,9 @@
 //! - Integration with ICP ledger standards
 //! - Atomic transfers with proper error handling
 
-use anda_core::{BoxError, FunctionDefinition, StateFeatures, Tool, fix_json_schema};
+use anda_core::{
+    BoxError, FunctionDefinition, Resource, StateFeatures, Tool, ToolOutput, fix_json_schema,
+};
 use anda_engine::context::BaseCtx;
 use num_traits::cast::ToPrimitive;
 use schemars::{JsonSchema, schema_for};
@@ -88,13 +90,18 @@ impl Tool<BaseCtx> for TransferTool {
         }
     }
 
-    async fn call(&self, ctx: BaseCtx, data: Self::Args) -> Result<Self::Output, BoxError> {
+    async fn call(
+        &self,
+        ctx: BaseCtx,
+        data: Self::Args,
+        _resources: Option<Vec<Resource>>,
+    ) -> Result<ToolOutput<Self::Output>, BoxError> {
         let (ledger, tx) = self.ledgers.transfer(&ctx, ctx.id(), data).await?;
-        Ok(format!(
+        Ok(ToolOutput::new(format!(
             "Successful, transaction ID: {}, detail: https://www.icexplorer.io/token/details/{}",
             tx.0.to_u64().unwrap_or(0),
             ledger.to_text()
-        ))
+        )))
     }
 }
 

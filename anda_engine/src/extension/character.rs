@@ -42,7 +42,7 @@ use super::{
     segmenter::DocumentSegmenter,
 };
 
-use crate::{context::AgentCtx, engine::NAME, store::MAX_STORE_OBJECT_SIZE};
+use crate::{context::AgentCtx, store::MAX_STORE_OBJECT_SIZE};
 
 const MAX_CHAT_HISTORY: usize = 42;
 const CHAT_HISTORY_TTI: Duration = Duration::from_secs(3600 * 24 * 7);
@@ -364,7 +364,10 @@ impl<K: KnowledgeFeatures + VectorSearchFeatures> CharacterAgent<K> {
     ///
     /// # Returns
     /// Boolean indicating whether to like the post
-    pub async fn should_like(&self, ctx: &impl CompletionFeatures, content: &str) -> bool {
+    pub async fn should_like<F>(&self, ctx: &F, content: &str) -> bool
+    where
+        F: CompletionFeatures + StateFeatures,
+    {
         // Ignore very short content
         if evaluate_tokens(content) < 5 {
             return false;
@@ -384,10 +387,10 @@ impl<K: KnowledgeFeatures + VectorSearchFeatures> CharacterAgent<K> {
                 ",
                 content,
             ),
-            Some(NAME.to_string()),
+            ctx.meta().user.clone(),
         );
 
-        match ctx.completion(req).await {
+        match ctx.completion(req, None).await {
             Ok(AgentOutput { content, .. }) => content.to_ascii_lowercase().contains("true"),
             Err(_) => false,
         }
@@ -426,7 +429,8 @@ where
         _resources: Option<Vec<Resource>>,
     ) -> Result<AgentOutput, BoxError> {
         // read chat history from store
-        let mut chat_history = if let Some(user) = ctx.user() {
+        let meta = ctx.meta();
+        let mut chat_history = if let Some(user) = meta.user.clone() {
             let chat: Vec<Message> = ctx
                 .cache_get_with(&user, async {
                     Ok((Vec::new(), Some(CacheExpiry::TTI(CHAT_HISTORY_TTI))))
@@ -453,7 +457,7 @@ where
                     &Message {
                         role: "user".to_string(),
                         content: prompt.clone().into(),
-                        name: ctx.user(),
+                        name: meta.user.clone(),
                         ..Default::default()
                     },
                 )
@@ -483,7 +487,7 @@ where
         if content_quality > ContentQuality::Ignore {
             let content = prompt.clone();
             let ctx = ctx.clone();
-            let user = ctx.user().unwrap_or("anonymous".to_string());
+            let user = meta.user.clone().unwrap_or("anonymous".to_string());
             let segmenter = self.segmenter.clone();
             let knowledge = self.knowledge.clone();
 
@@ -531,7 +535,7 @@ where
 
         let mut req = self
             .character
-            .to_request(prompt, ctx.user())
+            .to_request(prompt, meta.user.clone())
             .append_documents(knowledges)
             .append_tools(tools);
 
@@ -545,7 +549,7 @@ where
             });
 
             // tools will be auto called in completion
-            let res = ctx.completion(req).await?;
+            let res = ctx.completion(req, None).await?;
             if res.failed_reason.is_none() {
                 if !res.content.is_empty() {
                     chat.push(Message {
@@ -578,7 +582,7 @@ where
 
             Ok(res)
         } else {
-            ctx.completion(req).await
+            ctx.completion(req, None).await
         }
     }
 }

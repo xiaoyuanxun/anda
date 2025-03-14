@@ -37,7 +37,7 @@ use serde_json::json;
 use std::{collections::BTreeMap, future::Future, marker::PhantomData, sync::Arc};
 
 use crate::{
-    BoxError, BoxPinFut,
+    BoxError, BoxPinFut, Function,
     context::AgentContext,
     model::{AgentOutput, FunctionDefinition, Resource},
     validate_function_name,
@@ -91,6 +91,19 @@ where
         }
     }
 
+    /// It is used to select resources based on the provided tags.
+    /// If the agent requires specific resources, it can filter them based on the tags.
+    /// By default, it returns an empty list.
+    ///
+    /// # Arguments
+    /// - `tags`: List of tags to filter resources
+    ///
+    /// # Returns
+    /// - A list of resource tags from the tags provided that supported by the agent
+    fn supported_resource_tags(&self) -> Vec<String> {
+        Vec::new()
+    }
+
     /// Initializes the tool with the given context.
     /// It will be called once when building the engine.
     fn init(&self, _ctx: C) -> impl Future<Output = Result<(), BoxError>> + Send {
@@ -108,7 +121,7 @@ where
     /// # Arguments
     /// - `ctx`: The execution context implementing `AgentContext`
     /// - `prompt`: The input prompt or message for the agent
-    /// - `resources`: Optional additional resources
+    /// - `resources`: Optional additional resources, If resources don’t meet the agent’s expectations, ignore them.
     ///
     /// # Returns
     /// - A future resolving to `Result<AgentOutput, BoxError>`
@@ -133,6 +146,8 @@ where
     fn definition(&self) -> FunctionDefinition;
 
     fn tool_dependencies(&self) -> Vec<String>;
+
+    fn supported_resource_tags(&self) -> Vec<String>;
 
     fn init(&self, ctx: C) -> BoxPinFut<Result<(), BoxError>>;
 
@@ -165,6 +180,10 @@ where
 
     fn tool_dependencies(&self) -> Vec<String> {
         self.0.tool_dependencies()
+    }
+
+    fn supported_resource_tags(&self) -> Vec<String> {
+        self.0.supported_resource_tags()
     }
 
     fn init(&self, ctx: C) -> BoxPinFut<Result<(), BoxError>> {
@@ -236,6 +255,28 @@ where
                     }
                 }
                 None => Some(agent.definition()),
+            })
+            .collect()
+    }
+
+    pub fn functions(&self, names: Option<&[&str]>) -> Vec<Function> {
+        self.set
+            .iter()
+            .filter_map(|(name, agent)| match names {
+                Some(names) => {
+                    if names.contains(&name.as_str()) {
+                        Some(Function {
+                            definition: agent.definition(),
+                            supported_resource_tags: agent.supported_resource_tags(),
+                        })
+                    } else {
+                        None
+                    }
+                }
+                None => Some(Function {
+                    definition: agent.definition(),
+                    supported_resource_tags: agent.supported_resource_tags(),
+                }),
             })
             .collect()
     }

@@ -26,11 +26,11 @@
 //! agents or tools while maintaining access to the core functionality.
 
 use anda_core::{
-    AgentArgs, AgentContext, AgentOutput, AgentSet, BaseContext, BoxError, CacheExpiry,
+    AgentArgs, AgentContext, AgentInput, AgentOutput, AgentSet, BaseContext, BoxError, CacheExpiry,
     CacheFeatures, CancellationToken, CanisterCaller, CompletionFeatures, CompletionRequest,
     Embedding, EmbeddingFeatures, FunctionDefinition, HttpFeatures, KeysFeatures, Message,
-    ObjectMeta, Path, PutMode, PutResult, Resource, StateFeatures, StoreFeatures, ToolCall,
-    ToolSet, Usage, Value,
+    Metadata, ObjectMeta, Path, PutMode, PutResult, Resource, StateFeatures, StoreFeatures,
+    ToolCall, ToolInput, ToolOutput, ToolSet, Usage, Value,
 };
 use bytes::Bytes;
 use candid::{CandidType, Principal, utils::ArgumentEncoder};
@@ -115,14 +115,14 @@ impl AgentCtx {
     /// * `caller` - Optional caller principal
     pub(crate) fn child_with(
         &self,
-        agent_name: &str,
         caller: Principal,
-        user: Option<String>,
+        agent_name: &str,
+        meta: Metadata,
     ) -> Result<Self, BoxError> {
         Ok(Self {
             base: self
                 .base
-                .child_with(format!("A:{}", agent_name), caller, user)?,
+                .child_with(caller, format!("A:{}", agent_name), meta)?,
             model: self.model.clone(),
             tools: self.tools.clone(),
             agents: self.agents.clone(),
@@ -139,12 +139,12 @@ impl AgentCtx {
     ///
     pub(crate) fn child_base_with(
         &self,
-        tool_name: &str,
         caller: Principal,
-        user: Option<String>,
+        tool_name: &str,
+        meta: Metadata,
     ) -> Result<BaseCtx, BoxError> {
         self.base
-            .child_with(format!("T:{}", tool_name), caller, user)
+            .child_with(caller, format!("T:{}", tool_name), meta)
     }
 }
 
@@ -258,16 +258,18 @@ impl AgentContext for AgentCtx {
     ///
     /// # Returns
     /// Tuple containing the result string and a boolean indicating if further processing is needed
-    async fn tool_call(&self, name: &str, args: String) -> Result<String, BoxError> {
-        if self.tools.contains(name) {
-            let ctx = self.child_base(name)?;
-            let tool = self.tools.get(name).expect("tool not found");
-            return tool.call(ctx, args).await;
+    async fn tool_call(&self, mut input: ToolInput<Value>) -> Result<ToolOutput<Value>, BoxError> {
+        if self.tools.contains(&input.name) {
+            let ctx = self.child_base(&input.name)?;
+            let tool = self.tools.get(&input.name).expect("tool not found");
+            let args = serde_json::to_string(&input.args)?;
+            return tool.call(ctx, args, input.resources).await;
         }
 
         // find registered remote tool and call it
-        if let Some((endpoint, tool_name)) = self.remote.get_tool_endpoint(name) {
-            return self.remote_tool_call(&endpoint, &tool_name, args).await;
+        if let Some((endpoint, tool_name)) = self.remote.get_tool_endpoint(&input.name) {
+            input.name = tool_name;
+            return self.remote_tool_call(&endpoint, input).await;
         }
 
         // find dynamic remote tool and call it
@@ -275,12 +277,13 @@ impl AgentContext for AgentCtx {
             .cache_store_get::<RemoteEngines>(DYNAMIC_REMOTE_ENGINES)
             .await
         {
-            if let Some((endpoint, tool_name)) = engines.get_tool_endpoint(name) {
-                return self.remote_tool_call(&endpoint, &tool_name, args).await;
+            if let Some((endpoint, tool_name)) = engines.get_tool_endpoint(&input.name) {
+                input.name = tool_name;
+                return self.remote_tool_call(&endpoint, input).await;
             }
         }
 
-        Err(format!("tool {} not found", name).into())
+        Err(format!("tool {} not found", &input.name).into())
     }
 
     /// Executes a remote tool call via HTTP RPC
@@ -292,10 +295,10 @@ impl AgentContext for AgentCtx {
     async fn remote_tool_call(
         &self,
         endpoint: &str,
-        name: &str,
-        args: String,
-    ) -> Result<String, BoxError> {
-        self.https_signed_rpc(endpoint, "tool_call", &(name, args))
+        mut input: ToolInput<Value>,
+    ) -> Result<ToolOutput<Value>, BoxError> {
+        input.meta = Some(self.base.self_meta());
+        self.https_signed_rpc(endpoint, "tool_call", &(&input,))
             .await
     }
 
@@ -308,25 +311,19 @@ impl AgentContext for AgentCtx {
     ///
     /// # Returns
     /// [`AgentOutput`] containing the result of the agent execution
-    async fn agent_run(
-        &self,
-        name: &str,
-        prompt: String,
-        resources: Option<Vec<Resource>>,
-    ) -> Result<AgentOutput, BoxError> {
-        let name = name.to_ascii_lowercase();
-        let name_ = name.strip_prefix("LA_").unwrap_or(&name);
+    async fn agent_run(&self, mut input: AgentInput) -> Result<AgentOutput, BoxError> {
+        let name = &input.name.to_ascii_lowercase();
+        let name_ = name.strip_prefix("LA_").unwrap_or(name);
         if self.agents.contains(name_) {
             let ctx = self.child(name_)?;
             let agent = self.agents.get(name_).expect("agent not found");
-            return agent.run(ctx, prompt, resources).await;
+            return agent.run(ctx, input.prompt, input.resources).await;
         }
 
         // find registered remote agent and run it
-        if let Some((endpoint, agent_name)) = self.remote.get_agent_endpoint(&name) {
-            return self
-                .remote_agent_run(&endpoint, &agent_name, prompt, resources)
-                .await;
+        if let Some((endpoint, agent_name)) = self.remote.get_agent_endpoint(name) {
+            input.name = agent_name;
+            return self.remote_agent_run(&endpoint, input).await;
         }
 
         // find dynamic remote agent and run it
@@ -334,10 +331,9 @@ impl AgentContext for AgentCtx {
             .cache_store_get::<RemoteEngines>(DYNAMIC_REMOTE_ENGINES)
             .await
         {
-            if let Some((endpoint, agent_name)) = engines.get_agent_endpoint(&name) {
-                return self
-                    .remote_agent_run(&endpoint, &agent_name, prompt, resources)
-                    .await;
+            if let Some((endpoint, agent_name)) = engines.get_agent_endpoint(name) {
+                input.name = agent_name;
+                return self.remote_agent_run(&endpoint, input).await;
             }
         }
 
@@ -354,11 +350,10 @@ impl AgentContext for AgentCtx {
     async fn remote_agent_run(
         &self,
         endpoint: &str,
-        agent_name: &str,
-        prompt: String,
-        resources: Option<Vec<Resource>>,
+        mut input: AgentInput,
     ) -> Result<AgentOutput, BoxError> {
-        self.https_signed_rpc(endpoint, "agent_run", &(agent_name, prompt, resources))
+        input.meta = Some(self.base.self_meta());
+        self.https_signed_rpc(endpoint, "agent_run", &(&input,))
             .await
     }
 }
@@ -383,7 +378,11 @@ impl CompletionFeatures for AgentCtx {
     ///    - Adds tool results to the chat history
     ///    - Repeats the completion with updated history
     /// 3. Returns final result when no more tool calls need processing
-    async fn completion(&self, mut req: CompletionRequest) -> Result<AgentOutput, BoxError> {
+    async fn completion(
+        &self,
+        mut req: CompletionRequest,
+        mut _resources: Option<Vec<Resource>>, // TODO: select resources
+    ) -> Result<AgentOutput, BoxError> {
         let mut tool_calls_result: Vec<ToolCall> = Vec::new();
         let mut usage = Usage::default();
         loop {
@@ -401,16 +400,31 @@ impl CompletionFeatures for AgentCtx {
                     // remove called tool from req.tools
                     req.tools.retain(|t| t.name != tool.name);
                     if self.tools.contains(&tool.name) || tool.name.starts_with("RT_") {
-                        match self.tool_call(&tool.name, tool.args.clone()).await {
-                            Ok(result) => {
+                        match self
+                            .tool_call(ToolInput {
+                                name: tool.name.clone(),
+                                args: serde_json::from_str(&tool.args)?,
+                                resources: None,
+                                meta: Some(self.meta().clone()),
+                            })
+                            .await
+                        {
+                            Ok(res) => {
+                                usage.accumulate(&res.usage);
+                                let content: Value = if res.output.is_string() {
+                                    res.output.clone()
+                                } else {
+                                    serde_json::to_string(&res.output)?.into()
+                                };
+
                                 tool_calls_continue.push(json!(Message {
                                     role: "tool".to_string(),
-                                    content: result.clone().into(),
+                                    content,
                                     name: None,
                                     tool_call_id: Some(tool.id.clone()),
                                 }));
 
-                                tool.result = Some(result);
+                                tool.result = Some(serde_json::to_value(&res)?);
                             }
                             Err(err) => {
                                 output.failed_reason = Some(err.to_string());
@@ -423,7 +437,15 @@ impl CompletionFeatures for AgentCtx {
                         || tool.name.starts_with("RA_")
                     {
                         let args: AgentArgs = serde_json::from_str(&tool.args)?;
-                        match self.agent_run(&tool.name, args.prompt, None).await {
+                        match self
+                            .agent_run(AgentInput {
+                                name: tool.name.clone(),
+                                prompt: args.prompt,
+                                resources: None,
+                                meta: Some(self.meta().clone()),
+                            })
+                            .await
+                        {
                             Ok(res) => {
                                 usage.accumulate(&res.usage);
                                 if res.failed_reason.is_some() {
@@ -437,7 +459,7 @@ impl CompletionFeatures for AgentCtx {
                                     name: None,
                                     tool_call_id: Some(tool.id.clone()),
                                 }));
-                                tool.result = Some(res.content);
+                                tool.result = Some(serde_json::to_value(&res)?);
                             }
                             Err(err) => {
                                 output.failed_reason = Some(err.to_string());
@@ -506,24 +528,26 @@ impl EmbeddingFeatures for AgentCtx {
 impl BaseContext for AgentCtx {}
 
 impl StateFeatures for AgentCtx {
-    /// agent ID
     fn id(&self) -> Principal {
-        self.base.id()
+        self.base.id
+    }
+
+    fn name(&self) -> String {
+        self.base.name.clone()
     }
 
     /// caller ID
     fn caller(&self) -> Principal {
-        self.base.caller()
+        self.base.caller
     }
 
-    /// Gets the current user identifier, if available
-    fn user(&self) -> Option<String> {
-        self.base.user()
+    fn meta(&self) -> &Metadata {
+        &self.base.meta
     }
 
     /// Gets the cancellation token for the current context
     fn cancellation_token(&self) -> CancellationToken {
-        self.base.cancellation_token()
+        self.base.cancellation_token.clone()
     }
 
     /// Gets the elapsed time since the context was created

@@ -1,8 +1,8 @@
 use anda_core::{
-    Agent, AgentContext, AgentOutput, BoxError, CanisterCaller, CompletionFeatures,
+    ANONYMOUS, Agent, AgentContext, AgentOutput, BoxError, CanisterCaller, CompletionFeatures,
     CompletionRequest, Resource, StateFeatures, ToolSet,
 };
-use anda_engine::context::{ANONYMOUS, AgentCtx, BaseCtx};
+use anda_engine::context::{AgentCtx, BaseCtx};
 use anda_icp::ledger::{BalanceOfTool, ICPLedgers, TransferTool};
 use candid::Principal;
 use std::{collections::BTreeSet, sync::Arc};
@@ -107,7 +107,7 @@ impl Agent<AgentCtx> for ICPLedgerAgent {
             ..Default::default()
         }
         .context("user_address".to_string(), caller.to_string());
-        let res = ctx.completion(req).await?;
+        let res = ctx.completion(req, None).await?;
         Ok(res)
     }
 }

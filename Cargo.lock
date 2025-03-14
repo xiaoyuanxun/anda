@@ -105,7 +105,7 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "anda_bot"
-version = "0.4.7"
+version = "0.6.0"
 dependencies = [
  "agent-twitter-client",
  "anda_core",
@@ -137,7 +137,7 @@ dependencies = [
 
 [[package]]
 name = "anda_cli"
-version = "0.2.1"
+version = "0.6.0"
 dependencies = [
  "anda_core",
  "anda_web3_client",
@@ -152,7 +152,7 @@ dependencies = [
 
 [[package]]
 name = "anda_core"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "bytes",
  "candid",
@@ -168,11 +168,12 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.12",
  "tokio-util",
+ "xid",
 ]
 
 [[package]]
 name = "anda_engine"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "anda_core",
  "async-trait",
@@ -199,11 +200,12 @@ dependencies = [
  "tokio-util",
  "toml",
  "url",
+ "xid",
 ]
 
 [[package]]
 name = "anda_engine_server"
-version = "0.2.1"
+version = "0.6.0"
 dependencies = [
  "anda_core",
  "anda_engine",
@@ -223,7 +225,7 @@ dependencies = [
 
 [[package]]
 name = "anda_icp"
-version = "0.2.7"
+version = "0.6.0"
 dependencies = [
  "anda_core",
  "anda_engine",
@@ -239,7 +241,7 @@ dependencies = [
 
 [[package]]
 name = "anda_lancedb"
-version = "0.2.0"
+version = "0.6.0"
 dependencies = [
  "anda_core",
  "anda_engine",
@@ -263,7 +265,7 @@ dependencies = [
 
 [[package]]
 name = "anda_web3_client"
-version = "0.2.2"
+version = "0.6.0"
 dependencies = [
  "anda_core",
  "anda_engine",

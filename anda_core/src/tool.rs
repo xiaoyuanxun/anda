@@ -31,7 +31,8 @@ use serde::{Serialize, de::DeserializeOwned};
 use std::{collections::BTreeMap, future::Future, marker::PhantomData, sync::Arc};
 
 use crate::{
-    BoxError, BoxPinFut, context::BaseContext, model::FunctionDefinition, validate_function_name,
+    BoxError, BoxPinFut, Function, Resource, ToolOutput, Value, context::BaseContext,
+    model::FunctionDefinition, validate_function_name,
 };
 
 /// Core trait for implementing tools that can be used by the AI Agent system
@@ -66,6 +67,19 @@ where
     /// - `FunctionDefinition`: The schema definition of the tool's parameters and metadata
     fn definition(&self) -> FunctionDefinition;
 
+    /// It is used to select resources based on the provided tags.
+    /// If the tool requires specific resources, it can filter them based on the tags.
+    /// By default, it returns an empty list.
+    ///
+    /// # Arguments
+    /// - `tags`: List of tags to filter resources
+    ///
+    /// # Returns
+    /// - A list of resource tags from the tags provided that supported by the tool
+    fn supported_resource_tags(&self) -> Vec<String> {
+        Vec::new()
+    }
+
     /// Initializes the tool with the given context.
     /// It will be called once when building the engine.
     fn init(&self, _ctx: C) -> impl Future<Output = Result<(), BoxError>> + Send {
@@ -77,6 +91,7 @@ where
     /// # Arguments
     /// - `ctx`: The execution context implementing `BaseContext`
     /// - `args`: JSON value containing the input arguments for the tool
+    /// - `resources`: Optional additional resources, If resources don’t meet the tool’s expectations, return an error.
     ///
     /// # Returns
     /// - A future resolving to a JSON value containing the tool's output
@@ -85,25 +100,8 @@ where
         &self,
         ctx: C,
         args: Self::Args,
-    ) -> impl Future<Output = Result<Self::Output, BoxError>> + Send;
-
-    /// Executes the tool with given context and arguments using raw JSON string
-    /// Returns the output as struct.
-    fn call_string(
-        &self,
-        ctx: C,
-        args: String,
-    ) -> impl Future<Output = Result<Self::Output, BoxError>> + Send {
-        async move {
-            let args: Self::Args = serde_json::from_str(&args)
-                .map_err(|err| format!("tool {}, invalid args: {}", self.name(), err))?;
-            let result = self
-                .call(ctx, args)
-                .await
-                .map_err(|err| format!("tool {}, call failed: {}", self.name(), err))?;
-            Ok(result)
-        }
-    }
+        resources: Option<Vec<Resource>>,
+    ) -> impl Future<Output = Result<ToolOutput<Self::Output>, BoxError>> + Send;
 
     /// Executes the tool with given context and arguments using raw JSON string
     /// Returns the output as a string in JSON format.
@@ -111,10 +109,21 @@ where
         &self,
         ctx: C,
         args: String,
-    ) -> impl Future<Output = Result<String, BoxError>> + Send {
+        resources: Option<Vec<Resource>>,
+    ) -> impl Future<Output = Result<ToolOutput<Value>, BoxError>> + Send {
         async move {
-            let result = self.call_string(ctx, args).await?;
-            Ok(serde_json::to_string(&result)?)
+            let args: Self::Args = serde_json::from_str(&args)
+                .map_err(|err| format!("tool {}, invalid args: {}", self.name(), err))?;
+            let result = self
+                .call(ctx, args, resources)
+                .await
+                .map_err(|err| format!("tool {}, call failed: {}", self.name(), err))?;
+            let output = serde_json::to_value(&result.output)?;
+            Ok(ToolOutput {
+                output,
+                resources: result.resources,
+                usage: result.usage,
+            })
         }
     }
 }
@@ -133,11 +142,18 @@ where
     /// Provides the tool's definition including its parameters schema
     fn definition(&self) -> FunctionDefinition;
 
+    fn supported_resource_tags(&self) -> Vec<String>;
+
     /// Initializes the tool with the given context
     fn init(&self, ctx: C) -> BoxPinFut<Result<(), BoxError>>;
 
     /// Executes the tool with given context and arguments using dynamic dispatch
-    fn call(&self, ctx: C, args: String) -> BoxPinFut<Result<String, BoxError>>;
+    fn call(
+        &self,
+        ctx: C,
+        args: String,
+        resources: Option<Vec<Resource>>,
+    ) -> BoxPinFut<Result<ToolOutput<Value>, BoxError>>;
 }
 
 /// Wrapper to convert static Tool implementation to dynamic dispatch
@@ -159,14 +175,23 @@ where
         self.0.definition()
     }
 
+    fn supported_resource_tags(&self) -> Vec<String> {
+        self.0.supported_resource_tags()
+    }
+
     fn init(&self, ctx: C) -> BoxPinFut<Result<(), BoxError>> {
         let tool = self.0.clone();
         Box::pin(async move { tool.init(ctx).await })
     }
 
-    fn call(&self, ctx: C, args: String) -> BoxPinFut<Result<String, BoxError>> {
+    fn call(
+        &self,
+        ctx: C,
+        args: String,
+        resources: Option<Vec<Resource>>,
+    ) -> BoxPinFut<Result<ToolOutput<Value>, BoxError>> {
         let tool = self.0.clone();
-        Box::pin(async move { tool.call_raw(ctx, args).await })
+        Box::pin(async move { tool.call_raw(ctx, args, resources).await })
     }
 }
 
@@ -223,6 +248,28 @@ where
                     }
                 }
                 None => Some(tool.definition()),
+            })
+            .collect()
+    }
+
+    pub fn functions(&self, names: Option<&[&str]>) -> Vec<Function> {
+        self.set
+            .iter()
+            .filter_map(|(name, tool)| match names {
+                Some(names) => {
+                    if names.contains(&name.as_str()) {
+                        Some(Function {
+                            definition: tool.definition(),
+                            supported_resource_tags: tool.supported_resource_tags(),
+                        })
+                    } else {
+                        None
+                    }
+                }
+                None => Some(Function {
+                    definition: tool.definition(),
+                    supported_resource_tags: tool.supported_resource_tags(),
+                }),
             })
             .collect()
     }

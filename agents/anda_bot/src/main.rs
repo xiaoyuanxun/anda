@@ -1,5 +1,5 @@
 use agent_twitter_client::scraper::Scraper;
-use anda_core::{BoxError, EmbeddingFeatures, Path};
+use anda_core::{BoxError, Path};
 use anda_engine::{
     APP_USER_AGENT,
     context::{TEEClient, Web3SDK, derivation_path_with},
@@ -315,7 +315,7 @@ async fn bootstrap_tee(
 
     let mut engine = EngineBuilder::new()
         .with_id(tee_info.id)
-        .with_name(engine_name.clone())
+        .with_name(engine_name.clone())?
         .with_cancellation_token(global_cancel_token.clone())
         .with_web3_client(Arc::new(Web3SDK::from_tee(tee.clone())))
         .with_model(model)
@@ -439,7 +439,7 @@ async fn bootstrap_local(
 
     let mut engine = EngineBuilder::new()
         .with_id(my_principal)
-        .with_name(engine_name.clone())
+        .with_name(engine_name.clone())?
         .with_cancellation_token(global_cancel_token.clone())
         .with_web3_client(Arc::new(Web3SDK::from_web3(Arc::new(web3.clone()))))
         .with_model(model)

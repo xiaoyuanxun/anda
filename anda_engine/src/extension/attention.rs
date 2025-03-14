@@ -150,7 +150,7 @@ impl Attention {
             ..Default::default()
         };
 
-        match ctx.completion(req).await {
+        match ctx.completion(req, None).await {
             Ok(AgentOutput { content, .. }) => {
                 if content.contains(HIGH_REWARD_COMMAND) {
                     ContentQuality::Exceptional
@@ -267,7 +267,7 @@ impl Attention {
             ..Default::default()
         };
 
-        match ctx.completion(req).await {
+        match ctx.completion(req, None).await {
             Ok(AgentOutput { content, .. }) => {
                 if content.contains(RESPOND_COMMAND) {
                     AttentionCommand::Respond
@@ -320,7 +320,7 @@ impl Attention {
             ..Default::default()
         };
 
-        match ctx.completion(req).await {
+        match ctx.completion(req, None).await {
             Ok(AgentOutput { content, .. }) => content.to_ascii_lowercase().contains("true"),
             Err(_) => false,
         }
@@ -358,7 +358,7 @@ impl Attention {
             ..Default::default()
         };
 
-        match ctx.completion(req).await {
+        match ctx.completion(req, None).await {
             Ok(AgentOutput { content, .. }) => content.to_ascii_lowercase().contains("true"),
             Err(_) => false,
         }
@@ -424,7 +424,7 @@ impl Attention {
             ..Default::default()
         };
 
-        match ctx.completion(req).await {
+        match ctx.completion(req, None).await {
             Ok(AgentOutput { content, .. }) => content.to_ascii_lowercase().contains("true"),
             Err(_) => false,
         }

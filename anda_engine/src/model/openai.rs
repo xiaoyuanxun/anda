@@ -156,6 +156,7 @@ impl EmbeddingResponse {
                     .usage
                     .total_tokens
                     .saturating_sub(self.usage.prompt_tokens) as u64,
+                requests: 1,
             },
         ))
     }
@@ -223,6 +224,7 @@ impl CompletionResponse {
                 .map(|u| ModelUsage {
                     input_tokens: u.prompt_tokens as u64,
                     output_tokens: u.completion_tokens as u64,
+                    requests: 1,
                 })
                 .unwrap_or_default(),
             ..Default::default()
@@ -363,6 +365,7 @@ impl EmbeddingFeaturesDyn for EmbeddingModel {
                                     .total_tokens
                                     .saturating_sub(res.usage.prompt_tokens)
                                     as u64,
+                                requests: 1,
                             },
                         ))
                     }
@@ -417,6 +420,16 @@ impl CompletionModel {
         self.model.starts_with("o1-")
     }
 }
+
+// impl CompletionFeatures for CompletionModel {
+//     async fn completion(
+//         &self,
+//         req: CompletionRequest,
+//         _resources: Option<Vec<Resource>>,
+//     ) -> Result<AgentOutput, BoxError> {
+//         CompletionFeaturesDyn::completion(self, req).await
+//     }
+// }
 
 impl CompletionFeaturesDyn for CompletionModel {
     fn completion(&self, mut req: CompletionRequest) -> BoxPinFut<Result<AgentOutput, BoxError>> {

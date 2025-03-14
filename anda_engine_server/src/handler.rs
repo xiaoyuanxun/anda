@@ -1,5 +1,5 @@
-use anda_core::Resource;
-use anda_engine::engine::{Engine, InformationJSON};
+use anda_core::{AgentInput, ToolInput, Value};
+use anda_engine::engine::{Engine, Information, InformationJSON};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -43,7 +43,14 @@ pub async fn get_information(
         engines: app
             .engines
             .iter()
-            .map(|(_, e)| e.information(false))
+            .map(|(_, e)| Information {
+                id: e.id(),
+                name: e.name(),
+                description: e.description(),
+                agents: vec![],
+                tools: vec![],
+                endpoint: "".to_string(),
+            })
             .collect(),
         default_engine: app.default_engine,
         start_time_ms: app.start_time_ms,
@@ -72,7 +79,7 @@ pub async fn get_engine_information(
 
     match app.engines.get(&id) {
         Some(engine) => {
-            let info = engine.information(true);
+            let info = engine.information();
             match Content::from(&headers) {
                 Content::CBOR(_, _) => Content::CBOR(info, None).into_response(),
                 _ => Content::JSON(InformationJSON::from(info), None).into_response(),
@@ -136,28 +143,25 @@ async fn engine_run(
 
     match req.method.as_str() {
         "agent_run" => {
-            let args: (Option<String>, String, Option<Vec<Resource>>) =
-                from_reader(req.params.as_slice())
-                    .map_err(|err| format!("failed to decode params: {err:?}"))?;
+            let args: (AgentInput,) = from_reader(req.params.as_slice())
+                .map_err(|err| format!("failed to decode params: {err:?}"))?;
             let res = engine
-                .agent_run(args.0, args.1, args.2, caller, None)
+                .agent_run(caller, args.0)
                 .await
                 .map_err(|err| format!("failed to run agent: {err:?}"))?;
             Ok(to_cbor_bytes(&res).into())
         }
         "tool_call" => {
-            let args: (String, String) = from_reader(req.params.as_slice())
+            let args: (ToolInput<Value>,) = from_reader(req.params.as_slice())
                 .map_err(|err| format!("failed to decode params: {err:?}"))?;
             let res = engine
-                .tool_call(args.0, args.1, caller, None)
+                .tool_call(caller, args.0)
                 .await
                 .map_err(|err| format!("failed to call tool: {err:?}"))?;
             Ok(to_cbor_bytes(&res).into())
         }
         "information" => {
-            let args: (bool,) = from_reader(req.params.as_slice())
-                .map_err(|err| format!("failed to decode params: {err:?}"))?;
-            let res = engine.information(args.0);
+            let res = engine.information();
             Ok(to_cbor_bytes(&res).into())
         }
         method => Err(format!("{method} on engine {id} not implemented")),

@@ -24,8 +24,9 @@
 //! - Time tracking for operation duration
 
 use anda_core::{
-    BaseContext, BoxError, CacheExpiry, CacheFeatures, CancellationToken, CanisterCaller,
-    HttpFeatures, KeysFeatures, ObjectMeta, Path, PutMode, PutResult, StateFeatures, StoreFeatures,
+    ANONYMOUS, BaseContext, BoxError, CacheExpiry, CacheFeatures, CancellationToken,
+    CanisterCaller, HttpFeatures, KeysFeatures, Metadata, ObjectMeta, Path, PutMode, PutResult,
+    StateFeatures, StoreFeatures,
 };
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -46,8 +47,6 @@ use std::{
 const CONTEXT_MAX_DEPTH: u8 = 42;
 const CACHE_MAX_CAPACITY: u64 = 1000000;
 
-pub const ANONYMOUS: Principal = Principal::anonymous();
-
 use super::{
     cache::CacheService,
     web3::{Web3Client, Web3SDK},
@@ -57,8 +56,9 @@ use crate::store::Store;
 #[derive(Clone)]
 pub struct BaseCtx {
     pub(crate) id: Principal,
+    pub(crate) name: String,
     pub(crate) caller: Principal,
-    pub(crate) user: Option<String>,
+    pub(crate) meta: Metadata,
     pub(crate) path: Path,
     pub(crate) cancellation_token: CancellationToken,
     pub(crate) start_at: Instant,
@@ -91,6 +91,7 @@ impl BaseCtx {
     /// * `store` - Storage backend implementation
     pub(crate) fn new(
         id: Principal,
+        name: String,
         cancellation_token: CancellationToken,
         names: BTreeSet<Path>,
         web3: Arc<Web3SDK>,
@@ -98,7 +99,8 @@ impl BaseCtx {
     ) -> Self {
         Self {
             id,
-            user: None,
+            name,
+            meta: Metadata::default(),
             caller: ANONYMOUS,
             path: Path::default(),
             cancellation_token,
@@ -127,8 +129,9 @@ impl BaseCtx {
         let path = Path::parse(path)?;
         let child = Self {
             id: self.id,
-            user: self.user.clone(),
+            name: self.name.clone(),
             caller: self.caller,
+            meta: self.meta.clone(),
             path,
             cancellation_token: self.cancellation_token.child_token(),
             start_at: self.start_at,
@@ -158,15 +161,16 @@ impl BaseCtx {
     /// Returns an error if the context depth exceeds CONTEXT_MAX_DEPTH
     pub(crate) fn child_with(
         &self,
-        path: String,
         caller: Principal,
-        user: Option<String>,
+        path: String,
+        meta: Metadata,
     ) -> Result<Self, BoxError> {
         let path = Path::parse(path)?;
         let child = Self {
             id: self.id,
+            name: self.name.clone(),
             caller,
-            user,
+            meta,
             path,
             cancellation_token: self.cancellation_token.child_token(),
             start_at: Instant::now(),
@@ -181,6 +185,13 @@ impl BaseCtx {
         }
         Ok(child)
     }
+
+    pub(crate) fn self_meta(&self) -> Metadata {
+        Metadata {
+            thread: self.meta.thread.clone(),
+            user: Some(self.name.clone()),
+        }
+    }
 }
 
 impl BaseContext for BaseCtx {}
@@ -192,12 +203,16 @@ impl StateFeatures for BaseCtx {
         self.id
     }
 
+    fn name(&self) -> String {
+        self.name.clone()
+    }
+
     fn caller(&self) -> Principal {
         self.caller
     }
 
-    fn user(&self) -> Option<String> {
-        self.user.clone()
+    fn meta(&self) -> &Metadata {
+        &self.meta
     }
 
     fn cancellation_token(&self) -> CancellationToken {
