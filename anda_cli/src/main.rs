@@ -1,4 +1,4 @@
-use anda_core::{AgentOutput, BoxError, HttpFeatures};
+use anda_core::{AgentInput, AgentOutput, BoxError, HttpFeatures, ToolInput, ToolOutput};
 use anda_web3_client::client::{Client as Web3Client, load_identity};
 use base64::{Engine, prelude::BASE64_URL_SAFE_NO_PAD};
 use ciborium::value::Value;
@@ -142,7 +142,15 @@ async fn main() -> Result<(), BoxError> {
             println!("principal: {}", web3.get_principal());
 
             let res: AgentOutput = web3
-                .https_signed_rpc(endpoint, "agent_run", &(&name, &prompt, None::<Vec<u8>>))
+                .https_signed_rpc(
+                    endpoint,
+                    "agent_run",
+                    &(&AgentInput {
+                        name: name.clone().unwrap_or_else(|| "".to_string()),
+                        prompt: prompt.clone(),
+                        ..Default::default()
+                    },),
+                )
                 .await?;
             println!("{:?}", res);
         }
@@ -162,11 +170,20 @@ async fn main() -> Result<(), BoxError> {
                 .await?;
 
             println!("principal: {}", web3.get_principal());
+            let args: serde_json::Value = serde_json::from_str(args)?;
 
-            let res: String = web3
-                .https_signed_rpc(endpoint, "tool_call", &(&name, &args))
+            let res: ToolOutput<serde_json::Value> = web3
+                .https_signed_rpc(
+                    endpoint,
+                    "tool_call",
+                    &(&ToolInput {
+                        name: name.clone(),
+                        args,
+                        ..Default::default()
+                    },),
+                )
                 .await?;
-            println!("{:?}", res);
+            println!("{}", serde_json::to_string_pretty(&res)?);
         }
 
         None => {

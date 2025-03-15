@@ -575,6 +575,40 @@ pub struct Resource {
     pub hash: Option<ByteArray<32>>,
 }
 
+/// Extracts resources with the given tags from the list of resources.
+pub fn select_resources(resources: &mut Vec<Resource>, tags: &[&str]) -> Option<Vec<Resource>> {
+    if tags.is_empty() {
+        return None;
+    }
+
+    if tags.first() == Some(&"*") {
+        return Some(std::mem::take(resources));
+    }
+
+    #[cfg(feature = "unstable")]
+    {
+        let res = resources
+            .extract_if(|r| tags.contains(&r.tag.as_str()))
+            .collect();
+        if res.is_empty() { None } else { Some(res) }
+    }
+
+    #[cfg(not(feature = "unstable"))]
+    {
+        let mut res = Vec::new();
+        let mut i = 0;
+
+        while i < resources.len() {
+            if tags.contains(&resources[i].tag.as_str()) {
+                res.push(resources.remove(i));
+            } else {
+                i += 1;
+            }
+        }
+        if res.is_empty() { None } else { Some(res) }
+    }
+}
+
 /// OpenAI style content part for the completion request
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 #[serde(tag = "type", rename_all = "lowercase")]

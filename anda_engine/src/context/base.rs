@@ -26,7 +26,7 @@
 use anda_core::{
     ANONYMOUS, BaseContext, BoxError, CacheExpiry, CacheFeatures, CancellationToken,
     CanisterCaller, HttpFeatures, KeysFeatures, Metadata, ObjectMeta, Path, PutMode, PutResult,
-    StateFeatures, StoreFeatures,
+    StateFeatures, StoreFeatures, ToolInput, ToolOutput, ToolSet, Value,
 };
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -48,6 +48,7 @@ const CONTEXT_MAX_DEPTH: u8 = 42;
 const CACHE_MAX_CAPACITY: u64 = 1000000;
 
 use super::{
+    RemoteEngines,
     cache::CacheService,
     web3::{Web3Client, Web3SDK},
 };
@@ -64,6 +65,10 @@ pub struct BaseCtx {
     pub(crate) start_at: Instant,
     pub(crate) depth: u8,
     pub(crate) web3: Arc<Web3SDK>,
+    /// Set of available tools that can be called
+    pub(crate) tools: Arc<ToolSet<BaseCtx>>,
+    /// Registered remote engines for tool and agent execution
+    pub(crate) remote: Arc<RemoteEngines>,
 
     cache: Arc<CacheService>,
     store: Store,
@@ -109,6 +114,8 @@ impl BaseCtx {
             store,
             web3,
             depth: 0,
+            tools: Arc::new(ToolSet::new()),
+            remote: Arc::new(RemoteEngines::new()),
         }
     }
 
@@ -139,6 +146,8 @@ impl BaseCtx {
             store: self.store.clone(),
             web3: self.web3.clone(),
             depth: self.depth + 1,
+            tools: self.tools.clone(),
+            remote: self.remote.clone(),
         };
 
         if child.depth >= CONTEXT_MAX_DEPTH {
@@ -178,6 +187,8 @@ impl BaseCtx {
             store: self.store.clone(),
             web3: self.web3.clone(),
             depth: self.depth + 1,
+            tools: self.tools.clone(),
+            remote: self.remote.clone(),
         };
 
         if child.depth >= CONTEXT_MAX_DEPTH {
@@ -194,7 +205,23 @@ impl BaseCtx {
     }
 }
 
-impl BaseContext for BaseCtx {}
+impl BaseContext for BaseCtx {
+    /// Executes a remote tool call via HTTP RPC
+    ///
+    /// # Arguments
+    /// * `endpoint` - Remote endpoint URL
+    /// * `name` - Name of the tool to call
+    /// * `args` - Arguments for the tool call as a JSON string
+    async fn remote_tool_call(
+        &self,
+        endpoint: &str,
+        mut input: ToolInput<Value>,
+    ) -> Result<ToolOutput<Value>, BoxError> {
+        input.meta = Some(self.self_meta());
+        self.https_signed_rpc(endpoint, "tool_call", &(&input,))
+            .await
+    }
+}
 
 impl CacheStoreFeatures for BaseCtx {}
 

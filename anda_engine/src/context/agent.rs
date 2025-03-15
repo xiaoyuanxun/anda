@@ -193,6 +193,30 @@ impl AgentContext for AgentCtx {
         }
     }
 
+    /// Extracts resources from the provided list based on the tool's supported tags.
+    async fn select_tool_resources(
+        &self,
+        name: &str,
+        resources: &mut Vec<Resource>,
+    ) -> Option<Vec<Resource>> {
+        if !name.starts_with("RT_") {
+            return self.tools.select_resources(name, resources);
+        }
+
+        if let Some(res) = self.remote.select_tool_resources(name, resources) {
+            return Some(res);
+        }
+
+        if let Ok(engines) = self
+            .cache_store_get::<RemoteEngines>(DYNAMIC_REMOTE_ENGINES)
+            .await
+        {
+            return engines.select_tool_resources(name, resources);
+        }
+
+        None
+    }
+
     /// Retrieves definitions for available agents
     ///
     /// # Arguments
@@ -250,6 +274,33 @@ impl AgentContext for AgentCtx {
         }
     }
 
+    /// Extracts resources from the provided list based on the agent's supported tags.
+    async fn select_agent_resources(
+        &self,
+        name: &str,
+        resources: &mut Vec<Resource>,
+    ) -> Option<Vec<Resource>> {
+        if !name.starts_with("RA_") {
+            let name = name.strip_prefix("LA_").unwrap_or(name);
+            return self
+                .agents
+                .select_resources(&name.to_ascii_lowercase(), resources);
+        }
+
+        if let Some(res) = self.remote.select_agent_resources(name, resources) {
+            return Some(res);
+        }
+
+        if let Ok(engines) = self
+            .cache_store_get::<RemoteEngines>(DYNAMIC_REMOTE_ENGINES)
+            .await
+        {
+            return engines.select_agent_resources(name, resources);
+        }
+
+        None
+    }
+
     /// Executes a tool call with the given arguments
     ///
     /// # Arguments
@@ -259,7 +310,7 @@ impl AgentContext for AgentCtx {
     /// # Returns
     /// Tuple containing the result string and a boolean indicating if further processing is needed
     async fn tool_call(&self, mut input: ToolInput<Value>) -> Result<ToolOutput<Value>, BoxError> {
-        if self.tools.contains(&input.name) {
+        if !input.name.starts_with("RT_") {
             let ctx = self.child_base(&input.name)?;
             let tool = self.tools.get(&input.name).expect("tool not found");
             let args = serde_json::to_string(&input.args)?;
@@ -286,22 +337,6 @@ impl AgentContext for AgentCtx {
         Err(format!("tool {} not found", &input.name).into())
     }
 
-    /// Executes a remote tool call via HTTP RPC
-    ///
-    /// # Arguments
-    /// * `endpoint` - Remote endpoint URL
-    /// * `name` - Name of the tool to call
-    /// * `args` - Arguments for the tool call as a JSON string
-    async fn remote_tool_call(
-        &self,
-        endpoint: &str,
-        mut input: ToolInput<Value>,
-    ) -> Result<ToolOutput<Value>, BoxError> {
-        input.meta = Some(self.base.self_meta());
-        self.https_signed_rpc(endpoint, "tool_call", &(&input,))
-            .await
-    }
-
     /// Runs an agent with the given prompt and optional resources
     ///
     /// # Arguments
@@ -312,16 +347,16 @@ impl AgentContext for AgentCtx {
     /// # Returns
     /// [`AgentOutput`] containing the result of the agent execution
     async fn agent_run(&self, mut input: AgentInput) -> Result<AgentOutput, BoxError> {
-        let name = &input.name.to_ascii_lowercase();
-        let name_ = name.strip_prefix("LA_").unwrap_or(name);
-        if self.agents.contains(name_) {
-            let ctx = self.child(name_)?;
-            let agent = self.agents.get(name_).expect("agent not found");
+        if !input.name.starts_with("RA_") {
+            let name = input.name.strip_prefix("LA_").unwrap_or(&input.name);
+            let name = name.to_ascii_lowercase();
+            let ctx = self.child(&name)?;
+            let agent = self.agents.get(&name).expect("agent not found");
             return agent.run(ctx, input.prompt, input.resources).await;
         }
 
         // find registered remote agent and run it
-        if let Some((endpoint, agent_name)) = self.remote.get_agent_endpoint(name) {
+        if let Some((endpoint, agent_name)) = self.remote.get_agent_endpoint(&input.name) {
             input.name = agent_name;
             return self.remote_agent_run(&endpoint, input).await;
         }
@@ -331,13 +366,13 @@ impl AgentContext for AgentCtx {
             .cache_store_get::<RemoteEngines>(DYNAMIC_REMOTE_ENGINES)
             .await
         {
-            if let Some((endpoint, agent_name)) = engines.get_agent_endpoint(name) {
+            if let Some((endpoint, agent_name)) = engines.get_agent_endpoint(&input.name) {
                 input.name = agent_name;
                 return self.remote_agent_run(&endpoint, input).await;
             }
         }
 
-        Err(format!("agent {} not found", name).into())
+        Err(format!("agent {} not found", input.name).into())
     }
 
     /// Runs a remote agent via HTTP RPC
@@ -381,11 +416,13 @@ impl CompletionFeatures for AgentCtx {
     async fn completion(
         &self,
         mut req: CompletionRequest,
-        mut _resources: Option<Vec<Resource>>, // TODO: select resources
+        resources: Option<Vec<Resource>>, // TODO: select resources
     ) -> Result<AgentOutput, BoxError> {
         let mut tool_calls_result: Vec<ToolCall> = Vec::new();
         let mut usage = Usage::default();
+        let mut resources = resources.unwrap_or_default();
         loop {
+            let mut resources_out: Vec<Resource> = Vec::new();
             let mut output = self.model.completion(req.clone()).await?;
             usage.accumulate(&output.usage);
             // automatically executes tools calls
@@ -404,12 +441,14 @@ impl CompletionFeatures for AgentCtx {
                             .tool_call(ToolInput {
                                 name: tool.name.clone(),
                                 args: serde_json::from_str(&tool.args)?,
-                                resources: None,
+                                resources: self
+                                    .select_tool_resources(&tool.name, &mut resources)
+                                    .await,
                                 meta: Some(self.meta().clone()),
                             })
                             .await
                         {
-                            Ok(res) => {
+                            Ok(mut res) => {
                                 usage.accumulate(&res.usage);
                                 let content: Value = if res.output.is_string() {
                                     res.output.clone()
@@ -423,6 +462,11 @@ impl CompletionFeatures for AgentCtx {
                                     name: None,
                                     tool_call_id: Some(tool.id.clone()),
                                 }));
+
+                                if let Some(resource) = res.resources {
+                                    resources_out.extend(resource);
+                                    res.resources = None;
+                                }
 
                                 tool.result = Some(serde_json::to_value(&res)?);
                             }
@@ -441,12 +485,12 @@ impl CompletionFeatures for AgentCtx {
                             .agent_run(AgentInput {
                                 name: tool.name.clone(),
                                 prompt: args.prompt,
-                                resources: None,
+                                resources: self.agents.select_resources(&tool.name, &mut resources),
                                 meta: Some(self.meta().clone()),
                             })
                             .await
                         {
-                            Ok(res) => {
+                            Ok(mut res) => {
                                 usage.accumulate(&res.usage);
                                 if res.failed_reason.is_some() {
                                     output.failed_reason = res.failed_reason;
@@ -459,6 +503,12 @@ impl CompletionFeatures for AgentCtx {
                                     name: None,
                                     tool_call_id: Some(tool.id.clone()),
                                 }));
+
+                                if let Some(resource) = res.resources {
+                                    resources_out.extend(resource);
+                                    res.resources = None;
+                                }
+
                                 tool.result = Some(serde_json::to_value(&res)?);
                             }
                             Err(err) => {
@@ -480,6 +530,12 @@ impl CompletionFeatures for AgentCtx {
                 } else {
                     Some(tool_calls_result)
                 };
+                output.resources = if resources_out.is_empty() {
+                    None
+                } else {
+                    Some(resources_out)
+                };
+
                 output.usage = usage;
                 return Ok(output);
             }
@@ -489,6 +545,9 @@ impl CompletionFeatures for AgentCtx {
             req.prompt = "".to_string();
             req.chat_history = output.full_history.unwrap_or_default();
             req.chat_history.append(&mut tool_calls_continue);
+            if !resources_out.is_empty() {
+                resources = resources_out;
+            }
         }
     }
 }
@@ -525,7 +584,21 @@ impl EmbeddingFeatures for AgentCtx {
     }
 }
 
-impl BaseContext for AgentCtx {}
+impl BaseContext for AgentCtx {
+    /// Executes a remote tool call via HTTP RPC
+    ///
+    /// # Arguments
+    /// * `endpoint` - Remote endpoint URL
+    /// * `name` - Name of the tool to call
+    /// * `args` - Arguments for the tool call as a JSON string
+    async fn remote_tool_call(
+        &self,
+        endpoint: &str,
+        input: ToolInput<Value>,
+    ) -> Result<ToolOutput<Value>, BoxError> {
+        self.base.remote_tool_call(endpoint, input).await
+    }
+}
 
 impl StateFeatures for AgentCtx {
     fn id(&self) -> Principal {

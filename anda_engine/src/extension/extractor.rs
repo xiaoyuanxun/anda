@@ -138,10 +138,10 @@ where
     async fn call(
         &self,
         _ctx: BaseCtx,
-        data: Self::Args,
+        args: Self::Args,
         _resources: Option<Vec<Resource>>,
     ) -> Result<ToolOutput<Self::Output>, BoxError> {
-        Ok(ToolOutput::new(data))
+        Ok(ToolOutput::new(args))
     }
 }
 

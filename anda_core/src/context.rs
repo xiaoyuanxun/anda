@@ -67,6 +67,13 @@ pub trait AgentContext: BaseContext + CompletionFeatures + EmbeddingFeatures {
         names: Option<&[&str]>,
     ) -> impl Future<Output = Result<Vec<FunctionDefinition>, BoxError>> + Send;
 
+    /// Extracts resources from the provided list based on the tool's supported tags.
+    fn select_tool_resources(
+        &self,
+        name: &str,
+        resources: &mut Vec<Resource>,
+    ) -> impl Future<Output = Option<Vec<Resource>>> + Send;
+
     /// Gets definitions for multiple agents, optionally filtered by names
     /// `with_prefix` is a flag to add the prefix `LA_` to agent names to distinguish from tools
     fn agent_definitions(
@@ -82,16 +89,16 @@ pub trait AgentContext: BaseContext + CompletionFeatures + EmbeddingFeatures {
         names: Option<&[&str]>,
     ) -> impl Future<Output = Result<Vec<FunctionDefinition>, BoxError>> + Send;
 
+    /// Extracts resources from the provided list based on the agent's supported tags.
+    fn select_agent_resources(
+        &self,
+        name: &str,
+        resources: &mut Vec<Resource>,
+    ) -> impl Future<Output = Option<Vec<Resource>>> + Send;
+
     /// Executes a local tool with provided arguments
     fn tool_call(
         &self,
-        input: ToolInput<Value>,
-    ) -> impl Future<Output = Result<ToolOutput<Value>, BoxError>> + Send;
-
-    /// Executes a remote tool on another agent
-    fn remote_tool_call(
-        &self,
-        endpoint: &str,
         input: ToolInput<Value>,
     ) -> impl Future<Output = Result<ToolOutput<Value>, BoxError>> + Send;
 
@@ -120,6 +127,12 @@ pub trait AgentContext: BaseContext + CompletionFeatures + EmbeddingFeatures {
 pub trait BaseContext:
     Sized + StateFeatures + KeysFeatures + StoreFeatures + CacheFeatures + HttpFeatures + CanisterCaller
 {
+    /// Executes a remote tool on another agent
+    fn remote_tool_call(
+        &self,
+        endpoint: &str,
+        input: ToolInput<Value>,
+    ) -> impl Future<Output = Result<ToolOutput<Value>, BoxError>> + Send;
 }
 
 /// StateFeatures is one of the context feature sets available when calling Agent or Tool.
@@ -137,7 +150,7 @@ pub trait StateFeatures: Sized {
     fn caller(&self) -> Principal;
 
     /// Gets the matadata of the request
-    fn meta<'a>(&'_ self) -> &'_ Metadata;
+    fn meta(&self) -> &Metadata;
 
     /// Gets the cancellation token for the current execution context.
     /// Each call level has its own token scope.

@@ -1,7 +1,13 @@
-use anda_core::{BoxError, Function, FunctionDefinition, HttpFeatures, validate_function_name};
+use anda_core::{
+    Agent, AgentContext, AgentInput, AgentOutput, BaseContext, BoxError, Function,
+    FunctionDefinition, HttpFeatures, Resource, Tool, ToolInput, ToolOutput, Value,
+    select_resources, validate_function_name,
+};
 use candid::Principal;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+
+use crate::context::{AgentCtx, BaseCtx};
 
 /// Information about the engine, including agent and tool definitions.
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -204,6 +210,29 @@ impl RemoteEngines {
         definitions
     }
 
+    /// Extracts resources from the provided list based on the tool's supported tags.
+    pub fn select_tool_resources(
+        &self,
+        name: &str,
+        resources: &mut Vec<Resource>,
+    ) -> Option<Vec<Resource>> {
+        if name.strip_prefix("RT_").is_some() {
+            for (_, engine) in self.engines.iter() {
+                for tool in engine.tools.iter() {
+                    if tool.definition.name == name {
+                        let tags: &[&str] = &tool
+                            .supported_resource_tags
+                            .iter()
+                            .map(|s| s.as_str())
+                            .collect::<Vec<&str>>();
+                        return select_resources(resources, tags);
+                    }
+                }
+            }
+        }
+        None
+    }
+
     /// Retrieves definitions for available agents in the remote engines.
     ///
     /// # Arguments
@@ -258,5 +287,163 @@ impl RemoteEngines {
         }
 
         definitions
+    }
+
+    /// Extracts resources from the provided list based on the agent's supported tags.
+    pub fn select_agent_resources(
+        &self,
+        name: &str,
+        resources: &mut Vec<Resource>,
+    ) -> Option<Vec<Resource>> {
+        for (_, engine) in self.engines.iter() {
+            for agent in engine.agents.iter() {
+                if agent.definition.name == name {
+                    let tags: &[&str] = &agent
+                        .supported_resource_tags
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<&str>>();
+                    return select_resources(resources, tags);
+                }
+            }
+        }
+        None
+    }
+}
+
+/// Wraps a remote tool as a local tool.
+#[derive(Debug, Clone)]
+pub struct RemoteTool {
+    name: String,
+    endpoint: String,
+    function: Function,
+}
+
+impl RemoteTool {
+    pub fn new(
+        endpoint: String,
+        function: Function,
+        name: Option<String>,
+    ) -> Result<Self, BoxError> {
+        let name = if let Some(name) = name {
+            validate_function_name(&name)?;
+            name
+        } else {
+            function.definition.name.clone()
+        };
+
+        Ok(Self {
+            name,
+            endpoint,
+            function,
+        })
+    }
+}
+
+impl Tool<BaseCtx> for RemoteTool {
+    type Args = Value;
+    type Output = Value;
+
+    fn name(&self) -> String {
+        self.name.clone()
+    }
+
+    fn description(&self) -> String {
+        self.function.definition.description.clone()
+    }
+
+    fn definition(&self) -> FunctionDefinition {
+        let mut definition = self.function.definition.clone();
+        definition.name = self.name.clone();
+        definition
+    }
+
+    fn supported_resource_tags(&self) -> Vec<String> {
+        self.function.supported_resource_tags.clone()
+    }
+
+    async fn call(
+        &self,
+        ctx: BaseCtx,
+        args: Self::Args,
+        resources: Option<Vec<Resource>>,
+    ) -> Result<ToolOutput<Self::Output>, BoxError> {
+        ctx.remote_tool_call(
+            &self.endpoint,
+            ToolInput {
+                name: self.function.definition.name.clone(),
+                args,
+                resources,
+                meta: Some(ctx.self_meta()),
+            },
+        )
+        .await
+    }
+}
+
+/// Wraps a remote agent as a local agent.
+#[derive(Debug, Clone)]
+pub struct RemoteAgent {
+    name: String,
+    endpoint: String,
+    function: Function,
+}
+
+impl RemoteAgent {
+    pub fn new(
+        endpoint: String,
+        function: Function,
+        name: Option<String>,
+    ) -> Result<Self, BoxError> {
+        let name = if let Some(name) = name {
+            validate_function_name(&name.to_ascii_lowercase())?;
+            name
+        } else {
+            function.definition.name.clone()
+        };
+
+        Ok(Self {
+            name,
+            endpoint,
+            function,
+        })
+    }
+}
+
+impl Agent<AgentCtx> for RemoteAgent {
+    fn name(&self) -> String {
+        self.name.clone()
+    }
+
+    fn description(&self) -> String {
+        self.function.definition.description.clone()
+    }
+
+    fn definition(&self) -> FunctionDefinition {
+        let mut definition = self.function.definition.clone();
+        definition.name = self.name.to_ascii_lowercase();
+        definition
+    }
+
+    fn supported_resource_tags(&self) -> Vec<String> {
+        self.function.supported_resource_tags.clone()
+    }
+
+    async fn run(
+        &self,
+        ctx: AgentCtx,
+        prompt: String,
+        resources: Option<Vec<Resource>>,
+    ) -> Result<AgentOutput, BoxError> {
+        ctx.remote_agent_run(
+            &self.endpoint,
+            AgentInput {
+                name: self.function.definition.name.clone(),
+                prompt,
+                resources,
+                meta: Some(ctx.base.self_meta()),
+            },
+        )
+        .await
     }
 }

@@ -25,3 +25,6 @@ tokio-util = { workspace = true }
 reqwest = { workspace = true }
 schemars = { workspace = true }
 xid = { workspace = true }
+
+[features]
+unstable = []

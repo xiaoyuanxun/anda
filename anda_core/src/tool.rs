@@ -32,7 +32,7 @@ use std::{collections::BTreeMap, future::Future, marker::PhantomData, sync::Arc}
 
 use crate::{
     BoxError, BoxPinFut, Function, Resource, ToolOutput, Value, context::BaseContext,
-    model::FunctionDefinition, validate_function_name,
+    model::FunctionDefinition, select_resources, validate_function_name,
 };
 
 /// Core trait for implementing tools that can be used by the AI Agent system
@@ -114,11 +114,15 @@ where
         async move {
             let args: Self::Args = serde_json::from_str(&args)
                 .map_err(|err| format!("tool {}, invalid args: {}", self.name(), err))?;
-            let result = self
+            let mut result = self
                 .call(ctx, args, resources)
                 .await
                 .map_err(|err| format!("tool {}, call failed: {}", self.name(), err))?;
             let output = serde_json::to_value(&result.output)?;
+            if result.usage.requests == 0 {
+                result.usage.requests = 1;
+            }
+
             Ok(ToolOutput {
                 output,
                 resources: result.resources,
@@ -274,6 +278,22 @@ where
             .collect()
     }
 
+    /// Extracts resources from the provided list based on the tool's supported tags.
+    pub fn select_resources(
+        &self,
+        name: &str,
+        resources: &mut Vec<Resource>,
+    ) -> Option<Vec<Resource>> {
+        self.set.get(name).and_then(|tool| {
+            let supported_tags = tool.supported_resource_tags();
+            let tags: &[&str] = &supported_tags
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<&str>>();
+            select_resources(resources, tags)
+        })
+    }
+
     /// Adds a new tool to the set
     ///
     /// # Arguments
@@ -294,7 +314,7 @@ where
     }
 
     /// Retrieves a tool by name
-    pub fn get(&self, name: &str) -> Option<&Box<dyn ToolDyn<C>>> {
-        self.set.get(name)
+    pub fn get(&self, name: &str) -> Option<&dyn ToolDyn<C>> {
+        self.set.get(name).map(|v| &**v)
     }
 }

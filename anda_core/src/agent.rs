@@ -40,7 +40,7 @@ use crate::{
     BoxError, BoxPinFut, Function,
     context::AgentContext,
     model::{AgentOutput, FunctionDefinition, Resource},
-    validate_function_name,
+    select_resources, validate_function_name,
 };
 
 /// Arguments for an AI agent
@@ -281,6 +281,22 @@ where
             .collect()
     }
 
+    /// Extracts resources from the provided list based on the tool's supported tags.
+    pub fn select_resources(
+        &self,
+        name: &str,
+        resources: &mut Vec<Resource>,
+    ) -> Option<Vec<Resource>> {
+        self.set.get(name).and_then(|agent| {
+            let supported_tags = agent.supported_resource_tags();
+            let tags: &[&str] = &supported_tags
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<&str>>();
+            select_resources(resources, tags)
+        })
+    }
+
     /// Registers a new agent in the set
     ///
     /// # Arguments
@@ -301,7 +317,7 @@ where
     }
 
     /// Retrieves an agent by name
-    pub fn get(&self, name: &str) -> Option<&Box<dyn AgentDyn<C>>> {
-        self.set.get(name)
+    pub fn get(&self, name: &str) -> Option<&dyn AgentDyn<C>> {
+        self.set.get(name).map(|v| &**v)
     }
 }
