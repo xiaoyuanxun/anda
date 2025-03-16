@@ -1,9 +1,16 @@
-use anda_core::{BoxError, BoxPinFut};
-use candid::Principal;
+use anda_core::{BoxError, BoxPinFut, CanisterCaller, HttpFeatures};
+use candid::{
+    CandidType, Decode, Principal,
+    utils::{ArgumentEncoder, encode_args},
+};
+use ciborium::from_reader;
+use ic_cose_types::to_cbor_bytes;
+use serde::{Serialize, de::DeserializeOwned};
 use std::sync::Arc;
 
 pub use ic_tee_gateway_sdk::client::Client as TEEClient;
 
+/// Represents a Web3 client for interacting with the Internet Computer and other services.
 pub enum Web3SDK {
     Tee(TEEClient),
     Web3(Web3Client),
@@ -281,6 +288,144 @@ impl Web3Client {
     pub fn not_implemented() -> Self {
         Self {
             client: Arc::new(NotImplemented),
+        }
+    }
+}
+
+impl CanisterCaller for &Web3SDK {
+    /// Performs a query call to a canister (read-only, no state changes)
+    ///
+    /// # Arguments
+    /// * `canister` - Target canister principal
+    /// * `method` - Method name to call
+    /// * `args` - Input arguments encoded in Candid format
+    async fn canister_query<
+        In: ArgumentEncoder + Send,
+        Out: CandidType + for<'a> candid::Deserialize<'a>,
+    >(
+        &self,
+        canister: &Principal,
+        method: &str,
+        args: In,
+    ) -> Result<Out, BoxError> {
+        match self {
+            Web3SDK::Tee(cli) => cli.canister_query(canister, method, args).await,
+            Web3SDK::Web3(Web3Client { client: cli }) => {
+                let input = encode_args(args)?;
+                let res = cli
+                    .canister_query_raw(canister.to_owned(), method.to_string(), input)
+                    .await?;
+                let output = Decode!(res.as_slice(), Out)?;
+                Ok(output)
+            }
+        }
+    }
+
+    /// Performs an update call to a canister (may modify state)
+    ///
+    /// # Arguments
+    /// * `canister` - Target canister principal
+    /// * `method` - Method name to call
+    /// * `args` - Input arguments encoded in Candid format
+    async fn canister_update<
+        In: ArgumentEncoder + Send,
+        Out: CandidType + for<'a> candid::Deserialize<'a>,
+    >(
+        &self,
+        canister: &Principal,
+        method: &str,
+        args: In,
+    ) -> Result<Out, BoxError> {
+        match self {
+            Web3SDK::Tee(cli) => cli.canister_update(canister, method, args).await,
+            Web3SDK::Web3(Web3Client { client: cli }) => {
+                let input = encode_args(args)?;
+                let res = cli
+                    .canister_update_raw(canister.to_owned(), method.to_string(), input)
+                    .await?;
+                let output = Decode!(res.as_slice(), Out)?;
+                Ok(output)
+            }
+        }
+    }
+}
+
+impl HttpFeatures for &Web3SDK {
+    /// Makes an HTTPs request
+    ///
+    /// # Arguments
+    /// * `url` - Target URL, should start with `https://`
+    /// * `method` - HTTP method (GET, POST, etc.)
+    /// * `headers` - Optional HTTP headers
+    /// * `body` - Optional request body (default empty)
+    async fn https_call(
+        &self,
+        url: &str,
+        method: http::Method,
+        headers: Option<http::HeaderMap>,
+        body: Option<Vec<u8>>, // default is empty
+    ) -> Result<reqwest::Response, BoxError> {
+        match self {
+            Web3SDK::Tee(cli) => cli.https_call(url, method, headers, body).await,
+            Web3SDK::Web3(Web3Client { client: cli }) => {
+                cli.https_call(url.to_string(), method, headers, body).await
+            }
+        }
+    }
+
+    /// Makes a signed HTTPs request with message authentication
+    ///
+    /// # Arguments
+    /// * `url` - Target URL
+    /// * `method` - HTTP method (GET, POST, etc.)
+    /// * `message_digest` - 32-byte message digest for signing
+    /// * `headers` - Optional HTTP headers
+    /// * `body` - Optional request body (default empty)
+    async fn https_signed_call(
+        &self,
+        url: &str,
+        method: http::Method,
+        message_digest: [u8; 32],
+        headers: Option<http::HeaderMap>,
+        body: Option<Vec<u8>>, // default is empty
+    ) -> Result<reqwest::Response, BoxError> {
+        match self {
+            Web3SDK::Tee(cli) => {
+                cli.https_signed_call(url, method, message_digest, headers, body)
+                    .await
+            }
+            Web3SDK::Web3(Web3Client { client: cli }) => {
+                cli.https_signed_call(url.to_string(), method, message_digest, headers, body)
+                    .await
+            }
+        }
+    }
+
+    /// Makes a signed CBOR-encoded RPC call
+    ///
+    /// # Arguments
+    /// * `endpoint` - URL endpoint to send the request to
+    /// * `method` - RPC method name to call
+    /// * `args` - Arguments to serialize as CBOR and send with the request
+    async fn https_signed_rpc<T>(
+        &self,
+        endpoint: &str,
+        method: &str,
+        args: impl Serialize + Send,
+    ) -> Result<T, BoxError>
+    where
+        T: DeserializeOwned,
+    {
+        match self {
+            Web3SDK::Tee(cli) => cli.https_signed_rpc(endpoint, method, args).await,
+            Web3SDK::Web3(Web3Client { client: cli }) => {
+                let args = to_cbor_bytes(&args);
+                let res = cli
+                    .https_signed_rpc_raw(endpoint.to_string(), method.to_string(), args)
+                    .await?;
+                let res = from_reader(&res[..])?;
+                Ok(res)
+            }
         }
     }
 }

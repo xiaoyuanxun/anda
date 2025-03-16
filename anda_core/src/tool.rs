@@ -1,30 +1,30 @@
-//! Module providing core tooling functionality for AI Agents
+//! Module providing core tooling functionality for AI Agents.
 //!
 //! This module defines the core traits and structures for creating and managing tools
 //! that can be used by AI Agents. It provides:
-//! - The [`Tool`] trait for defining custom tools with typed arguments and outputs
-//! - Dynamic dispatch capabilities through [`ToolDyn`] trait
-//! - A [`ToolSet`] collection for managing multiple tools
+//! - The [`Tool`] trait for defining custom tools with typed arguments and outputs.
+//! - Dynamic dispatch capabilities through [`ToolDyn`] trait.
+//! - A [`ToolSet`] collection for managing multiple tools.
 //!
 //! # Key Features
-//! - Type-safe tool definitions with schema validation
-//! - Asynchronous execution model
-//! - Dynamic dispatch support for runtime tool selection
-//! - Tool registration and management system
+//! - Type-safe tool definitions with schema validation.
+//! - Asynchronous execution model.
+//! - Dynamic dispatch support for runtime tool selection.
+//! - Tool registration and management system.
 //!
 //! # Usage
 //!
 //! ## Reference Implementations
 //! 1. [`GoogleSearchTool`](https://github.com/ldclabs/anda/blob/main/anda_engine/src/extension/google.rs) -
-//!    A tool for performing web searches and retrieve results
+//!    A tool for performing web searches and retrieve results.
 //! 2. [`SubmitTool`](https://github.com/ldclabs/anda/blob/main/anda_engine/src/extension/extractor.rs) -
-//!    A tool for extracting structured data using LLMs
+//!    A tool for extracting structured data using LLMs.
 //! 3. [`TransferTool`](https://github.com/ldclabs/anda/blob/main/tools/anda_icp/src/ledger/transfer.rs) -
-//!    A tool for handling ICP blockchain transfers
+//!    A tool for handling ICP blockchain transfers.
 //! 4. [`BalanceOfTool`](https://github.com/ldclabs/anda/blob/main/tools/anda_icp/src/ledger/balance.rs) -
-//!    A tool for querying ICP blockchain balances
+//!    A tool for querying ICP blockchain balances.
 //!
-//! These reference implementations share a common feature: they automatically generate the JSON Schema
+//! These reference implementations share a common feature: they automatically generate the JSON Schema.
 //! required for LLMs Function Calling.
 
 use serde::{Serialize, de::DeserializeOwned};
@@ -35,44 +35,42 @@ use crate::{
     model::FunctionDefinition, select_resources, validate_function_name,
 };
 
-/// Core trait for implementing tools that can be used by the AI Agent system
+/// Core trait for implementing tools that can be used by the AI Agent system.
 ///
 /// # Type Parameters
-/// - `C`: The context type that implements `BaseContext`, must be thread-safe and have a static lifetime
+/// - `C`: The context type that implements [`BaseContext`], must be thread-safe and have a static lifetime.
 pub trait Tool<C>: Send + Sync
 where
     C: BaseContext + Send + Sync,
 {
     /// The arguments type of the tool.
     type Args: DeserializeOwned + Send;
+
     /// The output type of the tool.
     type Output: Serialize;
 
-    /// Returns the tool's name
+    /// Returns the tool's name.
     ///
     /// # Rules
-    /// - Must not be empty
-    /// - Must not exceed 64 characters
-    /// - Must start with a lowercase letter
-    /// - Can only contain: lowercase letters (a-z), digits (0-9), and underscores (_)
-    /// - Unique within the engine
+    /// - Must not be empty;
+    /// - Must not exceed 64 characters;
+    /// - Must start with a lowercase letter;
+    /// - Can only contain: lowercase letters (a-z), digits (0-9), and underscores (_);
+    /// - Unique within the engine.
     fn name(&self) -> String;
 
-    /// Returns the tool's capabilities description in a short string
+    /// Returns the tool's capabilities description in a short string.
     fn description(&self) -> String;
 
     /// Provides the tool's definition including its parameters schema.
     ///
     /// # Returns
-    /// - `FunctionDefinition`: The schema definition of the tool's parameters and metadata
+    /// - `FunctionDefinition`: The schema definition of the tool's parameters and metadata.
     fn definition(&self) -> FunctionDefinition;
 
     /// It is used to select resources based on the provided tags.
     /// If the tool requires specific resources, it can filter them based on the tags.
     /// By default, it returns an empty list.
-    ///
-    /// # Arguments
-    /// - `tags`: List of tags to filter resources
     ///
     /// # Returns
     /// - A list of resource tags from the tags provided that supported by the tool
@@ -81,21 +79,20 @@ where
     }
 
     /// Initializes the tool with the given context.
-    /// It will be called once when building the engine.
+    /// It will be called once when building the Anda engine.
     fn init(&self, _ctx: C) -> impl Future<Output = Result<(), BoxError>> + Send {
         futures::future::ready(Ok(()))
     }
 
-    /// Executes the tool with given context and arguments
+    /// Executes the tool with given context and arguments.
     ///
     /// # Arguments
-    /// - `ctx`: The execution context implementing `BaseContext`
-    /// - `args`: JSON value containing the input arguments for the tool
+    /// - `ctx`: The execution context implementing [`BaseContext`].
+    /// - `args`: struct arguments for the tool.
     /// - `resources`: Optional additional resources, If resources don’t meet the tool’s expectations, return an error.
     ///
     /// # Returns
-    /// - A future resolving to a JSON value containing the tool's output
-    /// - Returns `BoxError` if execution fails
+    /// - A future resolving to Result<[`ToolOutput<Output>`], BoxError>
     fn call(
         &self,
         ctx: C,
@@ -104,7 +101,7 @@ where
     ) -> impl Future<Output = Result<ToolOutput<Self::Output>, BoxError>> + Send;
 
     /// Executes the tool with given context and arguments using raw JSON string
-    /// Returns the output as a string in JSON format.
+    /// Returns the output as a JSON object.
     fn call_raw(
         &self,
         ctx: C,
@@ -132,26 +129,22 @@ where
     }
 }
 
-/// Dynamic dispatch version of the Tool trait
+/// Dynamic dispatch version of the Tool trait.
 ///
-/// This trait allows for runtime polymorphism of tools, enabling different tool implementations
+/// This trait allows for runtime polymorphism of tools, enabling different tool implementations.
 /// to be stored and called through a common interface.
 pub trait ToolDyn<C>: Send + Sync
 where
     C: BaseContext + Send + Sync,
 {
-    /// Returns the tool's name as a String
     fn name(&self) -> String;
 
-    /// Provides the tool's definition including its parameters schema
     fn definition(&self) -> FunctionDefinition;
 
     fn supported_resource_tags(&self) -> Vec<String>;
 
-    /// Initializes the tool with the given context
     fn init(&self, ctx: C) -> BoxPinFut<Result<(), BoxError>>;
 
-    /// Executes the tool with given context and arguments using dynamic dispatch
     fn call(
         &self,
         ctx: C,
@@ -160,7 +153,7 @@ where
     ) -> BoxPinFut<Result<ToolOutput<Value>, BoxError>>;
 }
 
-/// Wrapper to convert static Tool implementation to dynamic dispatch
+/// Wrapper to convert static Tool implementation to dynamic dispatch.
 struct ToolWrapper<T, C>(Arc<T>, PhantomData<C>)
 where
     T: Tool<C> + 'static,
@@ -202,7 +195,7 @@ where
 /// Collection of tools that can be used by the AI Agent
 ///
 /// # Type Parameters
-/// - `C`: The context type that implements `BaseContext`, must have a static lifetime
+/// - `C`: The context type that implements [`BaseContext`].
 #[derive(Default)]
 pub struct ToolSet<C: BaseContext> {
     pub set: BTreeMap<String, Box<dyn ToolDyn<C>>>,
@@ -224,22 +217,18 @@ where
         self.set.contains_key(name)
     }
 
-    /// Gets the definition of a specific tool by name
-    ///
-    /// # Returns
-    /// - `Some(FunctionDefinition)` if the tool exists
-    /// - `None` if the tool is not found
+    /// Retrieves definition for a specific agent.
     pub fn definition(&self, name: &str) -> Option<FunctionDefinition> {
         self.set.get(name).map(|tool| tool.definition())
     }
 
-    /// Gets definitions for multiple tools, optionally filtered by names
+    /// Returns definitions for all or specified tools.
     ///
     /// # Arguments
-    /// - `names`: Optional slice of tool names to filter by. If None, returns all definitions
+    /// - `names`: Optional slice of agent names to filter by.
     ///
     /// # Returns
-    /// - Vector of `FunctionDefinition` for the requested tools
+    /// - Vec<[`FunctionDefinition`]>: Vector of agent definitions.
     pub fn definitions(&self, names: Option<&[&str]>) -> Vec<FunctionDefinition> {
         self.set
             .iter()
@@ -256,6 +245,13 @@ where
             .collect()
     }
 
+    /// Returns a list of functions for all or specified tools.
+    ///
+    /// # Arguments
+    /// - `names`: Optional slice of tool names to filter by.
+    ///
+    /// # Returns
+    /// - Vec<[`Function`]>: Vector of tool functions.
     pub fn functions(&self, names: Option<&[&str]>) -> Vec<Function> {
         self.set
             .iter()
@@ -297,7 +293,7 @@ where
     /// Adds a new tool to the set
     ///
     /// # Arguments
-    /// - `tool`: The tool to add, must implement the `Tool` trait
+    /// - `tool`: The tool to add, must implement the [`Tool`] trait.
     pub fn add<T>(&mut self, tool: T) -> Result<(), BoxError>
     where
         T: Tool<C> + Send + Sync + 'static,

@@ -2,11 +2,11 @@ use schemars::schema::{RootSchema, Schema, SchemaObject, SingleOrVec};
 
 pub use schemars::{JsonSchema, schema_for};
 
-/// Function Calling has strict requirements for JsonSchema, use fix_json_schema to fix it
-/// 1. Remove $schema field
-/// 2. Remove $format field
-/// 3. Object type Schema must set additionalProperties: false
-/// 4. required field should include all properties fields, meaning all struct fields are required (no Option)
+/// Function Calling has strict requirements for JsonSchema, use fix_json_schema to fix it.
+/// 1. Remove $schema field;
+/// 2. Remove $format field;
+/// 3. Object type Schema must set additionalProperties: false;
+/// 4. required field should include all properties fields, meaning all struct fields are required (no Option).
 pub fn fix_json_schema(schema: &mut RootSchema) {
     schema.meta_schema = None; // Remove the $schema field
     fix_obj_schema(&mut schema.schema);

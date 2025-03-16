@@ -509,8 +509,8 @@ where
                     .map(|embedding| KnowledgeInput {
                         user: user.clone(),
                         text: embedding.text,
-                        meta: serde_json::Map::new().into(),
                         vec: embedding.vec,
+                        ..Default::default()
                     })
                     .collect();
                 let total = docs.len();

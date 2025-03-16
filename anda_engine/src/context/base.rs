@@ -1,39 +1,36 @@
-//! Base context implementation for the Anda Engine
+//! Base context implementation for the Anda Engine.
 //!
 //! This module provides the core context implementation that serves as the foundation
 //! for all operations in the system. The [`BaseCtx`] struct implements various traits
 //! that provide access to:
-//! - [`StateFeatures`]: Context state management
-//! - [`KeysFeatures`]: Cryptographic key operations
-//! - [`StoreFeatures`]: Persistent storage operations
-//! - [`CacheFeatures`]: Caching mechanisms
-//! - [`CanisterCaller`]: Canister interaction capabilities
-//! - [`HttpFeatures`]: HTTPs communication features
+//! - [`StateFeatures`]: Context state management;
+//! - [`KeysFeatures`]: Cryptographic key operations;
+//! - [`StoreFeatures`]: Persistent storage operations;
+//! - [`CacheFeatures`]: Caching mechanisms;
+//! - [`CanisterCaller`]: Canister interaction capabilities;
+//! - [`HttpFeatures`]: HTTPs communication features.
 //!
 //! The context is designed to be:
-//! - Thread-safe through Arc-based sharing of resources
-//! - Cloneable with each clone maintaining its own state
-//! - Hierarchical through child context creation
-//! - Cancellable through CancellationToken integration
+//! - Thread-safe through Arc-based sharing of resources;
+//! - Cloneable with each clone maintaining its own state;
+//! - Hierarchical through child context creation;
+//! - Cancellable through CancellationToken integration.
 //!
 //! Key features:
-//! - Context depth limiting to prevent infinite nesting
-//! - TEE (Trusted Execution Environment) integration for secure operations
-//! - Unified interface for cryptographic operations with multiple algorithms
-//! - Consistent error handling through BoxError
-//! - Time tracking for operation duration
+//! - Context depth limiting to prevent infinite nesting;
+//! - TEE (Trusted Execution Environment) integration for secure operations;
+//! - Unified interface for cryptographic operations with multiple algorithms;
+//! - Consistent error handling through BoxError;
+//! - Time tracking for operation duration.
 
 use anda_core::{
     ANONYMOUS, BaseContext, BoxError, CacheExpiry, CacheFeatures, CancellationToken,
     CanisterCaller, HttpFeatures, KeysFeatures, Metadata, ObjectMeta, Path, PutMode, PutResult,
-    StateFeatures, StoreFeatures, ToolInput, ToolOutput, ToolSet, Value,
+    StateFeatures, StoreFeatures, ToolInput, ToolOutput, Value,
 };
 use async_trait::async_trait;
 use bytes::Bytes;
-use candid::{
-    CandidType, Decode, Principal,
-    utils::{ArgumentEncoder, encode_args},
-};
+use candid::{CandidType, Principal, utils::ArgumentEncoder};
 use ciborium::from_reader;
 use ic_cose_types::to_cbor_bytes;
 use serde::{Serialize, de::DeserializeOwned};
@@ -65,35 +62,28 @@ pub struct BaseCtx {
     pub(crate) start_at: Instant,
     pub(crate) depth: u8,
     pub(crate) web3: Arc<Web3SDK>,
-    /// Set of available tools that can be called
-    pub(crate) tools: Arc<ToolSet<BaseCtx>>,
-    /// Registered remote engines for tool and agent execution
+    /// Registered remote engines for tool and agent execution.
     pub(crate) remote: Arc<RemoteEngines>,
 
     cache: Arc<CacheService>,
     store: Store,
 }
 
-/// Base context implementation providing core functionality for the engine
+/// Base context [`BaseContext`] implementation providing core functionality for the engine.
 ///
 /// This struct serves as the foundation for all operations in the system,
 /// providing access to:
-/// - User authentication and authorization
-/// - Cryptographic operations
-/// - Storage operations
-/// - Caching mechanisms
-/// - Canister communication
-/// - HTTP operations
+/// - User authentication and authorization;
+/// - Cryptographic operations;
+/// - Storage operations;
+/// - Caching mechanisms;
+/// - Canister communication;
+/// - HTTP operations.
 ///
 /// The context is designed to be thread-safe and cloneable, with each clone
 /// maintaining its own state while sharing underlying resources.
 impl BaseCtx {
-    /// Creates a new BaseCtx instance
-    ///
-    /// # Arguments
-    /// * `cancellation_token` - Token for managing operation cancellation
-    /// * `tee` - Trusted Execution Environment client
-    /// * `store` - Storage backend implementation
+    /// Creates a new BaseCtx instance.
     pub(crate) fn new(
         id: Principal,
         name: String,
@@ -101,6 +91,7 @@ impl BaseCtx {
         names: BTreeSet<Path>,
         web3: Arc<Web3SDK>,
         store: Store,
+        remote: Arc<RemoteEngines>,
     ) -> Self {
         Self {
             id,
@@ -114,24 +105,23 @@ impl BaseCtx {
             store,
             web3,
             depth: 0,
-            tools: Arc::new(ToolSet::new()),
-            remote: Arc::new(RemoteEngines::new()),
+            remote,
         }
     }
 
-    /// Creates a child context with a new path
+    /// Creates a child context with a new path.
     ///
     /// This is used to create nested contexts while maintaining the parent's state.
     /// The child context inherits all properties from the parent but with:
-    /// - A new path
-    /// - A child cancellation token
-    /// - Incremented depth
+    /// - A new path;
+    /// - A child cancellation token;
+    /// - Incremented depth.
     ///
     /// # Arguments
-    /// * `path` - New path for the child context
+    /// * `path` - New path for the child context.
     ///
     /// # Errors
-    /// Returns an error if the context depth exceeds CONTEXT_MAX_DEPTH
+    /// Returns an error if the context depth exceeds CONTEXT_MAX_DEPTH.
     pub(crate) fn child(&self, path: String) -> Result<Self, BoxError> {
         let path = Path::parse(path)?;
         let child = Self {
@@ -146,7 +136,6 @@ impl BaseCtx {
             store: self.store.clone(),
             web3: self.web3.clone(),
             depth: self.depth + 1,
-            tools: self.tools.clone(),
             remote: self.remote.clone(),
         };
 
@@ -156,18 +145,18 @@ impl BaseCtx {
         Ok(child)
     }
 
-    /// Creates a child context with additional user and caller information
+    /// Creates a child context with additional user and caller information.
     ///
     /// Similar to `child()`, but allows specifying user and caller information
     /// for the new context.
     ///
     /// # Arguments
-    /// * `path` - New path for the child context
-    /// * `caller` - caller principal (or ANONYMOUS)
-    /// * `user` - Optional user identifier
+    /// * `path` - New path for the child context;
+    /// * `caller` - caller principal (or ANONYMOUS);
+    /// * `meta` - Metadata for the new context.
     ///
     /// # Errors
-    /// Returns an error if the context depth exceeds CONTEXT_MAX_DEPTH
+    /// Returns an error if the context depth exceeds CONTEXT_MAX_DEPTH.
     pub(crate) fn child_with(
         &self,
         caller: Principal,
@@ -187,7 +176,6 @@ impl BaseCtx {
             store: self.store.clone(),
             web3: self.web3.clone(),
             depth: self.depth + 1,
-            tools: self.tools.clone(),
             remote: self.remote.clone(),
         };
 
@@ -206,19 +194,21 @@ impl BaseCtx {
 }
 
 impl BaseContext for BaseCtx {
-    /// Executes a remote tool call via HTTP RPC
+    /// Executes a remote tool call via HTTP RPC.
     ///
     /// # Arguments
-    /// * `endpoint` - Remote endpoint URL
-    /// * `name` - Name of the tool to call
-    /// * `args` - Arguments for the tool call as a JSON string
+    /// * `endpoint` - Remote endpoint URL;
+    /// * `args` - Tool input arguments, [`ToolInput`].
+    ///
+    /// # Returns
+    /// [`ToolOutput`] containing the final result.
     async fn remote_tool_call(
         &self,
         endpoint: &str,
-        mut input: ToolInput<Value>,
+        mut args: ToolInput<Value>,
     ) -> Result<ToolOutput<Value>, BoxError> {
-        input.meta = Some(self.self_meta());
-        self.https_signed_rpc(endpoint, "tool_call", &(&input,))
+        args.meta = Some(self.self_meta());
+        self.https_signed_rpc(endpoint, "tool_call", &(&args,))
             .await
     }
 }
@@ -252,7 +242,7 @@ impl StateFeatures for BaseCtx {
 }
 
 impl KeysFeatures for BaseCtx {
-    /// Derives a 256-bit AES-GCM key from the given derivation path
+    /// Derives a 256-bit AES-GCM key from the given derivation path.
     async fn a256gcm_key(&self, derivation_path: &[&[u8]]) -> Result<[u8; 32], BoxError> {
         match self.web3.as_ref() {
             Web3SDK::Tee(cli) => {
@@ -266,7 +256,7 @@ impl KeysFeatures for BaseCtx {
         }
     }
 
-    /// Signs a message using Ed25519 signature scheme from the given derivation path
+    /// Signs a message using Ed25519 signature scheme from the given derivation path.
     async fn ed25519_sign_message(
         &self,
         derivation_path: &[&[u8]],
@@ -290,7 +280,7 @@ impl KeysFeatures for BaseCtx {
         }
     }
 
-    /// Verifies an Ed25519 signature from the given derivation path
+    /// Verifies an Ed25519 signature from the given derivation path.
     async fn ed25519_verify(
         &self,
         derivation_path: &[&[u8]],
@@ -317,7 +307,7 @@ impl KeysFeatures for BaseCtx {
         }
     }
 
-    /// Gets the public key for Ed25519 from the given derivation path
+    /// Gets the public key for Ed25519 from the given derivation path.
     async fn ed25519_public_key(&self, derivation_path: &[&[u8]]) -> Result<[u8; 32], BoxError> {
         match self.web3.as_ref() {
             Web3SDK::Tee(cli) => {
@@ -331,7 +321,7 @@ impl KeysFeatures for BaseCtx {
         }
     }
 
-    /// Signs a message using Secp256k1 BIP340 Schnorr signature from the given derivation path
+    /// Signs a message using Secp256k1 BIP340 Schnorr signature from the given derivation path.
     async fn secp256k1_sign_message_bip340(
         &self,
         derivation_path: &[&[u8]],
@@ -355,7 +345,7 @@ impl KeysFeatures for BaseCtx {
         }
     }
 
-    /// Verifies a Secp256k1 BIP340 Schnorr signature from the given derivation path
+    /// Verifies a Secp256k1 BIP340 Schnorr signature from the given derivation path.
     async fn secp256k1_verify_bip340(
         &self,
         derivation_path: &[&[u8]],
@@ -382,7 +372,7 @@ impl KeysFeatures for BaseCtx {
         }
     }
 
-    /// Signs a message using Secp256k1 ECDSA signature from the given derivation path
+    /// Signs a message using Secp256k1 ECDSA signature from the given derivation path.
     async fn secp256k1_sign_message_ecdsa(
         &self,
         derivation_path: &[&[u8]],
@@ -406,7 +396,7 @@ impl KeysFeatures for BaseCtx {
         }
     }
 
-    /// Verifies a Secp256k1 ECDSA signature from the given derivation path
+    /// Verifies a Secp256k1 ECDSA signature from the given derivation path.
     async fn secp256k1_verify_ecdsa(
         &self,
         derivation_path: &[&[u8]],
@@ -433,7 +423,7 @@ impl KeysFeatures for BaseCtx {
         }
     }
 
-    /// Gets the compressed SEC1-encoded public key for Secp256k1 from the given derivation path
+    /// Gets the compressed SEC1-encoded public key for Secp256k1 from the given derivation path.
     async fn secp256k1_public_key(&self, derivation_path: &[&[u8]]) -> Result<[u8; 33], BoxError> {
         match self.web3.as_ref() {
             Web3SDK::Tee(cli) => {
@@ -449,16 +439,16 @@ impl KeysFeatures for BaseCtx {
 }
 
 impl StoreFeatures for BaseCtx {
-    /// Retrieves data from storage at the specified path
+    /// Retrieves data from storage at the specified path.
     async fn store_get(&self, path: &Path) -> Result<(bytes::Bytes, ObjectMeta), BoxError> {
         self.store.store_get(&self.path, path).await
     }
 
-    /// Lists objects in storage with optional prefix and offset filters
+    /// Lists objects in storage with optional prefix and offset filters.
     ///
     /// # Arguments
-    /// * `prefix` - Optional path prefix to filter results
-    /// * `offset` - Optional path to start listing from (exclude)
+    /// * `prefix` - Optional path prefix to filter results;
+    /// * `offset` - Optional path to start listing from (exclude).
     async fn store_list(
         &self,
         prefix: Option<&Path>,
@@ -467,48 +457,48 @@ impl StoreFeatures for BaseCtx {
         self.store.store_list(&self.path, prefix, offset).await
     }
 
-    /// Stores data at the specified path with a given write mode
+    /// Stores data at the specified path with a given write mode.
     ///
     /// # Arguments
-    /// * `path` - Target storage path
-    /// * `mode` - Write mode (Create, Overwrite, etc.)
-    /// * `val` - Data to store as bytes
+    /// * `path` - Target storage path;
+    /// * `mode` - Write mode (Create, Overwrite, etc.);
+    /// * `value` - Data to store as bytes.
     async fn store_put(
         &self,
         path: &Path,
         mode: PutMode,
-        val: bytes::Bytes,
+        value: bytes::Bytes,
     ) -> Result<PutResult, BoxError> {
-        self.store.store_put(&self.path, path, mode, val).await
+        self.store.store_put(&self.path, path, mode, value).await
     }
 
-    /// Renames a storage object if the target path doesn't exist
+    /// Renames a storage object if the target path doesn't exist.
     ///
     /// # Arguments
-    /// * `from` - Source path
-    /// * `to` - Destination path
+    /// * `from` - Source path;
+    /// * `to` - Destination path.
     async fn store_rename_if_not_exists(&self, from: &Path, to: &Path) -> Result<(), BoxError> {
         self.store
             .store_rename_if_not_exists(&self.path, from, to)
             .await
     }
 
-    /// Deletes data at the specified path
+    /// Deletes data at the specified path.
     ///
     /// # Arguments
-    /// * `path` - Path of the object to delete
+    /// * `path` - Path of the object to delete.
     async fn store_delete(&self, path: &Path) -> Result<(), BoxError> {
         self.store.store_delete(&self.path, path).await
     }
 }
 
 impl CacheFeatures for BaseCtx {
-    /// Checks if a key exists in the cache
+    /// Checks if a key exists in the cache.
     fn cache_contains(&self, key: &str) -> bool {
         self.cache.contains(&self.path, key)
     }
 
-    /// Gets a cached value by key, returns error if not found or deserialization fails
+    /// Gets a cached value by key, returns error if not found or deserialization fails.
     async fn cache_get<T>(&self, key: &str) -> Result<T, BoxError>
     where
         T: DeserializeOwned,
@@ -516,9 +506,9 @@ impl CacheFeatures for BaseCtx {
         self.cache.get(&self.path, key).await
     }
 
-    /// Gets a cached value or initializes it if missing
+    /// Gets a cached value or initializes it if missing.
     ///
-    /// If key doesn't exist, calls init function to create value and cache it
+    /// If key doesn't exist, calls init function to create value and cache it.
     async fn cache_get_with<T, F>(&self, key: &str, init: F) -> Result<T, BoxError>
     where
         T: Sized + DeserializeOwned + Serialize + Send,
@@ -527,7 +517,7 @@ impl CacheFeatures for BaseCtx {
         self.cache.get_with(&self.path, key, init).await
     }
 
-    /// Sets a value in cache with optional expiration policy
+    /// Sets a value in cache with optional expiration policy.
     async fn cache_set<T>(&self, key: &str, val: (T, Option<CacheExpiry>))
     where
         T: Sized + Serialize + Send,
@@ -535,7 +525,7 @@ impl CacheFeatures for BaseCtx {
         self.cache.set(&self.path, key, val).await
     }
 
-    /// Sets a value in cache if key doesn't exist, returns true if set
+    /// Sets a value in cache if key doesn't exist, returns true if set.
     async fn cache_set_if_not_exists<T>(&self, key: &str, val: (T, Option<CacheExpiry>)) -> bool
     where
         T: Sized + Serialize + Send,
@@ -543,12 +533,12 @@ impl CacheFeatures for BaseCtx {
         self.cache.set_if_not_exists(&self.path, key, val).await
     }
 
-    /// Deletes a cached value by key, returns true if key existed
+    /// Deletes a cached value by key, returns true if key existed.
     async fn cache_delete(&self, key: &str) -> bool {
         self.cache.delete(&self.path, key).await
     }
 
-    /// Returns an iterator over all cached items with raw value
+    /// Returns an iterator over all cached items with raw value.
     fn cache_raw_iter(
         &self,
     ) -> impl Iterator<Item = (Arc<String>, Arc<(Bytes, Option<CacheExpiry>)>)> {
@@ -557,12 +547,12 @@ impl CacheFeatures for BaseCtx {
 }
 
 impl CanisterCaller for BaseCtx {
-    /// Performs a query call to a canister (read-only, no state changes)
+    /// Performs a query call to a canister (read-only, no state changes).
     ///
     /// # Arguments
-    /// * `canister` - Target canister principal
-    /// * `method` - Method name to call
-    /// * `args` - Input arguments encoded in Candid format
+    /// * `canister` - Target canister principal;
+    /// * `method` - Method name to call;
+    /// * `args` - Input arguments encoded in Candid format.
     async fn canister_query<
         In: ArgumentEncoder + Send,
         Out: CandidType + for<'a> candid::Deserialize<'a>,
@@ -572,25 +562,18 @@ impl CanisterCaller for BaseCtx {
         method: &str,
         args: In,
     ) -> Result<Out, BoxError> {
-        match self.web3.as_ref() {
-            Web3SDK::Tee(cli) => cli.canister_query(canister, method, args).await,
-            Web3SDK::Web3(Web3Client { client: cli }) => {
-                let input = encode_args(args)?;
-                let res = cli
-                    .canister_query_raw(canister.to_owned(), method.to_string(), input)
-                    .await?;
-                let output = Decode!(res.as_slice(), Out)?;
-                Ok(output)
-            }
-        }
+        self.web3
+            .as_ref()
+            .canister_query(canister, method, args)
+            .await
     }
 
-    /// Performs an update call to a canister (may modify state)
+    /// Performs an update call to a canister (may modify state).
     ///
     /// # Arguments
-    /// * `canister` - Target canister principal
-    /// * `method` - Method name to call
-    /// * `args` - Input arguments encoded in Candid format
+    /// * `canister` - Target canister principal;
+    /// * `method` - Method name to call;
+    /// * `args` - Input arguments encoded in Candid format.
     async fn canister_update<
         In: ArgumentEncoder + Send,
         Out: CandidType + for<'a> candid::Deserialize<'a>,
@@ -600,51 +583,42 @@ impl CanisterCaller for BaseCtx {
         method: &str,
         args: In,
     ) -> Result<Out, BoxError> {
-        match self.web3.as_ref() {
-            Web3SDK::Tee(cli) => cli.canister_update(canister, method, args).await,
-            Web3SDK::Web3(Web3Client { client: cli }) => {
-                let input = encode_args(args)?;
-                let res = cli
-                    .canister_update_raw(canister.to_owned(), method.to_string(), input)
-                    .await?;
-                let output = Decode!(res.as_slice(), Out)?;
-                Ok(output)
-            }
-        }
+        self.web3
+            .as_ref()
+            .canister_update(canister, method, args)
+            .await
     }
 }
 
 impl HttpFeatures for BaseCtx {
-    /// Makes an HTTPs request
+    /// Makes an HTTPs request.
     ///
     /// # Arguments
-    /// * `url` - Target URL, should start with `https://`
-    /// * `method` - HTTP method (GET, POST, etc.)
-    /// * `headers` - Optional HTTP headers
-    /// * `body` - Optional request body (default empty)
+    /// * `url` - Target URL, should start with `https://`;
+    /// * `method` - HTTP method (GET, POST, etc.);
+    /// * `headers` - Optional HTTP headers;
+    /// * `body` - Optional request body (default empty).
     async fn https_call(
         &self,
         url: &str,
         method: http::Method,
         headers: Option<http::HeaderMap>,
-        body: Option<Vec<u8>>, // default is empty
+        body: Option<Vec<u8>>,
     ) -> Result<reqwest::Response, BoxError> {
-        match self.web3.as_ref() {
-            Web3SDK::Tee(cli) => cli.https_call(url, method, headers, body).await,
-            Web3SDK::Web3(Web3Client { client: cli }) => {
-                cli.https_call(url.to_string(), method, headers, body).await
-            }
-        }
+        self.web3
+            .as_ref()
+            .https_call(url, method, headers, body)
+            .await
     }
 
-    /// Makes a signed HTTPs request with message authentication
+    /// Makes a signed HTTPs request with message authentication.
     ///
     /// # Arguments
-    /// * `url` - Target URL
-    /// * `method` - HTTP method (GET, POST, etc.)
-    /// * `message_digest` - 32-byte message digest for signing
-    /// * `headers` - Optional HTTP headers
-    /// * `body` - Optional request body (default empty)
+    /// * `url` - Target URL;
+    /// * `method` - HTTP method (GET, POST, etc.);
+    /// * `message_digest` - 32-byte message digest for signing;
+    /// * `headers` - Optional HTTP headers;
+    /// * `body` - Optional request body (default empty).
     async fn https_signed_call(
         &self,
         url: &str,
@@ -653,24 +627,18 @@ impl HttpFeatures for BaseCtx {
         headers: Option<http::HeaderMap>,
         body: Option<Vec<u8>>, // default is empty
     ) -> Result<reqwest::Response, BoxError> {
-        match self.web3.as_ref() {
-            Web3SDK::Tee(cli) => {
-                cli.https_signed_call(url, method, message_digest, headers, body)
-                    .await
-            }
-            Web3SDK::Web3(Web3Client { client: cli }) => {
-                cli.https_signed_call(url.to_string(), method, message_digest, headers, body)
-                    .await
-            }
-        }
+        self.web3
+            .as_ref()
+            .https_signed_call(url, method, message_digest, headers, body)
+            .await
     }
 
-    /// Makes a signed CBOR-encoded RPC call
+    /// Makes a signed CBOR-encoded RPC call.
     ///
     /// # Arguments
-    /// * `endpoint` - URL endpoint to send the request to
-    /// * `method` - RPC method name to call
-    /// * `args` - Arguments to serialize as CBOR and send with the request
+    /// * `endpoint` - URL endpoint to send the request to;
+    /// * `method` - RPC method name to call;
+    /// * `args` - Arguments to serialize as CBOR and send with the request.
     async fn https_signed_rpc<T>(
         &self,
         endpoint: &str,
@@ -680,24 +648,17 @@ impl HttpFeatures for BaseCtx {
     where
         T: DeserializeOwned,
     {
-        match self.web3.as_ref() {
-            Web3SDK::Tee(cli) => cli.https_signed_rpc(endpoint, method, args).await,
-            Web3SDK::Web3(Web3Client { client: cli }) => {
-                let args = to_cbor_bytes(&args);
-                let res = cli
-                    .https_signed_rpc_raw(endpoint.to_string(), method.to_string(), args)
-                    .await?;
-                let res = from_reader(&res[..])?;
-                Ok(res)
-            }
-        }
+        self.web3
+            .as_ref()
+            .https_signed_rpc(endpoint, method, args)
+            .await
     }
 }
 
-/// Trait combining Store and Cache features
+/// Trait combining Store and Cache features.
 #[async_trait]
 pub trait CacheStoreFeatures: StoreFeatures + CacheFeatures + Send + Sync + 'static {
-    /// Initializes a cache value from store if missing
+    /// Initializes a cache value from store if missing.
     async fn cache_store_init<T, F>(&self, key: &str, init: F) -> Result<(), BoxError>
     where
         T: DeserializeOwned + Serialize + Send,
@@ -718,7 +679,7 @@ pub trait CacheStoreFeatures: StoreFeatures + CacheFeatures + Send + Sync + 'sta
         }
     }
 
-    /// Gets a value from cache
+    /// Gets a value from cache.
     async fn cache_store_get<T>(&self, key: &str) -> Result<T, BoxError>
     where
         T: DeserializeOwned,
@@ -726,7 +687,7 @@ pub trait CacheStoreFeatures: StoreFeatures + CacheFeatures + Send + Sync + 'sta
         self.cache_get(key).await
     }
 
-    /// Sets a value in cache and store, without waiting for store completion
+    /// Sets a value in cache and store, without waiting for store completion.
     async fn cache_store_set<T>(self, key: &str, val: T)
     where
         T: DeserializeOwned + Serialize + Send,
@@ -749,7 +710,7 @@ pub trait CacheStoreFeatures: StoreFeatures + CacheFeatures + Send + Sync + 'sta
         });
     }
 
-    /// Sets a value in cache and store, waiting for store completion
+    /// Sets a value in cache and store, waiting for store completion.
     async fn cache_store_set_and_wait<T>(self, key: &str, val: T) -> Result<(), BoxError>
     where
         T: DeserializeOwned + Serialize + Send,
@@ -772,7 +733,7 @@ pub trait CacheStoreFeatures: StoreFeatures + CacheFeatures + Send + Sync + 'sta
     }
 }
 
-/// Derives a derivation path with the given path and derivation path
+/// Derives a derivation path with the given path and derivation path.
 pub fn derivation_path_with<'a>(path: &'a Path, derivation_path: &'a [&'a [u8]]) -> Vec<&'a [u8]> {
     let mut dp = Vec::with_capacity(derivation_path.len() + 1);
     dp.push(path.as_ref().as_bytes());

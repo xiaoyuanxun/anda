@@ -1,21 +1,21 @@
-//! HTTP utilities for making RPC calls to canisters and other services
+//! HTTP utilities for making RPC calls to canisters and other services.
 //!
 //! This module provides functionality for:
-//! - Making CBOR-encoded RPC calls
-//! - Making Candid-encoded canister calls
-//! - Handling HTTP requests and responses
-//! - Error handling for RPC operations
+//! - Making CBOR-encoded RPC calls;
+//! - Making Candid-encoded canister calls;
+//! - Handling HTTP requests and responses;
+//! - Error handling for RPC operations.
 //!
 //! The main types are:
-//! - [`RPCRequest`]: Represents a generic RPC request with CBOR-encoded parameters
-//! - [`CanisterRequest`]: Represents a canister-specific request with Candid-encoded parameters
-//! - [`RPCResponse`]: Represents a response from an RPC call
-//! - [`HttpRPCError`]: Represents possible errors during RPC operations
+//! - [`RPCRequest`]: Represents a generic RPC request with CBOR-encoded parameters;
+//! - [`CanisterRequest`]: Represents a canister-specific request with Candid-encoded parameters;
+//! - [`RPCResponse`]: Represents a response from an RPC call;
+//! - [`HttpRPCError`]: Represents possible errors during RPC operations.
 //!
 //! The main functions are:
-//! - [`http_rpc`]: Makes a generic CBOR-encoded RPC call
-//! - [`canister_rpc`]: Makes a canister-specific RPC call with Candid encoding
-//! - [`cbor_rpc`]: Internal function for making CBOR-encoded HTTP requests
+//! - [`http_rpc`]: Makes a generic CBOR-encoded RPC call;
+//! - [`canister_rpc`]: Makes a canister-specific RPC call with Candid encoding;
+//! - [`cbor_rpc`]: Internal function for making CBOR-encoded HTTP requests.
 
 use candid::{CandidType, Principal, decode_args, encode_args, utils::ArgumentEncoder};
 use ciborium::from_reader;
@@ -30,17 +30,17 @@ pub static CONTENT_TYPE_CBOR: &str = "application/cbor";
 pub static CONTENT_TYPE_JSON: &str = "application/json";
 pub static CONTENT_TYPE_TEXT: &str = "text/plain";
 
-/// Represents an RPC request with method name and CBOR-encoded parameters
+/// Represents an RPC request with method name and CBOR-encoded parameters.
 #[derive(Clone, Debug, Serialize)]
 pub struct RPCRequest<'a> {
-    /// The method name to call
+    /// The method name to call.
     pub method: &'a str,
     /// CBOR-encoded parameters for the RPC call.
-    /// Parameters should be provided as a tuple, where each element represents a single parameter.
+    /// Parameters should be provided as a tuple, where each element represents a single argument.
     /// Examples:
-    /// - `()`: No parameters
-    /// - `(1,)`: Single parameter
-    /// - `(1, "hello", 3.14)`: Three parameters
+    /// - `()`: No arguments;
+    /// - `(1,)`: Single argument;
+    /// - `(1, "hello", 3.14)`: Three arguments.
     pub params: &'a ByteBuf,
 }
 
@@ -52,20 +52,20 @@ pub struct CanisterRequest<'a> {
     /// The method name to call on the canister
     pub method: &'a str,
     /// Candid-encoded parameters for the canister call.
-    /// Parameters should be provided as a tuple, where each element represents a single parameter.
+    /// Parameters should be provided as a tuple, where each element represents a single argument.
     /// Examples:
-    /// - `()`: No parameters
-    /// - `(1,)`: Single parameter
-    /// - `(1, "hello", 3.14)`: Three parameters
+    /// - `()`: No arguments;
+    /// - `(1,)`: Single argument;
+    /// - `(1, "hello", 3.14)`: Three arguments.
     pub params: &'a ByteBuf,
 }
 
 /// Represents an RPC response that can be either:
-/// - Ok(ByteBuf): CBOR or Candid encoded successful response
-/// - Err(String): Error message as a string
+/// - Ok(ByteBuf): CBOR or Candid encoded successful response;
+/// - Err(String): Error message as a string.
 pub type RPCResponse = Result<ByteBuf, String>;
 
-/// Possible errors when working with http_rpc
+/// Possible errors when working with http_rpc.
 #[derive(Debug, thiserror::Error)]
 pub enum HttpRPCError {
     #[error("http_rpc({endpoint:?}, {path:?}): send error: {error}")]
@@ -91,16 +91,16 @@ pub enum HttpRPCError {
     },
 }
 
-/// Makes an HTTP RPC call with CBOR-encoded parameters and returns the decoded response
+/// Makes an HTTP RPC call with CBOR-encoded parameters and returns the decoded response.
 ///
 /// # Arguments
-/// * `client` - HTTP client to use for the request
-/// * `endpoint` - URL endpoint to send the request to
-/// * `method` - RPC method name to call
-/// * `args` - Arguments to serialize as CBOR and send with the request
+/// * `client` - HTTP client to use for the request.
+/// * `endpoint` - URL endpoint to send the request to.
+/// * `method` - RPC method name to call.
+/// * `args` - Arguments to serialize as CBOR and send with the request.
 ///
 /// # Returns
-/// Result with either the deserialized response or an HttpRPCError
+/// Result with either the deserialized response or an [`HttpRPCError`].
 pub async fn http_rpc<T>(
     client: &Client,
     endpoint: &str,
@@ -124,17 +124,17 @@ where
     })
 }
 
-/// Makes a canister-specific RPC call with Candid-encoded parameters
+/// Makes a canister-specific RPC call with Candid-encoded arguments.
 ///
 /// # Arguments
-/// * `client` - HTTP client to use for the request
-/// * `endpoint` - URL endpoint to send the request to
-/// * `canister` - Target canister's principal ID
-/// * `method` - Method name to call on the canister
-/// * `args` - Arguments to encode using Candid
+/// * `client` - HTTP client to use for the request.
+/// * `endpoint` - URL endpoint to send the request to.
+/// * `canister` - Target canister's principal ID.
+/// * `method` - Method name to call on the canister.
+/// * `args` - Arguments to encode using Candid.
 ///
 /// # Returns
-/// Result with either the deserialized response or an HttpRPCError
+/// Result with either the deserialized response or an [`HttpRPCError`].
 pub async fn canister_rpc<In, Out>(
     client: &Client,
     endpoint: &str,
@@ -171,17 +171,17 @@ where
     Ok(res.0)
 }
 
-/// Internal function to make a CBOR-encoded RPC call
+/// Internal function to make a CBOR-encoded RPC call.
 ///
 /// # Arguments
-/// * `client` - HTTP client to use for the request
-/// * `endpoint` - URL endpoint to send the request to
-/// * `path` - Path or identifier for the request
-/// * `headers` - Optional headers to include in the request
-/// * `body` - CBOR-encoded request body
+/// * `client` - HTTP client to use for the request.
+/// * `endpoint` - URL endpoint to send the request to.
+/// * `path` - Path or identifier for the request.
+/// * `headers` - Optional headers to include in the request.
+/// * `body` - CBOR-encoded request body.
 ///
 /// # Returns
-/// Result with either the raw ByteBuf response or an HttpRPCError
+/// Result with either the raw ByteBuf response or an [`HttpRPCError`].
 pub async fn cbor_rpc(
     client: &Client,
     endpoint: &str,

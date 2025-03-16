@@ -30,8 +30,8 @@
 //! ```
 
 use anda_core::{
-    Agent, AgentInput, AgentOutput, AgentSet, BoxError, Function, Metadata,
-    Path, Tool, ToolInput, ToolOutput, ToolSet, Value, validate_function_name,
+    Agent, AgentInput, AgentOutput, AgentSet, BoxError, Function, Metadata, Path, Tool, ToolInput,
+    ToolOutput, ToolSet, Value, validate_function_name,
 };
 use async_trait::async_trait;
 use candid::Principal;
@@ -515,6 +515,12 @@ impl EngineBuilder {
             )
             .collect();
         names.insert(Path::from(ROOT_PATH));
+
+        let mut remote = RemoteEngines::new();
+        for (_, engine) in self.remote {
+            remote.register(self.web3.as_ref(), engine).await?;
+        }
+
         let ctx = BaseCtx::new(
             self.id,
             self.name.clone(),
@@ -522,22 +528,12 @@ impl EngineBuilder {
             names,
             self.web3,
             self.store,
+            Arc::new(remote),
         );
-
-        let mut remote = RemoteEngines::new();
-        for (_, engine) in self.remote {
-            remote.register(ctx.clone(), engine).await?;
-        }
 
         let tools = Arc::new(self.tools);
         let agents = Arc::new(self.agents);
-        let ctx = AgentCtx::new(
-            ctx,
-            self.model,
-            tools.clone(),
-            agents.clone(),
-            Arc::new(remote),
-        );
+        let ctx = AgentCtx::new(ctx, self.model, tools.clone(), agents.clone());
 
         let meta = Metadata::default();
         for (name, tool) in &tools.set {
@@ -580,13 +576,8 @@ impl EngineBuilder {
             names,
             self.web3,
             self.store,
-        );
-        AgentCtx::new(
-            ctx,
-            self.model,
-            Arc::new(self.tools),
-            Arc::new(self.agents),
             Arc::new(RemoteEngines::new()),
-        )
+        );
+        AgentCtx::new(ctx, self.model, Arc::new(self.tools), Arc::new(self.agents))
     }
 }

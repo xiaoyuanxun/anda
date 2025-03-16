@@ -349,10 +349,7 @@ impl TwitterDaemon {
 
             sleep(Duration::from_secs(rand_number(1..=3))).await;
             current_tweet = match tweet.in_reply_to_status_id {
-                Some(parent_id) => match self.scraper.get_tweet(&parent_id).await {
-                    Ok(parent_tweet) => Some(parent_tweet),
-                    Err(_) => None,
-                },
+                Some(parent_id) => (self.scraper.get_tweet(&parent_id).await).ok(),
                 None => None,
             };
 

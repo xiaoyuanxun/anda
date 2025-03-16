@@ -1,29 +1,29 @@
-//! In-memory caching system for AI Agent components
+//! In-memory caching system for AI Agent components.
 //!
 //! This module provides a thread-safe, in-memory LRU cache implementation with expiration policies
 //! for storing serialized data. The cache is primarily used by AI Agents and Tools to store
 //! frequently accessed data with configurable expiration policies.
 //!
 //! # Key Features
-//! - LRU (Least Recently Used) eviction policy
-//! - Configurable maximum capacity
-//! - Time-to-Idle (TTI) and Time-to-Live (TTL) expiration policies
-//! - Thread-safe operations
-//! - Automatic serialization/deserialization using CBOR format
+//! - LRU (Least Recently Used) eviction policy;
+//! - Configurable maximum capacity;
+//! - Time-to-Idle (TTI) and Time-to-Live (TTL) expiration policies;
+//! - Thread-safe operations;
+//! - Automatic serialization/deserialization using CBOR format.
 //!
 //! # Usage
 //! The cache is isolated per agent/tool using path-based namespacing. Each agent/tool has its own
 //! isolated cache storage within the shared cache instance.
 //!
 //! # Performance Characteristics
-//! - O(1) time complexity for get/set operations
-//! - Memory usage scales with cache capacity and item sizes
-//! - Automatic eviction of expired items
+//! - O(1) time complexity for get/set operations;
+//! - Memory usage scales with cache capacity and item sizes;
+//! - Automatic eviction of expired items.
 //!
 //! # Limitations
-//! - Data is not persisted across system restarts
-//! - Maximum cache size is limited by available memory
-//! - Serialization/deserialization overhead for large objects
+//! - Data is not persisted across system restarts;
+//! - Maximum cache size is limited by available memory;
+//! - Serialization/deserialization overhead for large objects.
 
 use anda_core::BoxError;
 use anda_core::context::CacheExpiry;
@@ -55,15 +55,15 @@ pub(crate) struct CacheService {
 /// Note: Data is cached only in memory and will be lost upon system restart.
 /// For persistent storage, use `StoreFeatures`.
 impl CacheService {
-    /// Creates a new CacheService instance with specified maximum capacity
+    /// Creates a new CacheService instance with specified maximum capacity.
     ///
     /// # Arguments
-    /// * `max_capacity` - Maximum number of items the cache can hold (u64)
-    /// * `names` - Set of base paths for cache namespacing
+    /// * `max_capacity` - Maximum number of items the cache can hold (u64);
+    /// * `names` - Set of base paths for cache namespacing.
     ///
     /// # Default Behavior
-    /// - Maximum time-to-idle (TTI): 7 days
-    /// - Uses custom expiration policy based on CacheExpiry
+    /// - Maximum time-to-idle (TTI): 7 days;
+    /// - Uses custom expiration policy based on CacheExpiry.
     pub fn new(max_capacity: u64, names: BTreeSet<Path>) -> Self {
         Self {
             cache_store: names
@@ -85,15 +85,15 @@ impl CacheService {
 }
 
 impl CacheService {
-    /// Checks if a key exists in the cache
+    /// Checks if a key exists in the cache.
     ///
     /// # Arguments
     /// * `path` - The namespace for the key. It is used to isolate cache storage for each agent/tool.
     /// * It will panic if the cache is not created for the given path.
-    /// * `key` - The key to check
+    /// * `key` - The key to check.
     ///
     /// # Returns
-    /// `true` if key exists, `false` otherwise
+    /// `true` if key exists, `false` otherwise.
     pub fn contains(&self, path: &Path, key: &str) -> bool {
         self.cache_store
             .get(path)
@@ -101,14 +101,14 @@ impl CacheService {
             .contains_key(key)
     }
 
-    /// Retrieves a cached value by key
+    /// Retrieves a cached value by key.
     ///
     /// # Arguments
-    /// * `path` - The namespace for the key
-    /// * `key` - The key to retrieve
+    /// * `path` - The namespace for the key;
+    /// * `key` - The key to retrieve.
     ///
     /// # Returns
-    /// Result containing deserialized value if successful, error otherwise
+    /// Result containing deserialized value if successful, error otherwise.
     pub async fn get<T>(&self, path: &Path, key: &str) -> Result<T, BoxError>
     where
         T: DeserializeOwned,
@@ -126,17 +126,17 @@ impl CacheService {
         }
     }
 
-    /// Gets a cached value or initializes it if missing
+    /// Gets a cached value or initializes it if missing.
     ///
-    /// If key doesn't exist, calls init function to create value and cache it
+    /// If key doesn't exist, calls init function to create value and cache it.
     ///
     /// # Arguments
-    /// * `path` - The namespace for the key
-    /// * `key` - The key to retrieve or initialize
-    /// * `init` - Async function that returns the value and optional expiry
+    /// * `path` - The namespace for the key;
+    /// * `key` - The key to retrieve or initialize;
+    /// * `init` - Async function that returns the value and optional expiry.
     ///
     /// # Returns
-    /// Result containing deserialized value if successful, error otherwise
+    /// Result containing deserialized value if successful, error otherwise.
     pub async fn get_with<T, F>(&self, path: &Path, key: &str, init: F) -> Result<T, BoxError>
     where
         T: Sized + DeserializeOwned + Serialize + Send,
@@ -163,58 +163,58 @@ impl CacheService {
         }
     }
 
-    /// Sets a value in cache with optional expiration policy
+    /// Sets a value in cache with optional expiration policy.
     ///
     /// # Arguments
-    /// * `path` - The namespace for the key
-    /// * `key` - The key to set
-    /// * `val` - Tuple containing value and optional expiry policy
-    pub async fn set<T>(&self, path: &Path, key: &str, val: (T, Option<CacheExpiry>))
+    /// * `path` - The namespace for the key;
+    /// * `key` - The key to set;
+    /// * `value` - Tuple containing value and optional expiry policy.
+    pub async fn set<T>(&self, path: &Path, key: &str, value: (T, Option<CacheExpiry>))
     where
         T: Sized + Serialize + Send,
     {
-        let data = to_cbor_bytes(&val.0);
+        let data = to_cbor_bytes(&value.0);
         self.cache_store
             .get(path)
             .expect("CacheService: cache not found")
-            .insert(key.to_string(), Arc::new((data.into(), val.1)))
+            .insert(key.to_string(), Arc::new((data.into(), value.1)))
             .await;
     }
 
-    /// Sets a value in cache if key doesn't exist
+    /// Sets a value in cache if key doesn't exist.
     ///
     /// # Arguments
-    /// * `path` - The namespace for the key
-    /// * `key` - The key to set
-    /// * `val` - Tuple containing value and optional expiry policy
+    /// * `path` - The namespace for the key;
+    /// * `key` - The key to set;
+    /// * `value` - Tuple containing value and optional expiry policy.
     pub async fn set_if_not_exists<T>(
         &self,
         path: &Path,
         key: &str,
-        val: (T, Option<CacheExpiry>),
+        value: (T, Option<CacheExpiry>),
     ) -> bool
     where
         T: Sized + Serialize + Send,
     {
-        let data = to_cbor_bytes(&val.0);
+        let data = to_cbor_bytes(&value.0);
         let entry = self
             .cache_store
             .get(path)
             .expect("CacheService: cache not found")
             .entry_by_ref(key)
-            .or_optionally_insert_with(async { Some(Arc::new((data.into(), val.1))) })
+            .or_optionally_insert_with(async { Some(Arc::new((data.into(), value.1))) })
             .await;
         entry.map(|v| v.is_fresh()).unwrap_or(false)
     }
 
-    /// Deletes a cached value by key
+    /// Deletes a cached value by key.
     ///
     /// # Arguments
-    /// * `path` - The namespace for the key
-    /// * `key` - The key to delete
+    /// * `path` - The namespace for the key;
+    /// * `key` - The key to delete.
     ///
     /// # Returns
-    /// `true` if key existed and was deleted, `false` otherwise
+    /// `true` if key existed and was deleted, `false` otherwise.
     pub async fn delete(&self, path: &Path, key: &str) -> bool {
         self.cache_store
             .get(path)
@@ -224,17 +224,17 @@ impl CacheService {
             .is_some()
     }
 
-    /// Returns an iterator over the cache entries for a given path
+    /// Returns an iterator over the cache entries for a given path.
     pub fn iter(
         &self,
         path: &Path,
     ) -> impl Iterator<Item = (Arc<String>, Arc<(Bytes, Option<CacheExpiry>)>)> {
-        let iter = self
+        
+        self
             .cache_store
             .get(path)
             .expect("CacheService: cache not found")
-            .iter();
-        iter
+            .iter()
     }
 }
 

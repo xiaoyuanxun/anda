@@ -152,7 +152,7 @@ impl KnowledgeFeatures for KnowledgeStore {
                 id: doc[0].to_owned(),
                 user: doc[1].to_owned(),
                 text: doc[2].to_owned(),
-                meta: serde_json::from_str(&doc[3]).unwrap_or(serde_json::Value::Null),
+                meta: serde_json::from_str(&doc[3]).unwrap_or_default(),
             })
             .collect();
 
@@ -196,7 +196,7 @@ impl KnowledgeFeatures for KnowledgeStore {
                 id: doc[0].to_owned(),
                 user: doc[1].to_owned(),
                 text: doc[2].to_owned(),
-                meta: serde_json::from_str(&doc[3]).unwrap_or(serde_json::Value::Null),
+                meta: serde_json::from_str(&doc[3]).unwrap_or_default(),
             })
             .collect();
 
@@ -295,14 +295,14 @@ mod tests {
             KnowledgeInput {
                 user: "Anda".to_string(),
                 text: "Hello".to_string(),
-                meta: serde_json::json!({}),
                 vec: vec![0.1; DIM as usize],
+                ..Default::default()
             },
             KnowledgeInput {
                 user: "Dom".to_string(),
                 text: "Anda".to_string(),
-                meta: serde_json::json!({}),
                 vec: vec![0.1; DIM as usize],
+                ..Default::default()
             },
         ])
         .await
@@ -403,15 +403,15 @@ mod tests {
                 KnowledgeInput {
                     user: "Anda".to_string(),
                     text: "Albert Einstein was a great theoretical physicist.".to_string(),
-                    meta: serde_json::json!({}),
                     vec: vec![0.1; DIM as usize],
+                    ..Default::default()
                 },
                 KnowledgeInput {
                     user: "Anda".to_string(),
                     text: "The Great Wall of China is one of the Seven Wonders of the World."
                         .to_string(),
-                    meta: serde_json::json!({}),
                     vec: vec![0.2; DIM as usize],
+                    ..Default::default()
                 },
             ])
             .await

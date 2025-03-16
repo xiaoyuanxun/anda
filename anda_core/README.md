@@ -45,7 +45,7 @@ Provides the execution environment for agents and tools:
   - HTTP communication
   - Blockchain interactions
 
-### 4. Model Module [`model.rs`](https://github.com/ldclabs/anda/blob/main/anda_core/src/model.rs)
+### 4. Model Module [`model`](https://github.com/ldclabs/anda/blob/main/anda_core/src/model/mod.rs)
 Defines core data structures and interfaces for LLMs:
 - Agent output and message structures
 - Function definitions with JSON schema support

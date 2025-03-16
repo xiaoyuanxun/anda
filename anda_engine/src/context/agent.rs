@@ -3,24 +3,24 @@
 //! This module provides the core implementation of the Agent context ([`AgentCtx`]) which serves as
 //! the primary execution environment for agents in the Anda system. The context provides:
 //!
-//! - Access to AI models for completions and embeddings
-//! - Tool execution capabilities
-//! - Agent-to-agent communication
-//! - Cryptographic operations
-//! - Storage and caching facilities
-//! - Canister interaction capabilities
-//! - HTTP communication features
+//! - Access to AI models for completions and embeddings;
+//! - Tool execution capabilities;
+//! - Agent-to-agent communication;
+//! - Cryptographic operations;
+//! - Storage and caching facilities;
+//! - Canister interaction capabilities;
+//! - HTTP communication features.
 //!
 //! The [`AgentCtx`] implements multiple traits that provide different sets of functionality:
-//! - [`AgentContext`]: Core agent operations and tool/agent management
-//! - [`CompletionFeatures`]: AI model completion capabilities
-//! - [`EmbeddingFeatures`]: Text embedding generation
-//! - [`StateFeatures`]: Context state management
-//! - [`KeysFeatures`]: Cryptographic key operations
-//! - [`StoreFeatures`]: Persistent storage operations
-//! - [`CacheFeatures`]: Caching mechanisms
-//! - [`CanisterCaller`]: Canister interaction capabilities
-//! - [`HttpFeatures`]: HTTPs communication features
+//! - [`AgentContext`]: Core agent operations and tool/agent management;
+//! - [`CompletionFeatures`]: AI model completion capabilities;
+//! - [`EmbeddingFeatures`]: Text embedding generation;
+//! - [`StateFeatures`]: Context state management;
+//! - [`KeysFeatures`]: Cryptographic key operations;
+//! - [`StoreFeatures`]: Persistent storage operations;
+//! - [`CacheFeatures`]: Caching mechanisms;
+//! - [`CanisterCaller`]: Canister interaction capabilities;
+//! - [`HttpFeatures`]: HTTPs communication features.
 //!
 //! The context is designed to be hierarchical, allowing creation of child contexts for specific
 //! agents or tools while maintaining access to the core functionality.
@@ -46,73 +46,68 @@ use crate::model::Model;
 
 pub static DYNAMIC_REMOTE_ENGINES: &str = "_engines";
 
-/// Context for agent operations, providing access to models, tools, and other agents
+/// Context for agent operations, providing access to models, tools, and other agents.
 #[derive(Clone)]
 pub struct AgentCtx {
-    /// Base context providing fundamental operations
+    /// Base context providing fundamental operations.
     pub base: BaseCtx,
-    /// AI model used for completions and embeddings
+    /// AI model used for completions and embeddings.
     pub(crate) model: Model,
-    /// Set of available tools that can be called
+    /// Set of available tools that can be called.
     pub(crate) tools: Arc<ToolSet<BaseCtx>>,
-    /// Set of available agents that can be invoked
+    /// Set of available agents that can be invoked.
     pub(crate) agents: Arc<AgentSet<AgentCtx>>,
-    /// Registered remote engines for tool and agent execution
-    pub(crate) remote: Arc<RemoteEngines>,
 }
 
 impl AgentCtx {
-    /// Creates a new AgentCtx instance
+    /// Creates a new AgentCtx instance.
     ///
     /// # Arguments
-    /// * `base` - Base context
-    /// * `model` - AI model instance
-    /// * `tools` - Set of available tools
-    /// * `agents` - Set of available agents
+    /// * `base` - Base context.
+    /// * `model` - AI model instance.
+    /// * `tools` - Set of available tools.
+    /// * `agents` - Set of available agents.
     pub(crate) fn new(
         base: BaseCtx,
         model: Model,
         tools: Arc<ToolSet<BaseCtx>>,
         agents: Arc<AgentSet<AgentCtx>>,
-        remote: Arc<RemoteEngines>,
     ) -> Self {
         Self {
             base,
             model,
             tools,
             agents,
-            remote,
         }
     }
 
-    /// Creates a child context for a specific agent
+    /// Creates a child context for a specific agent.
     ///
     /// # Arguments
-    /// * `agent_name` - Name of the agent to create context for
+    /// * `agent_name` - Name of the agent to create context for.
     pub(crate) fn child(&self, agent_name: &str) -> Result<Self, BoxError> {
         Ok(Self {
             base: self.base.child(format!("A:{}", agent_name))?,
             model: self.model.clone(),
             tools: self.tools.clone(),
             agents: self.agents.clone(),
-            remote: self.remote.clone(),
         })
     }
 
-    /// Creates a child base context for a specific tool
+    /// Creates a child base context for a specific tool.
     ///
     /// # Arguments
-    /// * `tool_name` - Name of the tool to create context for
+    /// * `tool_name` - Name of the tool to create context for.
     pub(crate) fn child_base(&self, tool_name: &str) -> Result<BaseCtx, BoxError> {
         self.base.child(format!("T:{}", tool_name))
     }
 
-    /// Creates a child context with additional user and caller information
+    /// Creates a child context with caller and meta information.
     ///
     /// # Arguments
-    /// * `agent_name` - Name of the agent
-    /// * `user` - Optional user identifier
-    /// * `caller` - Optional caller principal
+    /// * `caller` - caller principal from request.
+    /// * `agent_name` - Name of the agent to run.
+    /// * `meta` - Metadata from request.
     pub(crate) fn child_with(
         &self,
         caller: Principal,
@@ -126,17 +121,15 @@ impl AgentCtx {
             model: self.model.clone(),
             tools: self.tools.clone(),
             agents: self.agents.clone(),
-            remote: self.remote.clone(),
         })
     }
 
-    /// Creates a child base context with additional user and caller information
+    /// Creates a child base context with caller and meta information.
     ///
     /// # Arguments
-    /// * `tool_name` - Name of the tool
-    /// * `caller` - Optional caller principal
-    /// * `user` - Optional user identifier
-    ///
+    /// * `caller` - caller principal from request.
+    /// * `tool_name` - Name of the tool to call.
+    /// * `meta` - Metadata from request.
     pub(crate) fn child_base_with(
         &self,
         caller: Principal,
@@ -151,13 +144,13 @@ impl AgentCtx {
 impl CacheStoreFeatures for AgentCtx {}
 
 impl AgentContext for AgentCtx {
-    /// Retrieves definitions for available tools
+    /// Retrieves definitions for available tools.
     ///
     /// # Arguments
-    /// * `names` - Optional filter for specific tool names
+    /// * `names` - Optional filter for specific tool names.
     ///
     /// # Returns
-    /// Vector of function definitions for the requested tools
+    /// Vector of function definitions for the requested tools.
     fn tool_definitions(&self, names: Option<&[&str]>) -> Vec<FunctionDefinition> {
         self.tools.definitions(names)
     }
@@ -165,17 +158,17 @@ impl AgentContext for AgentCtx {
     /// Retrieves definitions for available tools in the remote engines.
     ///
     /// # Arguments
-    /// * `endpoint` - Optional filter for specific remote engine endpoint
-    /// * `names` - Optional filter for specific tool names
+    /// * `endpoint` - Optional filter for specific remote engine endpoint;
+    /// * `names` - Optional filter for specific tool names.
     ///
     /// # Returns
-    /// Vector of function definitions for the requested tools
+    /// Vector of function definitions for the requested tools.
     async fn remote_tool_definitions(
         &self,
         endpoint: Option<&str>,
         names: Option<&[&str]>,
     ) -> Result<Vec<FunctionDefinition>, BoxError> {
-        let mut defs = self.remote.tool_definitions(endpoint, names);
+        let mut defs = self.base.remote.tool_definitions(endpoint, names);
         if let Ok(engines) = self
             .cache_store_get::<RemoteEngines>(DYNAMIC_REMOTE_ENGINES)
             .await
@@ -203,7 +196,7 @@ impl AgentContext for AgentCtx {
             return self.tools.select_resources(name, resources);
         }
 
-        if let Some(res) = self.remote.select_tool_resources(name, resources) {
+        if let Some(res) = self.base.remote.select_tool_resources(name, resources) {
             return Some(res);
         }
 
@@ -217,14 +210,14 @@ impl AgentContext for AgentCtx {
         None
     }
 
-    /// Retrieves definitions for available agents
+    /// Retrieves definitions for available agents.
     ///
     /// # Arguments
-    /// * `names` - Optional filter for specific agent names
-    /// * `with_prefix` - Flag to add the prefix `LA_` to agent names to distinguish from tools
+    /// * `names` - Optional filter for specific agent names;
+    /// * `with_prefix` - Flag to add the prefix `LA_` to agent names to distinguish from tools.
     ///
     /// # Returns
-    /// Vector of function definitions for the requested agents
+    /// Vector of function definitions for the requested agents.
     fn agent_definitions(
         &self,
         names: Option<&[&str]>,
@@ -246,17 +239,17 @@ impl AgentContext for AgentCtx {
     /// Retrieves definitions for available agents in the remote engines.
     ///
     /// # Arguments
-    /// * `endpoint` - Optional filter for specific remote engine endpoint
-    /// * `names` - Optional filter for specific agent names
+    /// * `endpoint` - Optional filter for specific remote engine endpoint;
+    /// * `names` - Optional filter for specific agent names.
     ///
     /// # Returns
-    /// Vector of function definitions for the requested agents
+    /// Vector of function definitions for the requested agents.
     async fn remote_agent_definitions(
         &self,
         endpoint: Option<&str>,
         names: Option<&[&str]>,
     ) -> Result<Vec<FunctionDefinition>, BoxError> {
-        let mut defs = self.remote.agent_definitions(endpoint, names);
+        let mut defs = self.base.remote.agent_definitions(endpoint, names);
         if let Ok(engines) = self
             .cache_store_get::<RemoteEngines>(DYNAMIC_REMOTE_ENGINES)
             .await
@@ -287,7 +280,7 @@ impl AgentContext for AgentCtx {
                 .select_resources(&name.to_ascii_lowercase(), resources);
         }
 
-        if let Some(res) = self.remote.select_agent_resources(name, resources) {
+        if let Some(res) = self.base.remote.select_agent_resources(name, resources) {
             return Some(res);
         }
 
@@ -318,9 +311,9 @@ impl AgentContext for AgentCtx {
         }
 
         // find registered remote tool and call it
-        if let Some((endpoint, tool_name)) = self.remote.get_tool_endpoint(&input.name) {
+        if let Some((endpoint, tool_name)) = self.base.remote.get_tool_endpoint(&input.name) {
             input.name = tool_name;
-            return self.remote_tool_call(&endpoint, input).await;
+            return self.base.remote_tool_call(&endpoint, input).await;
         }
 
         // find dynamic remote tool and call it
@@ -330,22 +323,20 @@ impl AgentContext for AgentCtx {
         {
             if let Some((endpoint, tool_name)) = engines.get_tool_endpoint(&input.name) {
                 input.name = tool_name;
-                return self.remote_tool_call(&endpoint, input).await;
+                return self.base.remote_tool_call(&endpoint, input).await;
             }
         }
 
         Err(format!("tool {} not found", &input.name).into())
     }
 
-    /// Runs an agent with the given prompt and optional resources
+    /// Runs a local agent.
     ///
     /// # Arguments
-    /// * `name` - Name of the agent to run
-    /// * `prompt` - Input prompt for the agent
-    /// * `resources`: Optional additional resources
+    /// * `args` - Tool input arguments, [`AgentInput`].
     ///
     /// # Returns
-    /// [`AgentOutput`] containing the result of the agent execution
+    /// [`AgentOutput`] containing the result of the agent execution.
     async fn agent_run(&self, mut input: AgentInput) -> Result<AgentOutput, BoxError> {
         if !input.name.starts_with("RA_") {
             let name = input.name.strip_prefix("LA_").unwrap_or(&input.name);
@@ -356,7 +347,7 @@ impl AgentContext for AgentCtx {
         }
 
         // find registered remote agent and run it
-        if let Some((endpoint, agent_name)) = self.remote.get_agent_endpoint(&input.name) {
+        if let Some((endpoint, agent_name)) = self.base.remote.get_agent_endpoint(&input.name) {
             input.name = agent_name;
             return self.remote_agent_run(&endpoint, input).await;
         }
@@ -375,48 +366,50 @@ impl AgentContext for AgentCtx {
         Err(format!("agent {} not found", input.name).into())
     }
 
-    /// Runs a remote agent via HTTP RPC
+    /// Runs a remote agent via HTTP RPC.
     ///
     /// # Arguments
-    /// * `endpoint` - Remote endpoint URL
-    /// * `agent_name` - Name of the agent to run
-    /// * `prompt` - Input prompt for the agent
-    /// * `attachment` - Optional binary attachment
+    /// * `endpoint` - Remote endpoint URL;
+    /// * `args` - Tool input arguments, [`AgentInput`]. The `meta` field will be set to the current agent's metadata.
+    ///
+    /// # Returns
+    /// [`AgentOutput`] containing the result of the agent execution.
     async fn remote_agent_run(
         &self,
         endpoint: &str,
-        mut input: AgentInput,
+        mut args: AgentInput,
     ) -> Result<AgentOutput, BoxError> {
-        input.meta = Some(self.base.self_meta());
-        self.https_signed_rpc(endpoint, "agent_run", &(&input,))
+        args.meta = Some(self.base.self_meta());
+        self.https_signed_rpc(endpoint, "agent_run", &(&args,))
             .await
     }
 }
 
 impl CompletionFeatures for AgentCtx {
-    /// Executes a completion request with automatic tool call handling
+    /// Executes a completion request with automatic tool call handling.
     ///
     /// This method handles the completion request in a loop, automatically executing
     /// any tool calls that are returned by the model and feeding their results back
     /// into the model until no more tool calls need to be processed.
     ///
     /// # Arguments
-    /// * `req` - [`CompletionRequest`] containing the input parameters
+    /// * `req` - [`CompletionRequest`] containing the input parameters;
+    /// * `resources` - Optional list of resources to use for tool calls.
     ///
     /// # Returns
-    /// [`AgentOutput`] containing the final completion result
+    /// [`AgentOutput`] containing the final completion result.
     ///
     /// # Process Flow
-    /// 1. Makes initial completion request to the model
+    /// 1. Makes initial completion request to the model;
     /// 2. If tool calls are returned:
-    ///    - Executes each tool call
-    ///    - Adds tool results to the chat history
-    ///    - Repeats the completion with updated history
-    /// 3. Returns final result when no more tool calls need processing
+    ///    - Executes each tool call;
+    ///    - Adds tool results to the chat history;
+    ///    - Repeats the completion with updated history;
+    /// 3. Returns final result when no more tool calls need processing.
     async fn completion(
         &self,
         mut req: CompletionRequest,
-        resources: Option<Vec<Resource>>, // TODO: select resources
+        resources: Option<Vec<Resource>>,
     ) -> Result<AgentOutput, BoxError> {
         let mut tool_calls_result: Vec<ToolCall> = Vec::new();
         let mut usage = Usage::default();
@@ -553,18 +546,18 @@ impl CompletionFeatures for AgentCtx {
 }
 
 impl EmbeddingFeatures for AgentCtx {
-    /// Gets the number of dimensions for the embedding model
+    /// Gets the number of dimensions for the embedding model.
     fn ndims(&self) -> usize {
         self.model.ndims()
     }
 
-    /// Generates embeddings for a collection of texts
+    /// Generates embeddings for a collection of texts.
     ///
     /// # Arguments
-    /// * `texts` - Collection of text strings to embed
+    /// * `texts` - Collection of text strings to embed.
     ///
     /// # Returns
-    /// Vector of embeddings, one for each input text
+    /// Vector of embeddings, one for each input text.
     async fn embed(
         &self,
         texts: impl IntoIterator<Item = String> + Send,
@@ -572,25 +565,27 @@ impl EmbeddingFeatures for AgentCtx {
         self.model.embed(texts).await
     }
 
-    /// Generates an embedding for a single query text
+    /// Generates an embedding for a single query text.
     ///
     /// # Arguments
-    /// * `text` - Input text to embed
+    /// * `text` - Input text to embed.
     ///
     /// # Returns
-    /// Embedding vector for the input text
+    /// Embedding vector for the input text.
     async fn embed_query(&self, text: &str) -> Result<(Embedding, Usage), BoxError> {
         self.model.embed_query(text).await
     }
 }
 
 impl BaseContext for AgentCtx {
-    /// Executes a remote tool call via HTTP RPC
+    /// Executes a remote tool call via HTTP RPC.
     ///
     /// # Arguments
-    /// * `endpoint` - Remote endpoint URL
-    /// * `name` - Name of the tool to call
-    /// * `args` - Arguments for the tool call as a JSON string
+    /// * `endpoint` - Remote endpoint URL;
+    /// * `args` - Tool input arguments, [`ToolInput`].
+    ///
+    /// # Returns
+    /// [`ToolOutput`] containing the final result.
     async fn remote_tool_call(
         &self,
         endpoint: &str,
@@ -609,7 +604,6 @@ impl StateFeatures for AgentCtx {
         self.base.name.clone()
     }
 
-    /// caller ID
     fn caller(&self) -> Principal {
         self.base.caller
     }
@@ -618,24 +612,22 @@ impl StateFeatures for AgentCtx {
         &self.base.meta
     }
 
-    /// Gets the cancellation token for the current context
     fn cancellation_token(&self) -> CancellationToken {
         self.base.cancellation_token.clone()
     }
 
-    /// Gets the elapsed time since the context was created
     fn time_elapsed(&self) -> Duration {
         self.base.time_elapsed()
     }
 }
 
 impl KeysFeatures for AgentCtx {
-    /// Derives a 256-bit AES-GCM key from the given derivation path
+    /// Derives a 256-bit AES-GCM key from the given derivation path.
     async fn a256gcm_key(&self, derivation_path: &[&[u8]]) -> Result<[u8; 32], BoxError> {
         self.base.a256gcm_key(derivation_path).await
     }
 
-    /// Signs a message using Ed25519 signature scheme from the given derivation path
+    /// Signs a message using Ed25519 signature scheme from the given derivation path.
     async fn ed25519_sign_message(
         &self,
         derivation_path: &[&[u8]],
@@ -646,7 +638,7 @@ impl KeysFeatures for AgentCtx {
             .await
     }
 
-    /// Verifies an Ed25519 signature from the given derivation path
+    /// Verifies an Ed25519 signature from the given derivation path.
     async fn ed25519_verify(
         &self,
         derivation_path: &[&[u8]],
@@ -658,12 +650,12 @@ impl KeysFeatures for AgentCtx {
             .await
     }
 
-    /// Gets the public key for Ed25519 from the given derivation path
+    /// Gets the public key for Ed25519 from the given derivation path.
     async fn ed25519_public_key(&self, derivation_path: &[&[u8]]) -> Result<[u8; 32], BoxError> {
         self.base.ed25519_public_key(derivation_path).await
     }
 
-    /// Signs a message using Secp256k1 BIP340 Schnorr signature from the given derivation path
+    /// Signs a message using Secp256k1 BIP340 Schnorr signature from the given derivation path.
     async fn secp256k1_sign_message_bip340(
         &self,
         derivation_path: &[&[u8]],
@@ -674,7 +666,7 @@ impl KeysFeatures for AgentCtx {
             .await
     }
 
-    /// Verifies a Secp256k1 BIP340 Schnorr signature from the given derivation path
+    /// Verifies a Secp256k1 BIP340 Schnorr signature from the given derivation path.
     async fn secp256k1_verify_bip340(
         &self,
         derivation_path: &[&[u8]],
@@ -686,7 +678,7 @@ impl KeysFeatures for AgentCtx {
             .await
     }
 
-    /// Signs a message using Secp256k1 ECDSA signature from the given derivation path
+    /// Signs a message using Secp256k1 ECDSA signature from the given derivation path.
     async fn secp256k1_sign_message_ecdsa(
         &self,
         derivation_path: &[&[u8]],
@@ -697,7 +689,7 @@ impl KeysFeatures for AgentCtx {
             .await
     }
 
-    /// Verifies a Secp256k1 ECDSA signature from the given derivation path
+    /// Verifies a Secp256k1 ECDSA signature from the given derivation path.
     async fn secp256k1_verify_ecdsa(
         &self,
         derivation_path: &[&[u8]],
@@ -709,23 +701,23 @@ impl KeysFeatures for AgentCtx {
             .await
     }
 
-    /// Gets the compressed SEC1-encoded public key for Secp256k1 from the given derivation path
+    /// Gets the compressed SEC1-encoded public key for Secp256k1 from the given derivation path.
     async fn secp256k1_public_key(&self, derivation_path: &[&[u8]]) -> Result<[u8; 33], BoxError> {
         self.base.secp256k1_public_key(derivation_path).await
     }
 }
 
 impl StoreFeatures for AgentCtx {
-    /// Retrieves data from storage at the specified path
+    /// Retrieves data from storage at the specified path.
     async fn store_get(&self, path: &Path) -> Result<(bytes::Bytes, ObjectMeta), BoxError> {
         self.base.store_get(path).await
     }
 
-    /// Lists objects in storage with optional prefix and offset filters
+    /// Lists objects in storage with optional prefix and offset filters.
     ///
     /// # Arguments
-    /// * `prefix` - Optional path prefix to filter results
-    /// * `offset` - Optional path to start listing from (exclude)
+    /// * `prefix` - Optional path prefix to filter results;
+    /// * `offset` - Optional path to start listing from (exclude).
     async fn store_list(
         &self,
         prefix: Option<&Path>,
@@ -734,46 +726,46 @@ impl StoreFeatures for AgentCtx {
         self.base.store_list(prefix, offset).await
     }
 
-    /// Stores data at the specified path with a given write mode
+    /// Stores data at the specified path with a given write mode.
     ///
     /// # Arguments
-    /// * `path` - Target storage path
-    /// * `mode` - Write mode (Create, Overwrite, etc.)
-    /// * `val` - Data to store as bytes
+    /// * `path` - Target storage path;
+    /// * `mode` - Write mode (Create, Overwrite, etc.);
+    /// * `value` - Data to store as bytes.
     async fn store_put(
         &self,
         path: &Path,
         mode: PutMode,
-        val: bytes::Bytes,
+        value: bytes::Bytes,
     ) -> Result<PutResult, BoxError> {
-        self.base.store_put(path, mode, val).await
+        self.base.store_put(path, mode, value).await
     }
 
-    /// Renames a storage object if the target path doesn't exist
+    /// Renames a storage object if the target path doesn't exist.
     ///
     /// # Arguments
-    /// * `from` - Source path
-    /// * `to` - Destination path
+    /// * `from` - Source path;
+    /// * `to` - Destination path.
     async fn store_rename_if_not_exists(&self, from: &Path, to: &Path) -> Result<(), BoxError> {
         self.base.store_rename_if_not_exists(from, to).await
     }
 
-    /// Deletes data at the specified path
+    /// Deletes data at the specified path.
     ///
     /// # Arguments
-    /// * `path` - Path of the object to delete
+    /// * `path` - Path of the object to delete.
     async fn store_delete(&self, path: &Path) -> Result<(), BoxError> {
         self.base.store_delete(path).await
     }
 }
 
 impl CacheFeatures for AgentCtx {
-    /// Checks if a key exists in the cache
+    /// Checks if a key exists in the cache.
     fn cache_contains(&self, key: &str) -> bool {
         self.base.cache_contains(key)
     }
 
-    /// Gets a cached value by key, returns error if not found or deserialization fails
+    /// Gets a cached value by key, returns error if not found or deserialization fails.
     async fn cache_get<T>(&self, key: &str) -> Result<T, BoxError>
     where
         T: DeserializeOwned,
@@ -781,19 +773,18 @@ impl CacheFeatures for AgentCtx {
         self.base.cache_get(key).await
     }
 
-    /// Gets a cached value or initializes it if missing
+    /// Gets a cached value or initializes it if missing.
     ///
-    /// If key doesn't exist, calls init function to create value and cache it
+    /// If key doesn't exist, calls init function to create value and cache it.
     async fn cache_get_with<T, F>(&self, key: &str, init: F) -> Result<T, BoxError>
     where
         T: Sized + DeserializeOwned + Serialize + Send,
         F: Future<Output = Result<(T, Option<CacheExpiry>), BoxError>> + Send + 'static,
     {
-        // futures_util::pin_mut!(init);
         self.base.cache_get_with(key, init).await
     }
 
-    /// Sets a value in cache with optional expiration policy
+    /// Sets a value in cache with optional expiration policy.
     async fn cache_set<T>(&self, key: &str, val: (T, Option<CacheExpiry>))
     where
         T: Sized + Serialize + Send,
@@ -801,7 +792,7 @@ impl CacheFeatures for AgentCtx {
         self.base.cache_set(key, val).await
     }
 
-    /// Sets a value in cache if key doesn't exist, returns true if set
+    /// Sets a value in cache if key doesn't exist, returns true if set.
     async fn cache_set_if_not_exists<T>(&self, key: &str, val: (T, Option<CacheExpiry>)) -> bool
     where
         T: Sized + Serialize + Send,
@@ -809,12 +800,12 @@ impl CacheFeatures for AgentCtx {
         self.base.cache_set_if_not_exists(key, val).await
     }
 
-    /// Deletes a cached value by key, returns true if key existed
+    /// Deletes a cached value by key, returns true if key existed.
     async fn cache_delete(&self, key: &str) -> bool {
         self.base.cache_delete(key).await
     }
 
-    /// Returns an iterator over all cached items with raw value
+    /// Returns an iterator over all cached items with raw value.
     fn cache_raw_iter(
         &self,
     ) -> impl Iterator<Item = (Arc<String>, Arc<(Bytes, Option<CacheExpiry>)>)> {
@@ -823,12 +814,12 @@ impl CacheFeatures for AgentCtx {
 }
 
 impl CanisterCaller for AgentCtx {
-    /// Performs a query call to a canister (read-only, no state changes)
+    /// Performs a query call to a canister (read-only, no state changes).
     ///
     /// # Arguments
-    /// * `canister` - Target canister principal
-    /// * `method` - Method name to call
-    /// * `args` - Input arguments encoded in Candid format
+    /// * `canister` - Target canister principal;
+    /// * `method` - Method name to call;
+    /// * `args` - Input arguments encoded in Candid format.
     async fn canister_query<
         In: ArgumentEncoder + Send,
         Out: CandidType + for<'a> candid::Deserialize<'a>,
@@ -841,12 +832,12 @@ impl CanisterCaller for AgentCtx {
         self.base.canister_query(canister, method, args).await
     }
 
-    /// Performs an update call to a canister (may modify state)
+    /// Performs an update call to a canister (may modify state).
     ///
     /// # Arguments
-    /// * `canister` - Target canister principal
-    /// * `method` - Method name to call
-    /// * `args` - Input arguments encoded in Candid format
+    /// * `canister` - Target canister principal;
+    /// * `method` - Method name to call;
+    /// * `args` - Input arguments encoded in Candid format.
     async fn canister_update<
         In: ArgumentEncoder + Send,
         Out: CandidType + for<'a> candid::Deserialize<'a>,
@@ -861,50 +852,50 @@ impl CanisterCaller for AgentCtx {
 }
 
 impl HttpFeatures for AgentCtx {
-    /// Makes an HTTPs request
+    /// Makes an HTTPs request.
     ///
     /// # Arguments
-    /// * `url` - Target URL, should start with `https://`
-    /// * `method` - HTTP method (GET, POST, etc.)
-    /// * `headers` - Optional HTTP headers
-    /// * `body` - Optional request body (default empty)
+    /// * `url` - Target URL, should start with `https://`;
+    /// * `method` - HTTP method (GET, POST, etc.);
+    /// * `headers` - Optional HTTP headers;
+    /// * `body` - Optional request body (default empty).
     async fn https_call(
         &self,
         url: &str,
         method: http::Method,
         headers: Option<http::HeaderMap>,
-        body: Option<Vec<u8>>, // default is empty
+        body: Option<Vec<u8>>,
     ) -> Result<reqwest::Response, BoxError> {
         self.base.https_call(url, method, headers, body).await
     }
 
-    /// Makes a signed HTTPs request with message authentication
+    /// Makes a signed HTTPs request with message authentication.
     ///
     /// # Arguments
-    /// * `url` - Target URL
-    /// * `method` - HTTP method (GET, POST, etc.)
-    /// * `message_digest` - 32-byte message digest for signing
-    /// * `headers` - Optional HTTP headers
-    /// * `body` - Optional request body (default empty)
+    /// * `url` - Target URL;
+    /// * `method` - HTTP method (GET, POST, etc.);
+    /// * `message_digest` - 32-byte message digest for signing;
+    /// * `headers` - Optional HTTP headers;
+    /// * `body` - Optional request body (default empty).
     async fn https_signed_call(
         &self,
         url: &str,
         method: http::Method,
         message_digest: [u8; 32],
         headers: Option<http::HeaderMap>,
-        body: Option<Vec<u8>>, // default is empty
+        body: Option<Vec<u8>>,
     ) -> Result<reqwest::Response, BoxError> {
         self.base
             .https_signed_call(url, method, message_digest, headers, body)
             .await
     }
 
-    /// Makes a signed CBOR-encoded RPC call
+    /// Makes a signed CBOR-encoded RPC call.
     ///
     /// # Arguments
-    /// * `endpoint` - URL endpoint to send the request to
-    /// * `method` - RPC method name to call
-    /// * `args` - Arguments to serialize as CBOR and send with the request
+    /// * `endpoint` - URL endpoint to send the request to;
+    /// * `method` - RPC method name to call;
+    /// * `args` - Arguments to serialize as CBOR and send with the request.
     async fn https_signed_rpc<T>(
         &self,
         endpoint: &str,

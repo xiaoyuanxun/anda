@@ -57,7 +57,7 @@ impl ICPLedgers {
     /// * `ctx` - Canister caller context
     /// * `ledger_canisters` - Set of 1 to N ICP token ledger canister IDs
     /// * `from_user_subaccount` - When false, the from account is the Agent's main account.
-    ///                            When true, the from account is a user-specific subaccount derived from the Agent's main account.
+    ///  When true, the from account is a user-specific subaccount derived from the Agent's main account.
     pub async fn load(
         ctx: &impl CanisterCaller,
         ledger_canisters: BTreeSet<Principal>,
