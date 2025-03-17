@@ -30,8 +30,8 @@
 //! ```
 
 use anda_core::{
-    Agent, AgentInput, AgentOutput, AgentSet, BoxError, Function, Metadata, Path, Tool, ToolInput,
-    ToolOutput, ToolSet, Value, validate_function_name,
+    Agent, AgentInput, AgentOutput, AgentSet, BoxError, Function, Path, RequestMeta, ThreadMeta,
+    Tool, ToolInput, ToolOutput, ToolSet, Value, validate_function_name,
 };
 use async_trait::async_trait;
 use candid::Principal;
@@ -44,6 +44,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     context::{AgentCtx, BaseCtx, Web3Client, Web3SDK},
+    management::Management,
     model::Model,
     store::Store,
 };
@@ -64,6 +65,7 @@ pub struct Engine {
     export_agents: BTreeSet<String>,
     export_tools: BTreeSet<String>,
     hooks: Arc<Hooks>,
+    management: Arc<Management>,
 }
 
 /// Hook trait for customizing engine behavior.
@@ -71,7 +73,12 @@ pub struct Engine {
 #[async_trait]
 pub trait Hook: Send + Sync {
     /// Called before an agent is executed.
-    async fn on_agent_start(&self, _ctx: &AgentCtx, _agent: &str) -> Result<(), BoxError> {
+    async fn on_agent_start(
+        &self,
+        _ctx: &AgentCtx,
+        _agent: &str,
+        _thread: &ThreadMeta,
+    ) -> Result<(), BoxError> {
         Ok(())
     }
 
@@ -125,9 +132,14 @@ impl Hooks {
 
 #[async_trait]
 impl Hook for Hooks {
-    async fn on_agent_start(&self, ctx: &AgentCtx, agent: &str) -> Result<(), BoxError> {
+    async fn on_agent_start(
+        &self,
+        ctx: &AgentCtx,
+        agent: &str,
+        thread: &ThreadMeta,
+    ) -> Result<(), BoxError> {
         for hook in &self.hooks {
-            hook.on_agent_start(ctx, agent).await?;
+            hook.on_agent_start(ctx, agent, thread).await?;
         }
         Ok(())
     }
@@ -206,7 +218,7 @@ impl Engine {
         &self,
         caller: Principal,
         agent_name: &str,
-        meta: Metadata,
+        meta: RequestMeta,
     ) -> Result<AgentCtx, BoxError> {
         let name = agent_name.to_ascii_lowercase();
         if !self.export_agents.contains(&name) || !self.ctx.agents.contains(&name) {
@@ -235,14 +247,36 @@ impl Engine {
             .agents
             .get(&input.name)
             .ok_or_else(|| format!("agent {} not found", input.name))?;
-        let ctx = self.ctx_with(caller, &input.name, input.meta.unwrap_or_default())?;
+        let mut meta = input.meta.unwrap_or_default();
+        if meta.engine.is_some() && meta.engine != Some(self.id) {
+            return Err(format!(
+                "invalid engine ID, expected {}, got {}",
+                self.id.to_text(),
+                meta.engine.unwrap().to_text()
+            )
+            .into());
+        }
 
-        self.hooks.on_agent_start(&ctx, &input.name).await?;
-        let mut res = agent
+        let thread = self
+            .management
+            .load_thread_meta(caller, &meta.thread)
+            .await?;
+
+        meta.thread = Some(thread.id.clone());
+        let ctx = self.ctx_with(caller, &input.name, meta.clone())?;
+        self.hooks
+            .on_agent_start(&ctx, &input.name, &thread)
+            .await?;
+        // should save the thread meta before running the agent
+        self.management.save_thread_meta(thread).await?;
+
+        let output = agent
             .run(ctx.clone(), input.prompt, input.resources)
             .await?;
-        res.full_history = None; // clear full history
-        self.hooks.on_agent_end(&ctx, &input.name, res).await
+        let mut output = self.hooks.on_agent_end(&ctx, &input.name, output).await?;
+        output.thread = meta.thread;
+        output.full_history = None; // clear full history
+        Ok(output)
     }
 
     /// Calls a tool by name with the specified arguments.
@@ -261,14 +295,21 @@ impl Engine {
             .tools
             .get(&input.name)
             .ok_or_else(|| format!("tool {} not found", &input.name))?;
+        let meta = input.meta.unwrap_or_default();
+        if meta.engine.is_some() && meta.engine != Some(self.id) {
+            return Err(format!(
+                "invalid engine ID, expected {}, got {}",
+                self.id.to_text(),
+                meta.engine.unwrap().to_text()
+            )
+            .into());
+        }
 
-        let ctx = self
-            .ctx
-            .child_base_with(caller, &input.name, input.meta.unwrap_or_default())?;
+        let ctx = self.ctx.child_base_with(caller, &input.name, meta)?;
         self.hooks.on_tool_start(&ctx, &input.name).await?;
         let args = serde_json::to_string(&input.args)?;
-        let res = tool.call(ctx.clone(), args, input.resources).await?;
-        self.hooks.on_tool_end(&ctx, &input.name, res).await
+        let output = tool.call(ctx.clone(), args, input.resources).await?;
+        self.hooks.on_tool_end(&ctx, &input.name, output).await
     }
 
     /// Returns function definitions for the specified agents.
@@ -324,6 +365,7 @@ pub struct EngineBuilder {
     cancellation_token: CancellationToken,
     export_agents: BTreeSet<String>,
     export_tools: BTreeSet<String>,
+    controller: Principal,
 }
 
 impl Default for EngineBuilder {
@@ -350,12 +392,18 @@ impl EngineBuilder {
             cancellation_token: CancellationToken::new(),
             export_agents: BTreeSet::new(),
             export_tools: BTreeSet::new(),
+            controller: Principal::anonymous(),
         }
     }
 
     /// Sets the engine ID, which comes from the TEE.
     pub fn with_id(mut self, id: Principal) -> Self {
         self.id = id;
+        self
+    }
+
+    pub fn with_controller(mut self, controller: Principal) -> Self {
+        self.controller = controller;
         self
     }
 
@@ -530,12 +578,20 @@ impl EngineBuilder {
             self.store,
             Arc::new(remote),
         );
+        let management = Management::new(&ctx, self.controller);
+        let management = Arc::new(management);
 
         let tools = Arc::new(self.tools);
         let agents = Arc::new(self.agents);
-        let ctx = AgentCtx::new(ctx, self.model, tools.clone(), agents.clone());
+        let ctx = AgentCtx::new(
+            ctx,
+            self.model,
+            tools.clone(),
+            agents.clone(),
+            management.clone(),
+        );
 
-        let meta = Metadata::default();
+        let meta = RequestMeta::default();
         for (name, tool) in &tools.set {
             let ct = ctx.child_base_with(self.id, name, meta.clone())?;
             tool.init(ct).await?;
@@ -555,6 +611,7 @@ impl EngineBuilder {
             export_agents: self.export_agents,
             export_tools: self.export_tools,
             hooks: self.hooks,
+            management,
         })
     }
 
@@ -578,6 +635,14 @@ impl EngineBuilder {
             self.store,
             Arc::new(RemoteEngines::new()),
         );
-        AgentCtx::new(ctx, self.model, Arc::new(self.tools), Arc::new(self.agents))
+        let management = Management::new(&ctx, self.controller);
+        let management = Arc::new(management);
+        AgentCtx::new(
+            ctx,
+            self.model,
+            Arc::new(self.tools),
+            Arc::new(self.agents),
+            management,
+        )
     }
 }

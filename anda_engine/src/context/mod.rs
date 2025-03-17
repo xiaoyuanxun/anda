@@ -82,7 +82,7 @@ pub mod mock {
         ///
         /// # Arguments
         /// * `transform` - A function that takes (canister_id, method_name, args) and returns
-        ///  a serialized response
+        ///   a serialized response
         pub fn new(transform: F) -> Self {
             Self { transform }
         }

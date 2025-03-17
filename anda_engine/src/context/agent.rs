@@ -27,10 +27,10 @@
 
 use anda_core::{
     AgentArgs, AgentContext, AgentInput, AgentOutput, AgentSet, BaseContext, BoxError, CacheExpiry,
-    CacheFeatures, CancellationToken, CanisterCaller, CompletionFeatures, CompletionRequest,
-    Embedding, EmbeddingFeatures, FunctionDefinition, HttpFeatures, KeysFeatures, Message,
-    Metadata, ObjectMeta, Path, PutMode, PutResult, Resource, StateFeatures, StoreFeatures,
-    ToolCall, ToolInput, ToolOutput, ToolSet, Usage, Value,
+    CacheFeatures, CacheStoreFeatures, CancellationToken, CanisterCaller, CompletionFeatures,
+    CompletionRequest, Embedding, EmbeddingFeatures, FunctionDefinition, HttpFeatures,
+    KeysFeatures, Message, ObjectMeta, Path, PutMode, PutResult, RequestMeta, Resource,
+    StateFeatures, StoreFeatures, ToolCall, ToolInput, ToolOutput, ToolSet, Usage, Value,
 };
 use bytes::Bytes;
 use candid::{CandidType, Principal, utils::ArgumentEncoder};
@@ -38,11 +38,8 @@ use serde::{Serialize, de::DeserializeOwned};
 use serde_json::json;
 use std::{future::Future, sync::Arc, time::Duration};
 
-use super::{
-    base::{BaseCtx, CacheStoreFeatures},
-    engine::RemoteEngines,
-};
-use crate::model::Model;
+use super::{base::BaseCtx, engine::RemoteEngines};
+use crate::{management::Management, model::Model};
 
 pub static DYNAMIC_REMOTE_ENGINES: &str = "_engines";
 
@@ -57,6 +54,8 @@ pub struct AgentCtx {
     pub(crate) tools: Arc<ToolSet<BaseCtx>>,
     /// Set of available agents that can be invoked.
     pub(crate) agents: Arc<AgentSet<AgentCtx>>,
+
+    management: Arc<Management>,
 }
 
 impl AgentCtx {
@@ -72,12 +71,14 @@ impl AgentCtx {
         model: Model,
         tools: Arc<ToolSet<BaseCtx>>,
         agents: Arc<AgentSet<AgentCtx>>,
+        management: Arc<Management>,
     ) -> Self {
         Self {
             base,
             model,
             tools,
             agents,
+            management,
         }
     }
 
@@ -91,6 +92,7 @@ impl AgentCtx {
             model: self.model.clone(),
             tools: self.tools.clone(),
             agents: self.agents.clone(),
+            management: self.management.clone(),
         })
     }
 
@@ -112,7 +114,7 @@ impl AgentCtx {
         &self,
         caller: Principal,
         agent_name: &str,
-        meta: Metadata,
+        meta: RequestMeta,
     ) -> Result<Self, BoxError> {
         Ok(Self {
             base: self
@@ -121,6 +123,7 @@ impl AgentCtx {
             model: self.model.clone(),
             tools: self.tools.clone(),
             agents: self.agents.clone(),
+            management: self.management.clone(),
         })
     }
 
@@ -134,7 +137,7 @@ impl AgentCtx {
         &self,
         caller: Principal,
         tool_name: &str,
-        meta: Metadata,
+        meta: RequestMeta,
     ) -> Result<BaseCtx, BoxError> {
         self.base
             .child_with(caller, format!("T:{}", tool_name), meta)
@@ -379,9 +382,35 @@ impl AgentContext for AgentCtx {
         endpoint: &str,
         mut args: AgentInput,
     ) -> Result<AgentOutput, BoxError> {
-        args.meta = Some(self.base.self_meta());
-        self.https_signed_rpc(endpoint, "agent_run", &(&args,))
-            .await
+        let target = self
+            .base
+            .remote
+            .get_id_by_endpoint(endpoint)
+            .ok_or_else(|| format!("remote engine endpoint {} not found", endpoint))?;
+        let mut meta = self.base.self_meta(target);
+        if let Some(thread_id) = &meta.thread {
+            let thread = self.management.get_thread_meta(thread_id).await?;
+            if let Some(child) = thread.children.get(&target) {
+                meta.thread = Some(child.to_owned());
+            }
+        }
+
+        args.meta = Some(meta.clone());
+        let output: AgentOutput = self
+            .https_signed_rpc(endpoint, "agent_run", &(&args,))
+            .await?;
+        if let Some(thread_id) = &meta.thread {
+            if let Some(child) = &output.thread {
+                if thread_id != child {
+                    let mut thread = self.management.get_thread_meta(thread_id).await?;
+                    // Should overwrite the child thread if it exists.
+                    // Because the child thread may be cleaned up by the remote engine.
+                    thread.children.insert(target, child.clone());
+                    self.management.save_thread_meta(thread).await?;
+                }
+            }
+        }
+        Ok(output)
     }
 }
 
@@ -589,9 +618,9 @@ impl BaseContext for AgentCtx {
     async fn remote_tool_call(
         &self,
         endpoint: &str,
-        input: ToolInput<Value>,
+        args: ToolInput<Value>,
     ) -> Result<ToolOutput<Value>, BoxError> {
-        self.base.remote_tool_call(endpoint, input).await
+        self.base.remote_tool_call(endpoint, args).await
     }
 }
 
@@ -608,7 +637,7 @@ impl StateFeatures for AgentCtx {
         self.base.caller
     }
 
-    fn meta(&self) -> &Metadata {
+    fn meta(&self) -> &RequestMeta {
         &self.base.meta
     }
 

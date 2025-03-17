@@ -74,7 +74,11 @@ pub async fn get_engine_information(
     } else if let Ok(id) = Principal::from_text(&id) {
         id
     } else {
-        return (StatusCode::BAD_REQUEST, format!("invalid engine id: {id}")).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            format!("invalid engine id: {id:?}"),
+        )
+            .into_response();
     };
 
     match app.engines.get(&id) {
@@ -85,7 +89,11 @@ pub async fn get_engine_information(
                 _ => Content::JSON(InformationJSON::from(info), None).into_response(),
             }
         }
-        None => (StatusCode::NOT_FOUND, format!("engine {id} not found")).into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            format!("engine {} not found", id.to_text()),
+        )
+            .into_response(),
     }
 }
 
@@ -101,7 +109,11 @@ pub async fn anda_engine(
     } else if let Ok(id) = Principal::from_text(&id) {
         id
     } else {
-        return (StatusCode::BAD_REQUEST, format!("invalid engine id: {id}")).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            format!("invalid engine id: {id:?}"),
+        )
+            .into_response();
     };
 
     let (req, hash) = match ct {
@@ -139,7 +151,7 @@ async fn engine_run(
     let engine = app
         .engines
         .get(&id)
-        .ok_or_else(|| format!("engine {id} not found"))?;
+        .ok_or_else(|| format!("engine {} not found", id.to_text()))?;
 
     match req.method.as_str() {
         "agent_run" => {
@@ -164,6 +176,9 @@ async fn engine_run(
             let res = engine.information();
             Ok(to_cbor_bytes(&res).into())
         }
-        method => Err(format!("{method} on engine {id} not implemented")),
+        method => Err(format!(
+            "{method} on engine {} not implemented",
+            id.to_text()
+        )),
     }
 }

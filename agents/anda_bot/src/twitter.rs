@@ -1,10 +1,9 @@
 use agent_twitter_client::{models::Tweet, scraper::Scraper, search::SearchMode};
-use anda_core::{ANONYMOUS, Agent, BoxError, CompletionFeatures, Metadata, StateFeatures};
+use anda_core::{
+    ANONYMOUS, Agent, BoxError, CacheStoreFeatures, CompletionFeatures, RequestMeta, StateFeatures,
+};
 use anda_engine::{
-    context::{AgentCtx, CacheStoreFeatures},
-    engine::Engine,
-    extension::character::CharacterAgent,
-    rand_number,
+    context::AgentCtx, engine::Engine, extension::character::CharacterAgent, rand_number,
 };
 use anda_lancedb::knowledge::KnowledgeStore;
 use std::sync::Arc;
@@ -50,7 +49,7 @@ impl TwitterDaemon {
             let ctx = self.engine.ctx_with(
                 ANONYMOUS,
                 &self.agent.as_ref().name(),
-                Metadata::default(),
+                RequestMeta::default(),
             )?;
             // load seen_tweet_ids from store
             ctx.cache_store_init("seen_tweet_ids", async { Ok(Vec::<String>::new()) })
@@ -149,7 +148,7 @@ impl TwitterDaemon {
         let ctx = self.engine.ctx_with(
             ANONYMOUS,
             &self.agent.as_ref().name(),
-            Metadata {
+            RequestMeta {
                 user: Some(self.engine.name()),
                 ..Default::default()
             },
@@ -185,7 +184,7 @@ impl TwitterDaemon {
         let ctx = self.engine.ctx_with(
             ANONYMOUS,
             &self.agent.as_ref().name(),
-            Metadata {
+            RequestMeta {
                 user: Some(self.engine.name()),
                 ..Default::default()
             },
@@ -279,7 +278,7 @@ impl TwitterDaemon {
         let ctx = self.engine.ctx_with(
             ANONYMOUS,
             &self.agent.as_ref().name(),
-            Metadata {
+            RequestMeta {
                 user: Some(tweet_user.clone()),
                 ..Default::default()
             },

@@ -3,6 +3,7 @@ use rand::Rng;
 pub mod context;
 pub mod engine;
 pub mod extension;
+pub mod management;
 pub mod model;
 pub mod store;
 

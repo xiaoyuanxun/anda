@@ -24,15 +24,13 @@
 //! - Time tracking for operation duration.
 
 use anda_core::{
-    ANONYMOUS, BaseContext, BoxError, CacheExpiry, CacheFeatures, CancellationToken,
-    CanisterCaller, HttpFeatures, KeysFeatures, Metadata, ObjectMeta, Path, PutMode, PutResult,
-    StateFeatures, StoreFeatures, ToolInput, ToolOutput, Value,
+    ANONYMOUS, BaseContext, BoxError, CacheExpiry, CacheFeatures, CacheStoreFeatures,
+    CancellationToken, CanisterCaller, HttpFeatures, KeysFeatures, ObjectMeta, Path, PutMode,
+    PutResult, RequestMeta, StateFeatures, StoreFeatures, ToolInput, ToolOutput, Value,
+    derivation_path_with,
 };
-use async_trait::async_trait;
 use bytes::Bytes;
 use candid::{CandidType, Principal, utils::ArgumentEncoder};
-use ciborium::from_reader;
-use ic_cose_types::to_cbor_bytes;
 use serde::{Serialize, de::DeserializeOwned};
 use std::{
     collections::BTreeSet,
@@ -56,7 +54,6 @@ pub struct BaseCtx {
     pub(crate) id: Principal,
     pub(crate) name: String,
     pub(crate) caller: Principal,
-    pub(crate) meta: Metadata,
     pub(crate) path: Path,
     pub(crate) cancellation_token: CancellationToken,
     pub(crate) start_at: Instant,
@@ -64,6 +61,7 @@ pub struct BaseCtx {
     pub(crate) web3: Arc<Web3SDK>,
     /// Registered remote engines for tool and agent execution.
     pub(crate) remote: Arc<RemoteEngines>,
+    pub(crate) meta: RequestMeta,
 
     cache: Arc<CacheService>,
     store: Store,
@@ -95,8 +93,7 @@ impl BaseCtx {
     ) -> Self {
         Self {
             id,
-            name,
-            meta: Metadata::default(),
+            name: name.clone(),
             caller: ANONYMOUS,
             path: Path::default(),
             cancellation_token,
@@ -106,6 +103,7 @@ impl BaseCtx {
             web3,
             depth: 0,
             remote,
+            meta: RequestMeta::default(),
         }
     }
 
@@ -128,7 +126,6 @@ impl BaseCtx {
             id: self.id,
             name: self.name.clone(),
             caller: self.caller,
-            meta: self.meta.clone(),
             path,
             cancellation_token: self.cancellation_token.child_token(),
             start_at: self.start_at,
@@ -137,6 +134,7 @@ impl BaseCtx {
             web3: self.web3.clone(),
             depth: self.depth + 1,
             remote: self.remote.clone(),
+            meta: self.meta.clone(),
         };
 
         if child.depth >= CONTEXT_MAX_DEPTH {
@@ -161,14 +159,13 @@ impl BaseCtx {
         &self,
         caller: Principal,
         path: String,
-        meta: Metadata,
+        meta: RequestMeta,
     ) -> Result<Self, BoxError> {
         let path = Path::parse(path)?;
         let child = Self {
             id: self.id,
             name: self.name.clone(),
             caller,
-            meta,
             path,
             cancellation_token: self.cancellation_token.child_token(),
             start_at: Instant::now(),
@@ -177,6 +174,7 @@ impl BaseCtx {
             web3: self.web3.clone(),
             depth: self.depth + 1,
             remote: self.remote.clone(),
+            meta,
         };
 
         if child.depth >= CONTEXT_MAX_DEPTH {
@@ -185,8 +183,9 @@ impl BaseCtx {
         Ok(child)
     }
 
-    pub(crate) fn self_meta(&self) -> Metadata {
-        Metadata {
+    pub(crate) fn self_meta(&self, target: Principal) -> RequestMeta {
+        RequestMeta {
+            engine: Some(target),
             thread: self.meta.thread.clone(),
             user: Some(self.name.clone()),
         }
@@ -207,7 +206,11 @@ impl BaseContext for BaseCtx {
         endpoint: &str,
         mut args: ToolInput<Value>,
     ) -> Result<ToolOutput<Value>, BoxError> {
-        args.meta = Some(self.self_meta());
+        let target = self
+            .remote
+            .get_id_by_endpoint(endpoint)
+            .ok_or_else(|| format!("remote engine endpoint {} not found", endpoint))?;
+        args.meta = Some(self.self_meta(target));
         self.https_signed_rpc(endpoint, "tool_call", &(&args,))
             .await
     }
@@ -228,7 +231,7 @@ impl StateFeatures for BaseCtx {
         self.caller
     }
 
-    fn meta(&self) -> &Metadata {
+    fn meta(&self) -> &RequestMeta {
         &self.meta
     }
 
@@ -653,90 +656,4 @@ impl HttpFeatures for BaseCtx {
             .https_signed_rpc(endpoint, method, args)
             .await
     }
-}
-
-/// Trait combining Store and Cache features.
-#[async_trait]
-pub trait CacheStoreFeatures: StoreFeatures + CacheFeatures + Send + Sync + 'static {
-    /// Initializes a cache value from store if missing.
-    async fn cache_store_init<T, F>(&self, key: &str, init: F) -> Result<(), BoxError>
-    where
-        T: DeserializeOwned + Serialize + Send,
-        F: Future<Output = Result<T, BoxError>> + Send + 'static,
-    {
-        let p = Path::from(key);
-        match self.store_get(&p).await {
-            Ok((v, _)) => {
-                let val: T = from_reader(&v[..])?;
-                self.cache_set(key, (val, None)).await;
-                Ok(())
-            }
-            Err(_) => {
-                let val: T = init.await?;
-                self.cache_set(key, (val, None)).await;
-                Ok(())
-            }
-        }
-    }
-
-    /// Gets a value from cache.
-    async fn cache_store_get<T>(&self, key: &str) -> Result<T, BoxError>
-    where
-        T: DeserializeOwned,
-    {
-        self.cache_get(key).await
-    }
-
-    /// Sets a value in cache and store, without waiting for store completion.
-    async fn cache_store_set<T>(self, key: &str, val: T)
-    where
-        T: DeserializeOwned + Serialize + Send,
-    {
-        let data = to_cbor_bytes(&val);
-        self.cache_set(key, (val, None)).await;
-        let p = Path::from(key);
-        tokio::spawn(async move {
-            if self
-                .store_put(&p, PutMode::Overwrite, data.into())
-                .await
-                .is_ok()
-            {
-                if let Ok((val, _)) = self.store_get(&p).await {
-                    if let Ok(val) = from_reader::<T, _>(&val[..]) {
-                        self.cache_set(p.as_ref(), (val, None)).await;
-                    }
-                }
-            }
-        });
-    }
-
-    /// Sets a value in cache and store, waiting for store completion.
-    async fn cache_store_set_and_wait<T>(self, key: &str, val: T) -> Result<(), BoxError>
-    where
-        T: DeserializeOwned + Serialize + Send,
-    {
-        let data = to_cbor_bytes(&val);
-        self.cache_set(key, (val, None)).await;
-        let p = Path::from(key);
-        let _ = self.store_put(&p, PutMode::Overwrite, data.into()).await?;
-        let (val, _) = self.store_get(&p).await?;
-        let val: T = from_reader(&val[..])?;
-        self.cache_set(key, (val, None)).await;
-        Ok(())
-    }
-
-    /// Deletes a value from cache and store
-    async fn cache_store_delete(self, key: &str) -> Result<(), BoxError> {
-        self.cache_delete(key).await;
-        let p = Path::from(key);
-        self.store_delete(&p).await
-    }
-}
-
-/// Derives a derivation path with the given path and derivation path.
-pub fn derivation_path_with<'a>(path: &'a Path, derivation_path: &'a [&'a [u8]]) -> Vec<&'a [u8]> {
-    let mut dp = Vec::with_capacity(derivation_path.len() + 1);
-    dp.push(path.as_ref().as_bytes());
-    dp.extend(derivation_path);
-    dp
 }

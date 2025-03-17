@@ -41,7 +41,7 @@ pub struct AgentInput {
 
     /// The metadata for the agent request
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Metadata>,
+    pub meta: Option<RequestMeta>,
 }
 
 impl AgentInput {
@@ -103,7 +103,7 @@ pub struct ToolInput<T> {
 
     /// The metadata for the tool request.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Metadata>,
+    pub meta: Option<RequestMeta>,
 }
 
 impl<T> ToolInput<T> {
@@ -145,8 +145,11 @@ impl<T> ToolOutput<T> {
 
 /// Represents the metadata for an agent or tool request.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct Metadata {
-    /// The thread for the request. If not provided, a new thread will be created.
+pub struct RequestMeta {
+    /// The target engine principal for the request.
+    pub engine: Option<Principal>,
+
+    /// The target thread for the request. If not provided, a new thread will be created.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thread: Option<ThreadId>,
 

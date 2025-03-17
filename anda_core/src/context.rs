@@ -32,7 +32,10 @@
 //! Implement these traits to create custom execution contexts for Agents and Tools. The `anda_engine` [`context`](https://github.com/ldclabs/anda/blob/main/anda_engine/src/context/mod.rs) module provides.
 //! a complete implementation, but custom implementations can be created for specialized environments.
 
+use async_trait::async_trait;
 use bytes::Bytes;
+use ciborium::from_reader;
+use ic_cose_types::to_cbor_bytes;
 use serde::{Serialize, de::DeserializeOwned};
 use std::{future::Future, sync::Arc, time::Duration};
 
@@ -196,7 +199,7 @@ pub trait StateFeatures: Sized {
     fn caller(&self) -> Principal;
 
     /// Gets the matadata of the request。
-    fn meta(&self) -> &Metadata;
+    fn meta(&self) -> &RequestMeta;
 
     /// Gets the cancellation token for the current execution context.
     /// Each call level has its own token scope.
@@ -466,4 +469,99 @@ pub trait HttpFeatures: Sized {
     ) -> impl Future<Output = Result<T, BoxError>> + Send
     where
         T: DeserializeOwned;
+}
+
+/// CacheStoreFeatures combines Store and Cache features for efficient data management.
+#[async_trait]
+pub trait CacheStoreFeatures: StoreFeatures + CacheFeatures + Send + Sync + 'static {
+    /// Initializes a cache value from store if missing.
+    async fn cache_store_init<T, F>(&self, key: &str, init: F) -> Result<(), BoxError>
+    where
+        T: DeserializeOwned + Serialize + Send,
+        F: Future<Output = Result<T, BoxError>> + Send + 'static,
+    {
+        let p = Path::from(key);
+        match self.store_get(&p).await {
+            Ok((v, _)) => {
+                let val: T = from_reader(&v[..])?;
+                self.cache_set(key, (val, None)).await;
+                Ok(())
+            }
+            Err(_) => {
+                let val: T = init.await?;
+                self.cache_set(key, (val, None)).await;
+                Ok(())
+            }
+        }
+    }
+
+    /// Gets a value from cache, initializes from store if missing.
+    async fn cache_store_get<T>(&self, key: &str) -> Result<T, BoxError>
+    where
+        T: DeserializeOwned + Serialize + Send,
+    {
+        match self.cache_get(key).await {
+            Ok(val) => Ok(val),
+            Err(_) => {
+                let p = Path::from(key);
+                let (v, _) = self.store_get(&p).await?;
+                let val: T = from_reader(&v[..])?;
+                self.cache_set(key, (val, None)).await;
+                self.cache_get(key).await
+            }
+        }
+    }
+
+    /// Sets a value in cache and store, without waiting for store completion.
+    async fn cache_store_set<T>(self, key: &str, val: T)
+    where
+        T: DeserializeOwned + Serialize + Send,
+    {
+        let data = to_cbor_bytes(&val);
+        self.cache_set(key, (val, None)).await;
+        let p = Path::from(key);
+        tokio::spawn(async move {
+            if self
+                .store_put(&p, PutMode::Overwrite, data.into())
+                .await
+                .is_ok()
+            {
+                if let Ok((val, _)) = self.store_get(&p).await {
+                    if let Ok(val) = from_reader::<T, _>(&val[..]) {
+                        self.cache_set(p.as_ref(), (val, None)).await;
+                    }
+                }
+            }
+        });
+    }
+
+    /// Sets a value in cache and store, waiting for store completion.
+    async fn cache_store_set_and_wait<T>(&self, key: &str, val: T) -> Result<(), BoxError>
+    where
+        T: DeserializeOwned + Serialize + Send,
+    {
+        let data = to_cbor_bytes(&val);
+        self.cache_set(key, (val, None)).await;
+        let p = Path::from(key);
+        let _ = self.store_put(&p, PutMode::Overwrite, data.into()).await?;
+        let (val, _) = self.store_get(&p).await?;
+        let val: T = from_reader(&val[..])?;
+        self.cache_set(key, (val, None)).await;
+        Ok(())
+    }
+
+    /// Deletes a value from cache and store
+    async fn cache_store_delete(&self, key: &str) -> Result<(), BoxError> {
+        self.cache_delete(key).await;
+        let p = Path::from(key);
+        self.store_delete(&p).await
+    }
+}
+
+/// Derives a derivation path with the given path and derivation path.
+pub fn derivation_path_with<'a>(path: &'a Path, derivation_path: &'a [&'a [u8]]) -> Vec<&'a [u8]> {
+    let mut dp = Vec::with_capacity(derivation_path.len() + 1);
+    dp.push(path.as_ref().as_bytes());
+    dp.extend(derivation_path);
+    dp
 }

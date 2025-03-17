@@ -1,8 +1,8 @@
 use agent_twitter_client::scraper::Scraper;
-use anda_core::{BoxError, Path};
+use anda_core::{BoxError, Path, derivation_path_with};
 use anda_engine::{
     APP_USER_AGENT,
-    context::{TEEClient, Web3SDK, derivation_path_with},
+    context::{TEEClient, Web3SDK},
     engine::{Engine, EngineBuilder, ROOT_PATH},
     extension::{
         attention::Attention,

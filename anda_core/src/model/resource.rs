@@ -47,15 +47,14 @@ pub fn select_resources(resources: &mut Vec<Resource>, tags: &[&str]) -> Option<
         return Some(std::mem::take(resources));
     }
 
-    #[cfg(feature = "unstable")]
-    {
-        let res: Vec<Resource> = resources
-            .extract_if(.., |r| tags.contains(&r.tag.as_str()))
-            .collect();
-        if res.is_empty() { None } else { Some(res) }
-    }
+    // nightly feature:
+    // {
+    //     let res: Vec<Resource> = resources
+    //         .extract_if(.., |r| tags.contains(&r.tag.as_str()))
+    //         .collect();
+    //     if res.is_empty() { None } else { Some(res) }
+    // }
 
-    #[cfg(not(feature = "unstable"))]
     {
         let mut res = Vec::new();
         let mut i = 0;

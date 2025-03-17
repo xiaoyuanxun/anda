@@ -153,6 +153,16 @@ impl RemoteEngines {
         None
     }
 
+    /// Retrieves a remote engine ID by endpoint.
+    pub fn get_id_by_endpoint(&self, endpoint: &str) -> Option<Principal> {
+        for (_, engine) in self.engines.iter() {
+            if engine.endpoint == endpoint {
+                return Some(engine.id);
+            }
+        }
+        None
+    }
+
     /// Retrieves definitions for available tools in the remote engines.
     ///
     /// # Arguments
@@ -314,13 +324,15 @@ impl RemoteEngines {
 /// Wraps a remote tool as a local tool.
 #[derive(Debug, Clone)]
 pub struct RemoteTool {
-    name: String,
+    engine: Principal,
     endpoint: String,
     function: Function,
+    name: String,
 }
 
 impl RemoteTool {
     pub fn new(
+        engine: Principal,
         endpoint: String,
         function: Function,
         name: Option<String>,
@@ -333,9 +345,10 @@ impl RemoteTool {
         };
 
         Ok(Self {
-            name,
+            engine,
             endpoint,
             function,
+            name,
         })
     }
 }
@@ -374,7 +387,7 @@ impl Tool<BaseCtx> for RemoteTool {
                 name: self.function.definition.name.clone(),
                 args,
                 resources,
-                meta: Some(ctx.self_meta()),
+                meta: Some(ctx.self_meta(self.engine)),
             },
         )
         .await
@@ -384,13 +397,15 @@ impl Tool<BaseCtx> for RemoteTool {
 /// Wraps a remote agent as a local agent.
 #[derive(Debug, Clone)]
 pub struct RemoteAgent {
-    name: String,
+    engine: Principal,
     endpoint: String,
     function: Function,
+    name: String,
 }
 
 impl RemoteAgent {
     pub fn new(
+        engine: Principal,
         endpoint: String,
         function: Function,
         name: Option<String>,
@@ -403,9 +418,10 @@ impl RemoteAgent {
         };
 
         Ok(Self {
-            name,
+            engine,
             endpoint,
             function,
+            name,
         })
     }
 }
@@ -441,7 +457,7 @@ impl Agent<AgentCtx> for RemoteAgent {
                 name: self.function.definition.name.clone(),
                 prompt,
                 resources,
-                meta: Some(ctx.base.self_meta()),
+                meta: Some(ctx.base.self_meta(self.engine)),
             },
         )
         .await
