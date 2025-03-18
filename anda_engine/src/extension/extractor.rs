@@ -43,9 +43,9 @@
 
 use anda_core::{
     Agent, AgentOutput, BoxError, CompletionFeatures, CompletionRequest, FunctionDefinition,
-    Resource, Tool, ToolOutput, fix_json_schema,
+    Resource, Tool, ToolOutput, root_schema_for,
 };
-use schemars::{JsonSchema, schema_for};
+use schemars::JsonSchema;
 use serde_json::{Value, json};
 use std::marker::PhantomData;
 
@@ -83,8 +83,7 @@ where
     /// Automatically generates a JSON schema from the type `T` and
     /// uses the type's title (if available) as the tool name
     pub fn new() -> SubmitTool<T> {
-        let mut schema = schema_for!(T);
-        fix_json_schema(&mut schema);
+        let schema = root_schema_for::<T>();
         let name = schema
             .schema
             .metadata
@@ -275,7 +274,7 @@ mod tests {
         let s = serde_json::to_string(&definition).unwrap();
         println!("{}", s);
         // {"name":"submit_teststruct","description":"Submit the structured data you extracted from the provided text.","parameters":{"properties":{"age":{"format":"uint8","minimum":0.0,"type":["integer","null"]},"name":{"type":"string"}},"required":["name"],"title":"TestStruct","type":"object"},"strict":true}
-        assert!(s.contains(r#""required":["name"]"#));
+        assert!(s.contains(r#""required":["age","name"]"#));
         assert!(!s.contains("$schema"));
 
         let agent = Extractor::<TestStruct>::default();

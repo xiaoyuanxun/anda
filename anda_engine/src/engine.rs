@@ -44,14 +44,12 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     context::{AgentCtx, BaseCtx, Web3Client, Web3SDK},
-    management::Management,
+    management::{Management, SYSTEM_PATH, ThreadMetaTool},
     model::Model,
     store::Store,
 };
 
 pub use crate::context::{Information, InformationJSON, RemoteEngineArgs, RemoteEngines};
-
-pub static ROOT_PATH: &str = "_";
 
 /// Engine is the core component that manages agents, tools, and execution context.
 /// It provides methods to interact with agents, call tools, and manage execution.
@@ -259,7 +257,7 @@ impl Engine {
 
         let thread = self
             .management
-            .load_thread_meta(caller, &meta.thread)
+            .load_thread_meta(&caller, &meta.thread)
             .await?;
 
         meta.thread = Some(thread.id.clone());
@@ -381,7 +379,7 @@ impl EngineBuilder {
         EngineBuilder {
             id: Principal::anonymous(),
             name: "Anda".to_string(),
-            description: "Anda Engine".to_string(),
+            description: "".to_string(),
             tools: ToolSet::new(),
             agents: AgentSet::new(),
             remote: BTreeMap::new(),
@@ -562,7 +560,7 @@ impl EngineBuilder {
                     .map(|p| Path::from(format!("A:{}", p))),
             )
             .collect();
-        names.insert(Path::from(ROOT_PATH));
+        names.insert(Path::from(SYSTEM_PATH));
 
         let mut remote = RemoteEngines::new();
         for (_, engine) in self.remote {
@@ -580,6 +578,8 @@ impl EngineBuilder {
         );
         let management = Management::new(&ctx, self.controller);
         let management = Arc::new(management);
+        let thread_meta_tool = ThreadMetaTool::new(management.clone());
+        self.tools.add(thread_meta_tool)?;
 
         let tools = Arc::new(self.tools);
         let agents = Arc::new(self.agents);
@@ -625,7 +625,7 @@ impl EngineBuilder {
             .chain(self.agents.set.keys())
             .map(|s| Path::from(s.as_str()))
             .collect();
-        names.insert(Path::from(ROOT_PATH));
+        names.insert(Path::from(SYSTEM_PATH));
         let ctx = BaseCtx::new(
             anda_core::ANONYMOUS,
             "Mocker".to_string(),

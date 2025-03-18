@@ -3,13 +3,14 @@ use anda_core::{BoxError, Path, derivation_path_with};
 use anda_engine::{
     APP_USER_AGENT,
     context::{TEEClient, Web3SDK},
-    engine::{Engine, EngineBuilder, ROOT_PATH},
+    engine::{Engine, EngineBuilder},
     extension::{
         attention::Attention,
         character::{Character, CharacterAgent},
         google::GoogleSearchTool,
         segmenter::DocumentSegmenter,
     },
+    management::SYSTEM_PATH,
     model::{Model, cohere, deepseek, openai},
     store::{LocalFileSystem, ObjectStore, Store},
 };
@@ -239,7 +240,7 @@ async fn bootstrap_tee(
     let tee_info = tee.connect_tee(global_cancel_token.clone()).await?;
     log::info!("TEEAppInformation: {:?}", tee_info);
 
-    let root_path = Path::from(ROOT_PATH);
+    let root_path = Path::from(SYSTEM_PATH);
     let id_secret = tee
         .a256gcm_key(&derivation_path_with(
             &root_path,

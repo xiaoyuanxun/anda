@@ -3,9 +3,9 @@
 //! This module provides functionality for querying account balances on the ICP network.
 //! It implements the [`Tool`] trait to enable AI agents to interact with ICP ledgers.
 
-use anda_core::{BoxError, FunctionDefinition, Resource, Tool, ToolOutput, fix_json_schema};
+use anda_core::{BoxError, FunctionDefinition, Resource, Tool, ToolOutput, gen_schema_for};
 use anda_engine::context::BaseCtx;
-use schemars::{JsonSchema, schema_for};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -32,8 +32,7 @@ impl BalanceOfTool {
     pub const NAME: &'static str = "icp_ledger_balance_of";
     /// Creates a new BalanceOfTool instance
     pub fn new(ledgers: Arc<ICPLedgers>) -> Self {
-        let mut schema = schema_for!(BalanceOfArgs);
-        fix_json_schema(&mut schema);
+        let schema = gen_schema_for::<BalanceOfArgs>();
 
         BalanceOfTool {
             ledgers,

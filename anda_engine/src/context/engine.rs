@@ -163,6 +163,16 @@ impl RemoteEngines {
         None
     }
 
+    /// Retrieves a remote engine endpoint by ID.
+    pub fn get_endpoint_by_id(&self, id: &Principal) -> Option<String> {
+        for (_, engine) in self.engines.iter() {
+            if &engine.id == id {
+                return Some(engine.endpoint.clone());
+            }
+        }
+        None
+    }
+
     /// Retrieves definitions for available tools in the remote engines.
     ///
     /// # Arguments

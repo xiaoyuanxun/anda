@@ -28,12 +28,12 @@
 //! ```
 
 use anda_core::{
-    BoxError, FunctionDefinition, HttpFeatures, Resource, Tool, ToolOutput, fix_json_schema,
+    BoxError, FunctionDefinition, HttpFeatures, Resource, Tool, ToolOutput, gen_schema_for,
 };
 use http::header;
-use schemars::{JsonSchema, schema_for};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::Value;
 use url::Url;
 
 use crate::context::BaseCtx;
@@ -87,14 +87,13 @@ impl GoogleSearchTool {
     /// * `search_engine_id` - Custom Search Engine ID
     /// * `result_number` - Optional number of results to return (defaults to 5)
     pub fn new(api_key: String, search_engine_id: String, result_number: Option<u8>) -> Self {
-        let mut schema = schema_for!(SearchArgs);
-        fix_json_schema(&mut schema);
+        let schema = gen_schema_for::<SearchArgs>();
 
         GoogleSearchTool {
             api_key,
             search_engine_id,
             result_number: result_number.unwrap_or(5),
-            schema: json!(schema),
+            schema,
         }
     }
 

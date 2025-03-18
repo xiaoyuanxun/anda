@@ -8,13 +8,13 @@
 //! - Atomic transfers with proper error handling
 
 use anda_core::{
-    BoxError, FunctionDefinition, Resource, StateFeatures, Tool, ToolOutput, fix_json_schema,
+    BoxError, FunctionDefinition, Resource, StateFeatures, Tool, ToolOutput, gen_schema_for,
 };
 use anda_engine::context::BaseCtx;
 use num_traits::cast::ToPrimitive;
-use schemars::{JsonSchema, schema_for};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::sync::Arc;
 
 use super::ICPLedgers;
@@ -41,13 +41,9 @@ impl TransferTool {
     pub const NAME: &'static str = "icp_ledger_transfer";
 
     pub fn new(ledgers: Arc<ICPLedgers>) -> Self {
-        let mut schema = schema_for!(TransferToArgs);
-        fix_json_schema(&mut schema);
+        let schema = gen_schema_for::<TransferToArgs>();
 
-        TransferTool {
-            ledgers,
-            schema: json!(schema),
-        }
+        TransferTool { ledgers, schema }
     }
 }
 

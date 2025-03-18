@@ -399,17 +399,29 @@ impl AgentContext for AgentCtx {
         let output: AgentOutput = self
             .https_signed_rpc(endpoint, "agent_run", &(&args,))
             .await?;
-        if let Some(thread_id) = &meta.thread {
-            if let Some(child) = &output.thread {
+
+        if let Some(child) = &output.thread {
+            let mut update_my_threads = true;
+            if let Some(thread_id) = &meta.thread {
                 if thread_id != child {
                     let mut thread = self.management.get_thread_meta(thread_id).await?;
                     // Should overwrite the child thread if it exists.
                     // Because the child thread may be cleaned up by the remote engine.
                     thread.children.insert(target, child.clone());
                     self.management.save_thread_meta(thread).await?;
+                } else {
+                    update_my_threads = false;
+                }
+            }
+
+            if update_my_threads {
+                let mut my_threads = self.management.load_my_threads().await?;
+                if my_threads.add(target, child.clone()) {
+                    self.management.save_my_threads(my_threads).await?;
                 }
             }
         }
+
         Ok(output)
     }
 }

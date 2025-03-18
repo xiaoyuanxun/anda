@@ -489,7 +489,7 @@ pub trait CacheStoreFeatures: StoreFeatures + CacheFeatures + Send + Sync + 'sta
             }
             Err(_) => {
                 let val: T = init.await?;
-                self.cache_set(key, (val, None)).await;
+                self.cache_store_set_and_wait(key, val).await?;
                 Ok(())
             }
         }

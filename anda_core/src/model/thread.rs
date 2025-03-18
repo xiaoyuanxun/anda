@@ -85,8 +85,11 @@ pub struct ThreadMeta {
     /// The unique identifier for the thread.
     pub id: ThreadId,
 
-    /// The creator of the thread, typically the agent or user principal.
-    pub creator: Principal,
+    /// The principal of the agent that created and serve the thread.
+    pub agent: Principal,
+
+    /// The initiator of the thread, typically an agent or user principal.
+    pub initiator: Principal,
 
     /// The participants of the thread.
     pub participants: BTreeSet<Principal>,
@@ -98,10 +101,6 @@ pub struct ThreadMeta {
     /// The timestamp when the thread was last updated.
     pub updated_at: u64,
 
-    /// The principal of the agent that created the thread.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub agent: Option<Principal>,
-
     /// The parent thread of this thread.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent: Option<ThreadId>,
@@ -112,14 +111,14 @@ pub struct ThreadMeta {
 }
 
 impl ThreadMeta {
-    pub fn new(agent: Principal, creator: Principal, now_ms: u64) -> Self {
+    pub fn new(agent: Principal, initiator: Principal, now_ms: u64) -> Self {
         Self {
             id: ThreadId::new(),
-            creator,
+            agent,
+            initiator,
             participants: BTreeSet::new(),
             children: BTreeMap::new(),
             updated_at: now_ms,
-            agent: Some(agent),
             parent: None,
             description: None,
         }
@@ -127,6 +126,74 @@ impl ThreadMeta {
 
     /// Check if the given principal has permission to access the thread.
     pub fn has_permission(&self, id: &Principal) -> bool {
-        &self.creator == id || self.participants.contains(id)
+        &self.initiator == id || &self.agent == id || self.participants.contains(id)
+    }
+}
+
+/// Represents the threads that the agent is participating in.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct MyThreads {
+    pub id: Principal,
+
+    idx: u64,
+    agents: BTreeMap<Principal, u64>,
+    // The threads that the agent is participating in, ( thread_id, thread_agent idx ).
+    threads: BTreeMap<ThreadId, u64>,
+}
+
+impl MyThreads {
+    pub fn new(self_id: Principal) -> Self {
+        let mut agents = BTreeMap::new();
+        agents.insert(self_id, 0);
+        Self {
+            id: self_id,
+            idx: 1,
+            agents,
+            threads: BTreeMap::new(),
+        }
+    }
+
+    /// Returns then agent's ID that serves the thread.
+    pub fn get_agent_by(&self, id: &ThreadId) -> Option<&Principal> {
+        self.threads
+            .get(id)
+            .and_then(|idx| self.agents.iter().find(|(_, i)| i == &idx).map(|(a, _)| a))
+    }
+
+    pub fn agents_iter(&self) -> impl Iterator<Item = &Principal> {
+        self.agents.keys()
+    }
+
+    pub fn threads_iter(&self) -> impl Iterator<Item = &ThreadId> {
+        self.threads.keys()
+    }
+
+    /// Returns the threads served by the agent.
+    pub fn list_threads_by(&self, agent: &Principal) -> Option<Vec<ThreadId>> {
+        self.agents.get(agent).map(|idx| self.threads
+                    .iter()
+                    .filter_map(|(tid, i)| if idx == i { Some(tid.clone()) } else { None })
+                    .collect())
+    }
+
+    /// Adds a thread to the list of threads.
+    pub fn add(&mut self, agent: Principal, id: ThreadId) -> bool {
+        let idx = self.agents.entry(agent).or_insert(self.idx);
+        if idx == &self.idx {
+            self.idx += 1;
+        }
+        self.threads.insert(id, *idx).is_none()
+    }
+
+    /// Removes a thread from the list of threads.
+    pub fn remove_thread(&mut self, id: &ThreadId) -> bool {
+        self.threads.remove(id).is_some()
+    }
+
+    /// Removes all threads served by the agent.
+    pub fn remove_threads_by(&mut self, agent: &Principal) {
+        if let Some(idx) = self.agents.get(agent) {
+            self.threads.retain(|_, i| i != idx);
+        }
     }
 }

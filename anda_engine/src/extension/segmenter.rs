@@ -174,6 +174,7 @@ impl Agent<AgentCtx> for DocumentSegmenter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn test_definition() {
         let tool = SubmitTool::<SegmentOutput>::new();
