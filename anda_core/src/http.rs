@@ -22,7 +22,7 @@ use ciborium::from_reader;
 use http::header;
 use ic_cose_types::to_cbor_bytes;
 use reqwest::Client;
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_bytes::ByteBuf;
 use std::fmt::Display;
 
@@ -31,8 +31,23 @@ pub static CONTENT_TYPE_JSON: &str = "application/json";
 pub static CONTENT_TYPE_TEXT: &str = "text/plain";
 
 /// Represents an RPC request with method name and CBOR-encoded parameters.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RPCRequest {
+    /// The method name to call.
+    pub method: String,
+
+    /// CBOR-encoded parameters for the RPC call.
+    /// Parameters should be provided as a tuple, where each element represents a single argument.
+    /// Examples:
+    /// - `()`: No arguments;
+    /// - `(1,)`: Single argument;
+    /// - `(1, "hello", 3.14)`: Three arguments.
+    pub params: ByteBuf,
+}
+
+/// Represents an RPC request with method name and CBOR-encoded parameters.
 #[derive(Clone, Debug, Serialize)]
-pub struct RPCRequest<'a> {
+pub struct RPCRequestRef<'a> {
     /// The method name to call.
     pub method: &'a str,
     /// CBOR-encoded parameters for the RPC call.
@@ -46,7 +61,7 @@ pub struct RPCRequest<'a> {
 
 /// Represents a request to an ICP canister with canister ID, method name, and Candid-encoded parameters
 #[derive(Clone, Debug, Serialize)]
-pub struct CanisterRequest<'a> {
+pub struct CanisterRequestRef<'a> {
     /// The target canister's principal ID
     pub canister: &'a Principal,
     /// The method name to call on the canister
@@ -64,6 +79,25 @@ pub struct CanisterRequest<'a> {
 /// - Ok(ByteBuf): CBOR or Candid encoded successful response;
 /// - Err(String): Error message as a string.
 pub type RPCResponse = Result<ByteBuf, String>;
+
+// #[derive(Debug, Deserialize, Serialize)]
+// pub struct ListPagination {
+//     pub id: String,
+//     pub page_token: Option<String>,
+//     pub page_size: Option<u16>,
+// }
+
+/// Represents a list of objects with optional pagination information.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ListObject<T> {
+    pub data: Vec<T>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_size: Option<u64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_page_token: Option<String>,
+}
 
 /// Possible errors when working with http_rpc.
 #[derive(Debug, thiserror::Error)]
@@ -111,7 +145,7 @@ where
     T: DeserializeOwned,
 {
     let args = to_cbor_bytes(args);
-    let req = RPCRequest {
+    let req = RPCRequestRef {
         method,
         params: &args.into(),
     };
@@ -156,7 +190,7 @@ where
         endpoint,
         canister,
         None,
-        to_cbor_bytes(&CanisterRequest {
+        to_cbor_bytes(&CanisterRequestRef {
             canister,
             method,
             params: &ByteBuf::from(args),

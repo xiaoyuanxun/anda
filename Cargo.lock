@@ -169,7 +169,6 @@ dependencies = [
  "serde_bytes",
  "serde_json",
  "thiserror 2.0.12",
- "tokio",
  "tokio-util",
  "xid",
 ]

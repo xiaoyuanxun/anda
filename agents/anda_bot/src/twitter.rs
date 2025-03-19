@@ -54,7 +54,7 @@ impl TwitterDaemon {
             // load seen_tweet_ids from store
             ctx.cache_store_init("seen_tweet_ids", async { Ok(Vec::<String>::new()) })
                 .await?;
-            let ids: Vec<String> = ctx.cache_store_get("seen_tweet_ids").await?;
+            let (ids, _) = ctx.cache_store_get::<Vec<String>>("seen_tweet_ids").await?;
             log::info!("starting Twitter bot with {} seen tweets", ids.len());
         }
 
@@ -190,7 +190,7 @@ impl TwitterDaemon {
             },
         )?;
 
-        let mut seen_tweet_ids: Vec<String> = ctx.cache_store_get("seen_tweet_ids").await?;
+        let (mut seen_tweet_ids, _) = ctx.cache_store_get::<Vec<String>>("seen_tweet_ids").await?;
         if seen_tweet_ids.len() >= MAX_SEEN_TWEET_IDS {
             seen_tweet_ids.drain(0..MAX_SEEN_TWEET_IDS / 2);
         }
@@ -254,7 +254,9 @@ impl TwitterDaemon {
             sleep(Duration::from_secs(rand_number(3..=10))).await;
         }
 
-        ctx.cache_store_set("seen_tweet_ids", seen_tweet_ids).await;
+        let _ = ctx
+            .cache_store_set("seen_tweet_ids", seen_tweet_ids, None)
+            .await;
         log::info!(
             "home timeline: likes {}, replys {}, quotes {}",
             likes,
@@ -283,7 +285,7 @@ impl TwitterDaemon {
                 ..Default::default()
             },
         )?;
-        let mut seen_tweet_ids: Vec<String> = ctx.cache_store_get("seen_tweet_ids").await?;
+        let (mut seen_tweet_ids, _) = ctx.cache_store_get::<Vec<String>>("seen_tweet_ids").await?;
 
         if seen_tweet_ids.contains(&tweet_id) {
             return Ok(());
@@ -326,7 +328,8 @@ impl TwitterDaemon {
                 "handle mention");
         }
 
-        ctx.cache_store_set("seen_tweet_ids", seen_tweet_ids.clone())
+        let _ = ctx
+            .cache_store_set("seen_tweet_ids", seen_tweet_ids.clone(), None)
             .await;
 
         Ok(())

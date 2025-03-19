@@ -36,12 +36,12 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use ciborium::from_reader;
 use ic_cose_types::to_cbor_bytes;
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::{future::Future, sync::Arc, time::Duration};
 
 pub use candid::Principal;
-pub use ic_cose_types::CanisterCaller;
-pub use object_store::{ObjectMeta, PutMode, PutResult, path::Path};
+pub use ic_cose_types::{CanisterCaller, types::object_store::UpdateVersion};
+pub use object_store::{ObjectMeta, PutMode, PutResult, UpdateVersion as OsVersion, path::Path};
 pub use serde_json::Value;
 pub use tokio_util::sync::CancellationToken;
 
@@ -471,6 +471,9 @@ pub trait HttpFeatures: Sized {
         T: DeserializeOwned;
 }
 
+#[derive(Clone, Deserialize, Serialize)]
+struct CacheStoreValue<T>(T, UpdateVersion);
+
 /// CacheStoreFeatures combines Store and Cache features for efficient data management.
 #[async_trait]
 pub trait CacheStoreFeatures: StoreFeatures + CacheFeatures + Send + Sync + 'static {
@@ -482,78 +485,119 @@ pub trait CacheStoreFeatures: StoreFeatures + CacheFeatures + Send + Sync + 'sta
     {
         let p = Path::from(key);
         match self.store_get(&p).await {
-            Ok((v, _)) => {
+            Ok((v, meta)) => {
                 let val: T = from_reader(&v[..])?;
-                self.cache_set(key, (val, None)).await;
+                self.cache_set(
+                    key,
+                    (
+                        CacheStoreValue(
+                            val,
+                            UpdateVersion {
+                                e_tag: meta.e_tag,
+                                version: meta.version,
+                            },
+                        ),
+                        None,
+                    ),
+                )
+                .await;
                 Ok(())
             }
             Err(_) => {
                 let val: T = init.await?;
-                self.cache_store_set_and_wait(key, val).await?;
+                let data = to_cbor_bytes(&val);
+                let res = self.store_put(&p, PutMode::Create, data.into()).await?;
+                self.cache_set(
+                    key,
+                    (
+                        CacheStoreValue(
+                            val,
+                            UpdateVersion {
+                                e_tag: res.e_tag,
+                                version: res.version,
+                            },
+                        ),
+                        None,
+                    ),
+                )
+                .await;
                 Ok(())
             }
         }
     }
 
     /// Gets a value from cache, initializes from store if missing.
-    async fn cache_store_get<T>(&self, key: &str) -> Result<T, BoxError>
+    async fn cache_store_get<T>(&self, key: &str) -> Result<(T, UpdateVersion), BoxError>
     where
         T: DeserializeOwned + Serialize + Send,
     {
-        match self.cache_get(key).await {
-            Ok(val) => Ok(val),
+        match self.cache_get::<CacheStoreValue<T>>(key).await {
+            Ok(CacheStoreValue(val, ver)) => Ok((val, ver)),
             Err(_) => {
+                // fetch from store and set in cache
                 let p = Path::from(key);
-                let (v, _) = self.store_get(&p).await?;
+                let (v, meta) = self.store_get(&p).await?;
                 let val: T = from_reader(&v[..])?;
-                self.cache_set(key, (val, None)).await;
-                self.cache_get(key).await
+                let version = UpdateVersion {
+                    e_tag: meta.e_tag,
+                    version: meta.version,
+                };
+                self.cache_set(key, (CacheStoreValue(val, version.clone()), None))
+                    .await;
+                let val: T = from_reader(&v[..])?;
+                Ok((val, version))
             }
         }
     }
 
-    /// Sets a value in cache and store, without waiting for store completion.
-    async fn cache_store_set<T>(self, key: &str, val: T)
+    /// Sets a value to cache and persists it in store.
+    /// Optionally provides an update version for atomic updates.
+    async fn cache_store_set<T>(
+        &self,
+        key: &str,
+        val: T,
+        version: Option<UpdateVersion>,
+    ) -> Result<UpdateVersion, BoxError>
     where
         T: DeserializeOwned + Serialize + Send,
     {
         let data = to_cbor_bytes(&val);
-        self.cache_set(key, (val, None)).await;
         let p = Path::from(key);
-        tokio::spawn(async move {
-            if self
-                .store_put(&p, PutMode::Overwrite, data.into())
-                .await
-                .is_ok()
-            {
-                if let Ok((val, _)) = self.store_get(&p).await {
-                    if let Ok(val) = from_reader::<T, _>(&val[..]) {
-                        self.cache_set(p.as_ref(), (val, None)).await;
-                    }
-                }
-            }
-        });
-    }
-
-    /// Sets a value in cache and store, waiting for store completion.
-    async fn cache_store_set_and_wait<T>(&self, key: &str, val: T) -> Result<(), BoxError>
-    where
-        T: DeserializeOwned + Serialize + Send,
-    {
-        let data = to_cbor_bytes(&val);
-        self.cache_set(key, (val, None)).await;
-        let p = Path::from(key);
-        let _ = self.store_put(&p, PutMode::Overwrite, data.into()).await?;
-        let (val, _) = self.store_get(&p).await?;
-        let val: T = from_reader(&val[..])?;
-        self.cache_set(key, (val, None)).await;
-        Ok(())
+        if let Some(ver) = version {
+            // atomic update
+            let res = self
+                .store_put(
+                    &p,
+                    PutMode::Update(OsVersion {
+                        e_tag: ver.e_tag.clone(),
+                        version: ver.version.clone(),
+                    }),
+                    data.into(),
+                )
+                .await?;
+            // we can set the cache value after atomic update succeeded
+            let ver = UpdateVersion {
+                e_tag: res.e_tag,
+                version: res.version,
+            };
+            self.cache_set(key, (CacheStoreValue(val, ver.clone()), None))
+                .await;
+            Ok(ver)
+        } else {
+            let res = self.store_put(&p, PutMode::Overwrite, data.into()).await?;
+            // delete cache for fetching on next get
+            self.cache_delete(key).await;
+            Ok(UpdateVersion {
+                e_tag: res.e_tag,
+                version: res.version,
+            })
+        }
     }
 
     /// Deletes a value from cache and store
     async fn cache_store_delete(&self, key: &str) -> Result<(), BoxError> {
-        self.cache_delete(key).await;
         let p = Path::from(key);
+        self.cache_delete(key).await;
         self.store_delete(&p).await
     }
 }

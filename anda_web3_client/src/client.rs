@@ -1,4 +1,4 @@
-use anda_core::{BoxError, BoxPinFut, HttpFeatures, RPCRequest, cbor_rpc};
+use anda_core::{BoxError, BoxPinFut, HttpFeatures, RPCRequestRef, cbor_rpc};
 use anda_engine::context::Web3ClientFeatures;
 use candid::{
     CandidType, Decode, Principal,
@@ -494,7 +494,7 @@ impl Web3ClientFeatures for Client {
             )));
         }
 
-        let req = RPCRequest {
+        let req = RPCRequestRef {
             method: &method,
             params: &args.into(),
         };
@@ -598,7 +598,7 @@ impl HttpFeatures for Client {
             return Err("Invalid endpoint, must start with https://".into());
         }
         let args = to_cbor_bytes(&args);
-        let req = RPCRequest {
+        let req = RPCRequestRef {
             method,
             params: &args.into(),
         };

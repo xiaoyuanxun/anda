@@ -130,24 +130,24 @@ pub struct Document {
     pub text: String,
 
     /// Additional properties for the document.
-    pub additional_props: BTreeMap<String, String>,
+    pub metadata: BTreeMap<String, String>,
 }
 
 impl From<Knowledge> for Document {
     fn from(doc: Knowledge) -> Self {
-        let mut additional_props = BTreeMap::new();
-        additional_props.insert("user".to_string(), doc.user);
+        let mut metadata = BTreeMap::new();
+        metadata.insert("user".to_string(), doc.user);
 
         for (k, v) in doc.meta {
             if let Ok(v) = serde_json::to_string(&v) {
-                additional_props.insert(k, v);
+                metadata.insert(k, v);
             }
         }
 
         Document {
             id: doc.id,
             text: doc.text,
-            additional_props,
+            metadata,
         }
     }
 }
@@ -163,7 +163,7 @@ impl From<Vec<String>> for Documents {
             docs.push(Document {
                 id: format!("doc_{}", i),
                 text,
-                additional_props: BTreeMap::new(),
+                metadata: BTreeMap::new(),
             });
         }
         Self(docs)
@@ -205,9 +205,9 @@ impl AsRef<Vec<Document>> for Documents {
 impl std::fmt::Display for Document {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "<doc id={:?}>", self.id)?;
-        if !self.additional_props.is_empty() {
+        if !self.metadata.is_empty() {
             write!(f, "<meta ")?;
-            for (k, v) in &self.additional_props {
+            for (k, v) in &self.metadata {
                 write!(f, "{}={:?} ", k, v)?;
             }
             writeln!(f, "/>")?;
@@ -291,12 +291,12 @@ mod tests {
                 Document {
                     id: "1".to_string(),
                     text: "Test document 1.".to_string(),
-                    additional_props: BTreeMap::new(),
+                    metadata: BTreeMap::new(),
                 },
                 Document {
                     id: "2".to_string(),
                     text: "Test document 2.".to_string(),
-                    additional_props: BTreeMap::from([
+                    metadata: BTreeMap::from([
                         ("key".to_string(), "value".to_string()),
                         ("a".to_string(), "b".to_string()),
                     ]),

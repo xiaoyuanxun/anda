@@ -172,7 +172,7 @@ impl AgentContext for AgentCtx {
         names: Option<&[&str]>,
     ) -> Result<Vec<FunctionDefinition>, BoxError> {
         let mut defs = self.base.remote.tool_definitions(endpoint, names);
-        if let Ok(engines) = self
+        if let Ok((engines, _)) = self
             .cache_store_get::<RemoteEngines>(DYNAMIC_REMOTE_ENGINES)
             .await
         {
@@ -203,7 +203,7 @@ impl AgentContext for AgentCtx {
             return Some(res);
         }
 
-        if let Ok(engines) = self
+        if let Ok((engines, _)) = self
             .cache_store_get::<RemoteEngines>(DYNAMIC_REMOTE_ENGINES)
             .await
         {
@@ -253,7 +253,7 @@ impl AgentContext for AgentCtx {
         names: Option<&[&str]>,
     ) -> Result<Vec<FunctionDefinition>, BoxError> {
         let mut defs = self.base.remote.agent_definitions(endpoint, names);
-        if let Ok(engines) = self
+        if let Ok((engines, _)) = self
             .cache_store_get::<RemoteEngines>(DYNAMIC_REMOTE_ENGINES)
             .await
         {
@@ -287,7 +287,7 @@ impl AgentContext for AgentCtx {
             return Some(res);
         }
 
-        if let Ok(engines) = self
+        if let Ok((engines, _)) = self
             .cache_store_get::<RemoteEngines>(DYNAMIC_REMOTE_ENGINES)
             .await
         {
@@ -320,7 +320,7 @@ impl AgentContext for AgentCtx {
         }
 
         // find dynamic remote tool and call it
-        if let Ok(engines) = self
+        if let Ok((engines, _)) = self
             .cache_store_get::<RemoteEngines>(DYNAMIC_REMOTE_ENGINES)
             .await
         {
@@ -356,7 +356,7 @@ impl AgentContext for AgentCtx {
         }
 
         // find dynamic remote agent and run it
-        if let Ok(engines) = self
+        if let Ok((engines, _)) = self
             .cache_store_get::<RemoteEngines>(DYNAMIC_REMOTE_ENGINES)
             .await
         {

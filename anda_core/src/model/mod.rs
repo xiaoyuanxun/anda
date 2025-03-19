@@ -17,12 +17,14 @@ mod embedding;
 mod knowledge;
 mod resource;
 mod thread;
+mod xid;
 
 pub use completion::*;
 pub use embedding::*;
 pub use knowledge::*;
 pub use resource::*;
 pub use thread::*;
+pub use xid::*;
 
 pub const ANONYMOUS: Principal = Principal::anonymous();
 
@@ -67,7 +69,7 @@ pub struct AgentOutput {
 
     /// The unique identifier for the thread.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub thread: Option<ThreadId>,
+    pub thread: Option<Xid>,
 
     /// Indicates failure reason if present, None means successful execution.
     /// Should be None when finish_reason is "stop" or "tool_calls".
@@ -151,7 +153,7 @@ pub struct RequestMeta {
 
     /// The target thread for the request. If not provided, a new thread will be created.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub thread: Option<ThreadId>,
+    pub thread: Option<Xid>,
 
     /// Gets the username from request context.
     /// Note: This is not verified and should not be used as a trusted identifier.

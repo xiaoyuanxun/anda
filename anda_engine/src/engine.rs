@@ -40,11 +40,12 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
 };
+use structured_logger::unix_ms;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     context::{AgentCtx, BaseCtx, Web3Client, Web3SDK},
-    management::{Management, SYSTEM_PATH, ThreadMetaTool},
+    management::{Management, SYSTEM_PATH, ThreadMetaTool, UserState, UserStateTool},
     model::Model,
     store::Store,
 };
@@ -75,6 +76,7 @@ pub trait Hook: Send + Sync {
         &self,
         _ctx: &AgentCtx,
         _agent: &str,
+        _state: &mut UserState,
         _thread: &ThreadMeta,
     ) -> Result<(), BoxError> {
         Ok(())
@@ -91,7 +93,12 @@ pub trait Hook: Send + Sync {
     }
 
     /// Called before a tool is called.
-    async fn on_tool_start(&self, _ctx: &BaseCtx, _tool: &str) -> Result<(), BoxError> {
+    async fn on_tool_start(
+        &self,
+        _ctx: &BaseCtx,
+        _tool: &str,
+        _state: &mut UserState,
+    ) -> Result<(), BoxError> {
         Ok(())
     }
 
@@ -134,10 +141,11 @@ impl Hook for Hooks {
         &self,
         ctx: &AgentCtx,
         agent: &str,
+        state: &mut UserState,
         thread: &ThreadMeta,
     ) -> Result<(), BoxError> {
         for hook in &self.hooks {
-            hook.on_agent_start(ctx, agent, thread).await?;
+            hook.on_agent_start(ctx, agent, state, thread).await?;
         }
         Ok(())
     }
@@ -154,9 +162,14 @@ impl Hook for Hooks {
         Ok(output)
     }
 
-    async fn on_tool_start(&self, ctx: &BaseCtx, tool: &str) -> Result<(), BoxError> {
+    async fn on_tool_start(
+        &self,
+        ctx: &BaseCtx,
+        tool: &str,
+        state: &mut UserState,
+    ) -> Result<(), BoxError> {
         for hook in &self.hooks {
-            hook.on_tool_start(ctx, tool).await?;
+            hook.on_tool_start(ctx, tool, state).await?;
         }
         Ok(())
     }
@@ -262,9 +275,19 @@ impl Engine {
 
         meta.thread = Some(thread.id.clone());
         let ctx = self.ctx_with(caller, &input.name, meta.clone())?;
+        let mut state = self.management.load_user_state(&caller).await?;
+        if !state.has_permission(&caller, unix_ms()) {
+            return Err("caller does not have permission".into());
+        }
+
         self.hooks
-            .on_agent_start(&ctx, &input.name, &thread)
+            .on_agent_start(&ctx, &input.name, &mut state, &thread)
             .await?;
+
+        state.agent_requests = state.agent_requests.saturating_add(1);
+        state.last_access = unix_ms();
+        self.management.save_user_state(state).await?;
+
         // should save the thread meta before running the agent
         self.management.save_thread_meta(thread).await?;
 
@@ -303,9 +326,21 @@ impl Engine {
             .into());
         }
 
-        let ctx = self.ctx.child_base_with(caller, &input.name, meta)?;
-        self.hooks.on_tool_start(&ctx, &input.name).await?;
         let args = serde_json::to_string(&input.args)?;
+        let ctx = self.ctx.child_base_with(caller, &input.name, meta)?;
+        let mut state = self.management.load_user_state(&caller).await?;
+        if !state.has_permission(&caller, unix_ms()) {
+            return Err("caller does not have permission".into());
+        }
+
+        self.hooks
+            .on_tool_start(&ctx, &input.name, &mut state)
+            .await?;
+
+        state.tool_requests = state.tool_requests.saturating_add(1);
+        state.last_access = unix_ms();
+        self.management.save_user_state(state).await?;
+
         let output = tool.call(ctx.clone(), args, input.resources).await?;
         self.hooks.on_tool_end(&ctx, &input.name, output).await
     }
@@ -578,8 +613,12 @@ impl EngineBuilder {
         );
         let management = Management::new(&ctx, self.controller);
         let management = Arc::new(management);
+        let user_state_tool = UserStateTool::new(management.clone());
         let thread_meta_tool = ThreadMetaTool::new(management.clone());
+        self.tools.add(user_state_tool)?;
         self.tools.add(thread_meta_tool)?;
+        self.export_tools.insert(UserStateTool::NAME.to_string());
+        self.export_tools.insert(ThreadMetaTool::NAME.to_string());
 
         let tools = Arc::new(self.tools);
         let agents = Arc::new(self.agents);
