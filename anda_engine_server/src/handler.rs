@@ -1,5 +1,5 @@
 use anda_core::{AgentInput, ToolInput, Value};
-use anda_engine::engine::{Engine, Information, InformationJSON};
+use anda_engine::engine::{Engine, Information};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -59,7 +59,7 @@ pub async fn get_information(
 
     match Content::from(&headers) {
         Content::CBOR(_, _) => Content::CBOR(info, None).into_response(),
-        _ => Content::JSON(AppInformationJSON::from(info), None).into_response(),
+        _ => Content::JSON(info, None).into_response(),
     }
 }
 
@@ -86,7 +86,7 @@ pub async fn get_engine_information(
             let info = engine.information();
             match Content::from(&headers) {
                 Content::CBOR(_, _) => Content::CBOR(info, None).into_response(),
-                _ => Content::JSON(InformationJSON::from(info), None).into_response(),
+                _ => Content::JSON(info, None).into_response(),
             }
         }
         None => (
@@ -116,11 +116,9 @@ pub async fn anda_engine(
             .into_response();
     };
 
-    let (req, hash) = match ct {
+    let (req, hash) = match &ct {
         ContentWithSHA3::CBOR(req, hash) => (req, hash),
-        ContentWithSHA3::JSON(_, _) => {
-            return StatusCode::UNSUPPORTED_MEDIA_TYPE.into_response();
-        }
+        ContentWithSHA3::JSON(req, hash) => (req, hash),
     };
 
     let caller = if let Some(se) = SignedEnvelope::try_from(&headers) {
@@ -138,8 +136,11 @@ pub async fn anda_engine(
         caller = caller.to_text();
         "anda_engine",
     );
-    let res = engine_run(&req, &app, caller, id).await;
-    Content::CBOR(res, None).into_response()
+    let res = engine_run(req, &app, caller, id).await;
+    match &ct {
+        ContentWithSHA3::CBOR(_, _) => Content::CBOR(res, None).into_response(),
+        ContentWithSHA3::JSON(_, _) => Content::JSON(res, None).into_response(),
+    }
 }
 
 async fn engine_run(

@@ -26,30 +26,6 @@ pub struct Information {
     pub endpoint: String,
 }
 
-/// Information about the engine in JSON format.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct InformationJSON {
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    pub agents: Vec<Function>,
-    pub tools: Vec<Function>,
-    pub endpoint: String,
-}
-
-impl From<Information> for InformationJSON {
-    fn from(info: Information) -> Self {
-        InformationJSON {
-            id: info.id.to_text(),
-            name: info.name,
-            description: info.description,
-            agents: info.agents,
-            tools: info.tools,
-            endpoint: info.endpoint,
-        }
-    }
-}
-
 /// Collection of remote engines.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RemoteEngines {

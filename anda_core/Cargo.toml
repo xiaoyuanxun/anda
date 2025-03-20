@@ -21,11 +21,11 @@ serde_bytes = { workspace = true }
 http = { workspace = true }
 thiserror = { workspace = true }
 object_store = { workspace = true }
+ic_auth_types = { workspace = true }
 ic_cose_types = { workspace = true }
 tokio-util = { workspace = true }
 reqwest = { workspace = true }
 schemars = { workspace = true }
-xid = { workspace = true }
+xid = { workspace = true, optional = true }
 
-[features]
-unstable = []
+[dev-dependencies]

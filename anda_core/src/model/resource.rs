@@ -1,8 +1,10 @@
+use candid::CandidType;
 use serde::{Deserialize, Serialize};
-use serde_bytes::{ByteArray, ByteBuf};
+
+use super::{ByteArrayB64, ByteBufB64};
 
 /// Represents a resource that can be sent to agents or tools.
-#[derive(Debug, Default, Serialize, Deserialize, Clone)]
+#[derive(Debug, Default, CandidType, Serialize, Deserialize, Clone)]
 pub struct Resource {
     /// A tag that identifies the type of this resource.
     pub tag: String,
@@ -26,7 +28,7 @@ pub struct Resource {
 
     /// The binary data of this resource.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub blob: Option<ByteBuf>,
+    pub blob: Option<ByteBufB64>,
 
     /// The size of the resource in bytes.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -34,7 +36,7 @@ pub struct Resource {
 
     /// The SHA3-256 hash of the resource.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub hash: Option<ByteArray<32>>,
+    pub hash: Option<ByteArrayB64<32>>,
 }
 
 /// Extracts resources with the given tags from the list of resources.

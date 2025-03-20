@@ -1,6 +1,6 @@
 use anda_core::{AgentInput, AgentOutput, BoxError, HttpFeatures, ToolInput, ToolOutput};
 use anda_web3_client::client::{Client as Web3Client, load_identity};
-use base64::{Engine, prelude::BASE64_URL_SAFE_NO_PAD};
+use base64::{Engine, prelude::BASE64_URL_SAFE};
 use ciborium::value::Value;
 use clap::{Parser, Subcommand};
 use rand::{RngCore, thread_rng};
@@ -96,7 +96,7 @@ async fn main() -> Result<(), BoxError> {
                     println!("{}", const_hex::encode(&bytes));
                 }
                 "base64" => {
-                    println!("{}", BASE64_URL_SAFE_NO_PAD.encode(&bytes));
+                    println!("{}", BASE64_URL_SAFE.encode(&bytes));
                 }
                 _ => {
                     println!("{:?}", bytes);

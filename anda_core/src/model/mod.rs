@@ -12,19 +12,19 @@ use candid::Principal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub use ic_auth_types::{ByteArrayB64, ByteBufB64, Xid};
+
 mod completion;
 mod embedding;
 mod knowledge;
 mod resource;
 mod thread;
-mod xid;
 
 pub use completion::*;
 pub use embedding::*;
 pub use knowledge::*;
 pub use resource::*;
 pub use thread::*;
-pub use xid::*;
 
 pub const ANONYMOUS: Principal = Principal::anonymous();
 

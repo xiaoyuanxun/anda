@@ -75,10 +75,13 @@ impl Management {
         Ok(val)
     }
 
-    pub(crate) async fn load_user_state(&self, user: &Principal) -> Result<UserState, BoxError> {
+    pub(crate) async fn load_user_state(
+        &self,
+        user: &Principal,
+    ) -> Result<UserStateWrapper, BoxError> {
         match self.get_user_state(user).await {
-            Ok(state) => Ok(state),
-            Err(_) => Ok(UserState::new(*user)),
+            Ok(state) => Ok(UserStateWrapper { state }),
+            Err(_) => Ok(UserStateWrapper::new(*user)),
         }
     }
 
@@ -115,7 +118,7 @@ impl Management {
     ) -> Result<ThreadMeta, BoxError> {
         match thread_id {
             // Create a new thread if the thread_id is not provided.
-            None => Ok(ThreadMeta::new(self.ctx.id, *caller, unix_ms())),
+            None => Ok(ThreadMeta::new(Xid::new(), self.ctx.id, *caller, unix_ms())),
             Some(id) => {
                 match self.get_thread_meta(id).await {
                     Ok(thread) => {
@@ -161,7 +164,8 @@ impl Management {
                         }
 
                         // Create a new thread with parent if the thread does not exist.
-                        let mut thread = ThreadMeta::new(self.ctx.id, *caller, unix_ms());
+                        let mut thread =
+                            ThreadMeta::new(Xid::new(), self.ctx.id, *caller, unix_ms());
                         thread.parent = Some(id.to_owned());
                         Ok(thread)
                     }

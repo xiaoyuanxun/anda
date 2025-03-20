@@ -35,9 +35,9 @@ pub struct ThreadMessage {
 }
 
 impl ThreadMessage {
-    pub fn new(msg: Message) -> Self {
+    pub fn new(id: Xid, msg: Message) -> Self {
         Self {
-            id: Xid::new(),
+            id,
             role: msg.role,
             content: msg.content,
             name: msg.name,
@@ -81,9 +81,9 @@ pub struct ThreadMeta {
 }
 
 impl ThreadMeta {
-    pub fn new(agent: Principal, initiator: Principal, now_ms: u64) -> Self {
+    pub fn new(id: Xid, agent: Principal, initiator: Principal, now_ms: u64) -> Self {
         Self {
-            id: Xid::new(),
+            id,
             agent,
             initiator,
             participants: BTreeSet::new(),

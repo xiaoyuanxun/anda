@@ -45,12 +45,12 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     context::{AgentCtx, BaseCtx, Web3Client, Web3SDK},
-    management::{Management, SYSTEM_PATH, ThreadMetaTool, UserState, UserStateTool},
+    management::{Management, SYSTEM_PATH, ThreadMetaTool, UserStateTool, UserStateWrapper},
     model::Model,
     store::Store,
 };
 
-pub use crate::context::{Information, InformationJSON, RemoteEngineArgs, RemoteEngines};
+pub use crate::context::{Information, RemoteEngineArgs, RemoteEngines};
 
 /// Engine is the core component that manages agents, tools, and execution context.
 /// It provides methods to interact with agents, call tools, and manage execution.
@@ -76,7 +76,7 @@ pub trait Hook: Send + Sync {
         &self,
         _ctx: &AgentCtx,
         _agent: &str,
-        _state: &mut UserState,
+        _state: &mut UserStateWrapper,
         _thread: &ThreadMeta,
     ) -> Result<(), BoxError> {
         Ok(())
@@ -97,7 +97,7 @@ pub trait Hook: Send + Sync {
         &self,
         _ctx: &BaseCtx,
         _tool: &str,
-        _state: &mut UserState,
+        _state: &mut UserStateWrapper,
     ) -> Result<(), BoxError> {
         Ok(())
     }
@@ -141,7 +141,7 @@ impl Hook for Hooks {
         &self,
         ctx: &AgentCtx,
         agent: &str,
-        state: &mut UserState,
+        state: &mut UserStateWrapper,
         thread: &ThreadMeta,
     ) -> Result<(), BoxError> {
         for hook in &self.hooks {
@@ -166,7 +166,7 @@ impl Hook for Hooks {
         &self,
         ctx: &BaseCtx,
         tool: &str,
-        state: &mut UserState,
+        state: &mut UserStateWrapper,
     ) -> Result<(), BoxError> {
         for hook in &self.hooks {
             hook.on_tool_start(ctx, tool, state).await?;
@@ -275,18 +275,18 @@ impl Engine {
 
         meta.thread = Some(thread.id.clone());
         let ctx = self.ctx_with(caller, &input.name, meta.clone())?;
-        let mut state = self.management.load_user_state(&caller).await?;
-        if !state.has_permission(&caller, unix_ms()) {
+        let mut w = self.management.load_user_state(&caller).await?;
+        if !w.has_permission(&caller, unix_ms()) {
             return Err("caller does not have permission".into());
         }
 
         self.hooks
-            .on_agent_start(&ctx, &input.name, &mut state, &thread)
+            .on_agent_start(&ctx, &input.name, &mut w, &thread)
             .await?;
 
-        state.agent_requests = state.agent_requests.saturating_add(1);
-        state.last_access = unix_ms();
-        self.management.save_user_state(state).await?;
+        w.state.agent_requests = w.state.agent_requests.saturating_add(1);
+        w.state.last_access = unix_ms();
+        self.management.save_user_state(w.state).await?;
 
         // should save the thread meta before running the agent
         self.management.save_thread_meta(thread).await?;
@@ -328,18 +328,16 @@ impl Engine {
 
         let args = serde_json::to_string(&input.args)?;
         let ctx = self.ctx.child_base_with(caller, &input.name, meta)?;
-        let mut state = self.management.load_user_state(&caller).await?;
-        if !state.has_permission(&caller, unix_ms()) {
+        let mut w = self.management.load_user_state(&caller).await?;
+        if !w.has_permission(&caller, unix_ms()) {
             return Err("caller does not have permission".into());
         }
 
-        self.hooks
-            .on_tool_start(&ctx, &input.name, &mut state)
-            .await?;
+        self.hooks.on_tool_start(&ctx, &input.name, &mut w).await?;
 
-        state.tool_requests = state.tool_requests.saturating_add(1);
-        state.last_access = unix_ms();
-        self.management.save_user_state(state).await?;
+        w.state.tool_requests = w.state.tool_requests.saturating_add(1);
+        w.state.last_access = unix_ms();
+        self.management.save_user_state(w.state).await?;
 
         let output = tool.call(ctx.clone(), args, input.resources).await?;
         self.hooks.on_tool_end(&ctx, &input.name, output).await

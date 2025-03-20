@@ -2,7 +2,7 @@ use anda_core::{
     BoxError, FunctionDefinition, Resource, StateFeatures, Tool, ToolOutput, UpdateVersion, Value,
     gen_schema_for,
 };
-use candid::Principal;
+use candid::{CandidType, Principal};
 use ic_cose_types::ANONYMOUS;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -13,93 +13,100 @@ use super::Management;
 use crate::context::BaseCtx;
 
 /// Represents a state for a user to access the engine.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, CandidType, Deserialize, Serialize, PartialEq, Eq)]
 pub struct UserState {
-    pub(crate) user: Principal,
+    pub user: Principal,
 
     /// The status of the user, -2: banned, -1: suspended, 0: active.
-    pub(crate) status: i8,
+    pub status: i8,
 
     /// The subscription tier of the user. 0: free, 1: premium, 2: enterprise.
-    pub(crate) subscription_tier: u8,
+    pub subscription_tier: u8,
 
     /// The Unix timestamp when the subscription expires, in milliseconds.
-    pub(crate) subscription_expiry: u64,
+    pub subscription_expiry: u64,
 
     /// The credit balance of the user.
-    pub(crate) credit_balance: u64,
+    pub credit_balance: u64,
 
     /// The Unix timestamp when the credit expires, in milliseconds.
-    pub(crate) credit_expiry: u64,
+    pub credit_expiry: u64,
 
     /// The set of features that the user has access to.
-    pub(crate) features: BTreeSet<String>,
+    pub features: BTreeSet<String>,
 
     /// The Unix timestamp when the user was last accessed, in milliseconds.
-    pub(crate) last_access: u64,
+    pub last_access: u64,
 
     /// The number of agent requests made by the user.
-    pub(crate) agent_requests: u64,
+    pub agent_requests: u64,
 
     /// The number of tool requests made by the user.
-    pub(crate) tool_requests: u64,
+    pub tool_requests: u64,
 
     /// The number of credit consumed by the user.
-    pub(crate) credit_consumed: u64,
+    pub credit_consumed: u64,
 
-    pub(crate) version: Option<UpdateVersion>,
+    pub version: Option<UpdateVersion>,
 }
 
-impl UserState {
+#[derive(Debug, Clone)]
+pub struct UserStateWrapper {
+    pub(crate) state: UserState,
+}
+
+impl UserStateWrapper {
     pub fn new(user: Principal) -> Self {
         Self {
-            user,
-            status: 0,
-            subscription_tier: 0,
-            subscription_expiry: 0,
-            credit_balance: 0,
-            credit_expiry: 0,
-            features: BTreeSet::new(),
-            last_access: 0,
-            agent_requests: 0,
-            tool_requests: 0,
-            credit_consumed: 0,
-            version: None,
+            state: UserState {
+                user,
+                status: 0,
+                subscription_tier: 0,
+                subscription_expiry: 0,
+                credit_balance: 0,
+                credit_expiry: 0,
+                features: BTreeSet::new(),
+                last_access: 0,
+                agent_requests: 0,
+                tool_requests: 0,
+                credit_consumed: 0,
+                version: None,
+            },
         }
     }
 
     /// Returns the user ID.
     pub fn user(&self) -> &Principal {
-        &self.user
+        &self.state.user
     }
 
     /// Returns the subscription tier and expiry.
     pub fn subscription(&self) -> (u8, u64) {
-        (self.subscription_tier, self.subscription_expiry)
+        (self.state.subscription_tier, self.state.subscription_expiry)
     }
 
     /// Returns the credit balance and expiry.
     pub fn credit(&self) -> (u64, u64) {
-        (self.credit_balance, self.credit_expiry)
+        (self.state.credit_balance, self.state.credit_expiry)
     }
 
     /// Returns the features of the user.
     pub fn features(&self) -> &BTreeSet<String> {
-        &self.features
+        &self.state.features
     }
 
     /// Checks if the user has permission to access the engine.
     pub fn has_permission(&self, caller: &Principal, now_ms: u64) -> bool {
-        &self.user == caller
-            && self.status >= 0
-            && (self.subscription_expiry > now_ms
-                || (self.credit_expiry > now_ms && self.credit_balance > 0))
+        &self.state.user == caller
+            && self.state.status >= 0
+            && (self.state.subscription_expiry > now_ms
+                || (self.state.credit_expiry > now_ms && self.state.credit_balance > 0))
     }
 
     /// Consumes the credit from the user.
     pub fn consume_credit(&mut self, credit: u64, now_ms: u64) -> bool {
-        if self.credit_expiry > now_ms && self.credit_balance >= credit {
-            self.credit_balance -= credit;
+        if self.state.credit_expiry > now_ms && self.state.credit_balance >= credit {
+            self.state.credit_balance -= credit;
             true
         } else {
             false
@@ -108,24 +115,24 @@ impl UserState {
 
     /// Topup the credit balance for the user.
     pub(crate) fn topup_credit(&mut self, credit: u64, expiry_ms: u64) {
-        self.credit_balance = self.credit_balance.saturating_add(credit);
-        self.credit_expiry = expiry_ms;
+        self.state.credit_balance = self.state.credit_balance.saturating_add(credit);
+        self.state.credit_expiry = expiry_ms;
     }
 
     /// Updates the subscription tier and expiry for the user.
     pub(crate) fn update_subscription(&mut self, tier: u8, expiry_ms: u64) {
-        self.subscription_tier = tier;
-        self.subscription_expiry = expiry_ms;
+        self.state.subscription_tier = tier;
+        self.state.subscription_expiry = expiry_ms;
     }
 
     /// Updates the features for the user.
     pub(crate) fn update_features(&mut self, features: BTreeSet<String>) {
-        self.features = features;
+        self.state.features = features;
     }
 
     /// Updates the status for the user.
     pub(crate) fn update_status(&mut self, status: i8) {
-        self.status = status;
+        self.state.status = status;
     }
 }
 
@@ -235,11 +242,11 @@ impl Tool<BaseCtx> for UserStateTool {
                 }
 
                 if self.management.is_manager(&caller) {
-                    let mut state = self.management.load_user_state(&user).await?;
-                    state.topup_credit(credit, expiry);
-                    let res = self.management.save_user_state(state.clone()).await?;
-                    state.version = Some(res);
-                    Ok(ToolOutput::new(Some(state)))
+                    let mut w = self.management.load_user_state(&user).await?;
+                    w.topup_credit(credit, expiry);
+                    let res = self.management.save_user_state(w.state.clone()).await?;
+                    w.state.version = Some(res);
+                    Ok(ToolOutput::new(Some(w.state)))
                 } else {
                     Err("caller does not have permission".into())
                 }
@@ -256,11 +263,11 @@ impl Tool<BaseCtx> for UserStateTool {
                 }
 
                 if self.management.is_manager(&caller) {
-                    let mut state = self.management.load_user_state(&user).await?;
-                    state.update_subscription(tier, expiry);
-                    let res = self.management.save_user_state(state.clone()).await?;
-                    state.version = Some(res);
-                    Ok(ToolOutput::new(Some(state)))
+                    let mut w = self.management.load_user_state(&user).await?;
+                    w.update_subscription(tier, expiry);
+                    let res = self.management.save_user_state(w.state.clone()).await?;
+                    w.state.version = Some(res);
+                    Ok(ToolOutput::new(Some(w.state)))
                 } else {
                     Err("caller does not have permission".into())
                 }
@@ -270,11 +277,11 @@ impl Tool<BaseCtx> for UserStateTool {
                 let user = Principal::from_text(&user)?;
 
                 if self.management.is_manager(&caller) {
-                    let mut state = self.management.load_user_state(&user).await?;
-                    state.update_features(features);
-                    let res = self.management.save_user_state(state.clone()).await?;
-                    state.version = Some(res);
-                    Ok(ToolOutput::new(Some(state)))
+                    let mut w = self.management.load_user_state(&user).await?;
+                    w.update_features(features);
+                    let res = self.management.save_user_state(w.state.clone()).await?;
+                    w.state.version = Some(res);
+                    Ok(ToolOutput::new(Some(w.state)))
                 } else {
                     Err("caller does not have permission".into())
                 }
@@ -282,16 +289,16 @@ impl Tool<BaseCtx> for UserStateTool {
 
             UserStateToolArgs::UpdateStatus { user, status } => {
                 let user = Principal::from_text(&user)?;
-                if status < -2 || status > 0 {
+                if !(-2..=0).contains(&status) {
                     return Err(format!("invalid status {status}").into());
                 }
 
                 if self.management.is_manager(&caller) {
-                    let mut state = self.management.load_user_state(&user).await?;
-                    state.update_status(status);
-                    let res = self.management.save_user_state(state.clone()).await?;
-                    state.version = Some(res);
-                    Ok(ToolOutput::new(Some(state)))
+                    let mut w = self.management.load_user_state(&user).await?;
+                    w.update_status(status);
+                    let res = self.management.save_user_state(w.state.clone()).await?;
+                    w.state.version = Some(res);
+                    Ok(ToolOutput::new(Some(w.state)))
                 } else {
                     Err("caller does not have permission".into())
                 }
