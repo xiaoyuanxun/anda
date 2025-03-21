@@ -1,6 +1,6 @@
 use anda_core::{
-    BaseContext, BoxError, CacheStoreFeatures, MyThreads, RequestMeta, ThreadMeta, ToolInput,
-    UpdateVersion, Xid,
+    ANONYMOUS, BaseContext, BoxError, CacheStoreFeatures, MyThreads, RequestMeta, ThreadMeta,
+    ToolInput, UpdateVersion, Xid,
 };
 use candid::Principal;
 use serde_json::json;
@@ -17,16 +17,58 @@ pub use thread::*;
 
 pub static SYSTEM_PATH: &str = "_";
 
+#[derive(Clone)]
 /// Represents system management tools for the Anda engine.
 pub struct Management {
     ctx: BaseCtx,
     controller: Principal,
     managers: BTreeSet<Principal>,
+    visibility: Visibility, // 0: private, 1: protected, 2: public
 }
 
-impl Management {
-    pub(crate) fn new(ctx: &BaseCtx, controller: Principal) -> Self {
+/// The visibility of the engine.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Visibility {
+    /// private, can only be accessed by the controller and managers;
+    Private = 0,
+
+    /// protected, can be accessed by the controller, managers, and users who have permission;
+    Protected = 1,
+
+    /// public, can be accessed by anyone.
+    Public = 2,
+}
+
+#[derive(Clone)]
+/// Builder for creating a new management instance.
+pub struct ManagementBuilder {
+    /// The visibility of the engine.
+    pub(crate) visibility: Visibility,
+
+    /// The controller of the engine.
+    pub(crate) controller: Principal,
+
+    /// The managers of the engine.
+    pub(crate) managers: BTreeSet<Principal>,
+}
+
+impl ManagementBuilder {
+    pub fn new(visibility: Visibility, controller: Principal) -> Self {
         Self {
+            controller,
+            managers: BTreeSet::new(),
+            visibility,
+        }
+    }
+
+    /// Sets the managers for the engine.
+    pub fn with_managers(mut self, managers: BTreeSet<Principal>) -> Self {
+        self.managers = managers;
+        self
+    }
+
+    pub fn build(self, ctx: &BaseCtx) -> Management {
+        Management {
             ctx: ctx
                 .child_with(
                     ctx.id,
@@ -38,11 +80,14 @@ impl Management {
                     },
                 )
                 .expect("failed to create system context"),
-            controller,
-            managers: BTreeSet::new(),
+            controller: self.controller,
+            managers: self.managers,
+            visibility: self.visibility,
         }
     }
+}
 
+impl Management {
     fn user_state_path(user_id: &Principal) -> String {
         format!("US_{}.cbor", user_id.to_text())
     }
@@ -65,6 +110,18 @@ impl Management {
         caller == &self.controller || self.managers.contains(caller)
     }
 
+    pub fn try_get_visibility(&self, caller: &Principal) -> Result<Visibility, BoxError> {
+        if self.visibility != Visibility::Public && caller == &ANONYMOUS {
+            return Err("anonymous caller not allowed".into());
+        }
+
+        if self.visibility == Visibility::Private && !self.is_manager(caller) {
+            return Err("caller is not allowed".into());
+        }
+
+        Ok(self.visibility)
+    }
+
     /// Retrieves the user state from the cache store.
     /// It does not check the permission of the caller for the thread.
     pub async fn get_user_state(&self, user: &Principal) -> Result<UserState, BoxError> {
@@ -75,6 +132,7 @@ impl Management {
         Ok(val)
     }
 
+    /// Loads the user state from the cache store. If the user state does not exist, a new user state will be created.
     pub(crate) async fn load_user_state(
         &self,
         user: &Principal,
@@ -85,6 +143,7 @@ impl Management {
         }
     }
 
+    /// Saves the user state to the cache store.
     pub(crate) async fn save_user_state(
         &self,
         state: UserState,
@@ -94,6 +153,7 @@ impl Management {
         self.ctx.cache_store_set(&state_key, state, ver).await
     }
 
+    /// Deletes the user state from the cache store.
     pub(crate) async fn delete_user_state(&self, user: &Principal) -> Result<(), BoxError> {
         let state_key = Self::user_state_path(user);
         self.ctx.cache_store_delete(&state_key).await

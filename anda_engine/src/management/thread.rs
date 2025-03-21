@@ -148,13 +148,17 @@ impl Tool<BaseCtx> for ThreadMetaTool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::EngineBuilder;
+    use crate::{
+        engine::EngineBuilder,
+        management::{ManagementBuilder, Visibility},
+    };
 
     #[tokio::test]
     async fn test_thread_meta_tool() {
         let engine = EngineBuilder::new();
         let ctx = engine.mock_ctx();
-        let management = Arc::new(Management::new(&ctx.base, ctx.id()));
+        let management =
+            Arc::new(ManagementBuilder::new(Visibility::Protected, ctx.id()).build(&ctx.base));
 
         let tool = ThreadMetaTool::new(management);
         let definition = tool.definition();

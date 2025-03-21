@@ -30,8 +30,8 @@
 //! ```
 
 use anda_core::{
-    Agent, AgentInput, AgentOutput, AgentSet, BoxError, Function, Path, RequestMeta, ThreadMeta,
-    Tool, ToolInput, ToolOutput, ToolSet, Value, validate_function_name,
+    ANONYMOUS, Agent, AgentInput, AgentOutput, AgentSet, BoxError, Function, Path, RequestMeta,
+    ThreadMeta, Tool, ToolInput, ToolOutput, ToolSet, Value, validate_function_name,
 };
 use async_trait::async_trait;
 use candid::Principal;
@@ -50,7 +50,10 @@ use crate::{
     store::Store,
 };
 
-pub use crate::context::{Information, RemoteEngineArgs, RemoteEngines};
+pub use crate::{
+    context::{Information, RemoteEngineArgs, RemoteEngines},
+    management::{ManagementBuilder, Visibility},
+};
 
 /// Engine is the core component that manages agents, tools, and execution context.
 /// It provides methods to interact with agents, call tools, and manage execution.
@@ -76,8 +79,8 @@ pub trait Hook: Send + Sync {
         &self,
         _ctx: &AgentCtx,
         _agent: &str,
-        _state: &mut UserStateWrapper,
         _thread: &ThreadMeta,
+        _state: &mut UserStateWrapper,
     ) -> Result<(), BoxError> {
         Ok(())
     }
@@ -141,11 +144,11 @@ impl Hook for Hooks {
         &self,
         ctx: &AgentCtx,
         agent: &str,
-        state: &mut UserStateWrapper,
         thread: &ThreadMeta,
+        state: &mut UserStateWrapper,
     ) -> Result<(), BoxError> {
         for hook in &self.hooks {
-            hook.on_agent_start(ctx, agent, state, thread).await?;
+            hook.on_agent_start(ctx, agent, thread, state).await?;
         }
         Ok(())
     }
@@ -247,17 +250,6 @@ impl Engine {
         caller: Principal,
         mut input: AgentInput,
     ) -> Result<AgentOutput, BoxError> {
-        input.name = if input.name.is_empty() {
-            self.default_agent.clone()
-        } else {
-            input.name.to_ascii_lowercase()
-        };
-
-        let agent = self
-            .ctx
-            .agents
-            .get(&input.name)
-            .ok_or_else(|| format!("agent {} not found", input.name))?;
         let mut meta = input.meta.unwrap_or_default();
         if meta.engine.is_some() && meta.engine != Some(self.id) {
             return Err(format!(
@@ -268,6 +260,29 @@ impl Engine {
             .into());
         }
 
+        input.name = if input.name.is_empty() {
+            self.default_agent.clone()
+        } else {
+            input.name.to_ascii_lowercase()
+        };
+        let agent = self
+            .ctx
+            .agents
+            .get(&input.name)
+            .ok_or_else(|| format!("agent {} not found", input.name))?;
+
+        let visibility = self.management.try_get_visibility(&caller)?;
+        let mut sw = if visibility == Visibility::Public {
+            // use anonymous user state for public
+            self.management.load_user_state(&ANONYMOUS).await?
+        } else {
+            let sw = self.management.load_user_state(&caller).await?;
+            if !sw.has_permission(&caller, unix_ms()) {
+                return Err("caller does not have permission".into());
+            }
+            sw
+        };
+
         let thread = self
             .management
             .load_thread_meta(&caller, &meta.thread)
@@ -275,19 +290,12 @@ impl Engine {
 
         meta.thread = Some(thread.id.clone());
         let ctx = self.ctx_with(caller, &input.name, meta.clone())?;
-        let mut w = self.management.load_user_state(&caller).await?;
-        if !w.has_permission(&caller, unix_ms()) {
-            return Err("caller does not have permission".into());
-        }
-
         self.hooks
-            .on_agent_start(&ctx, &input.name, &mut w, &thread)
+            .on_agent_start(&ctx, &input.name, &thread, &mut sw)
             .await?;
 
-        w.state.agent_requests = w.state.agent_requests.saturating_add(1);
-        w.state.last_access = unix_ms();
-        self.management.save_user_state(w.state).await?;
-
+        sw.increment_agent_requests(unix_ms());
+        self.management.save_user_state(sw.state).await?;
         // should save the thread meta before running the agent
         self.management.save_thread_meta(thread).await?;
 
@@ -307,15 +315,7 @@ impl Engine {
         caller: Principal,
         input: ToolInput<Value>,
     ) -> Result<ToolOutput<Value>, BoxError> {
-        if !self.export_tools.contains(&input.name) || !self.ctx.tools.contains(&input.name) {
-            return Err(format!("tool {} not found", &input.name).into());
-        }
-
-        let tool = self
-            .ctx
-            .tools
-            .get(&input.name)
-            .ok_or_else(|| format!("tool {} not found", &input.name))?;
+        let args = serde_json::to_string(&input.args)?;
         let meta = input.meta.unwrap_or_default();
         if meta.engine.is_some() && meta.engine != Some(self.id) {
             return Err(format!(
@@ -326,18 +326,32 @@ impl Engine {
             .into());
         }
 
-        let args = serde_json::to_string(&input.args)?;
-        let ctx = self.ctx.child_base_with(caller, &input.name, meta)?;
-        let mut w = self.management.load_user_state(&caller).await?;
-        if !w.has_permission(&caller, unix_ms()) {
-            return Err("caller does not have permission".into());
+        if !self.export_tools.contains(&input.name) || !self.ctx.tools.contains(&input.name) {
+            return Err(format!("tool {} not found", &input.name).into());
         }
+        let tool = self
+            .ctx
+            .tools
+            .get(&input.name)
+            .ok_or_else(|| format!("tool {} not found", &input.name))?;
 
-        self.hooks.on_tool_start(&ctx, &input.name, &mut w).await?;
+        let visibility = self.management.try_get_visibility(&caller)?;
+        let mut sw = if visibility == Visibility::Public {
+            // use anonymous user state for public
+            self.management.load_user_state(&ANONYMOUS).await?
+        } else {
+            let sw = self.management.load_user_state(&caller).await?;
+            if !sw.has_permission(&caller, unix_ms()) {
+                return Err("caller does not have permission".into());
+            }
+            sw
+        };
 
-        w.state.tool_requests = w.state.tool_requests.saturating_add(1);
-        w.state.last_access = unix_ms();
-        self.management.save_user_state(w.state).await?;
+        let ctx = self.ctx.child_base_with(caller, &input.name, meta)?;
+        self.hooks.on_tool_start(&ctx, &input.name, &mut sw).await?;
+
+        sw.increment_tool_requests(unix_ms());
+        self.management.save_user_state(sw.state).await?;
 
         let output = tool.call(ctx.clone(), args, input.resources).await?;
         self.hooks.on_tool_end(&ctx, &input.name, output).await
@@ -396,7 +410,7 @@ pub struct EngineBuilder {
     cancellation_token: CancellationToken,
     export_agents: BTreeSet<String>,
     export_tools: BTreeSet<String>,
-    controller: Principal,
+    management: ManagementBuilder,
 }
 
 impl Default for EngineBuilder {
@@ -423,18 +437,13 @@ impl EngineBuilder {
             cancellation_token: CancellationToken::new(),
             export_agents: BTreeSet::new(),
             export_tools: BTreeSet::new(),
-            controller: Principal::anonymous(),
+            management: ManagementBuilder::new(Visibility::Private, Principal::anonymous()),
         }
     }
 
     /// Sets the engine ID, which comes from the TEE.
     pub fn with_id(mut self, id: Principal) -> Self {
         self.id = id;
-        self
-    }
-
-    pub fn with_controller(mut self, controller: Principal) -> Self {
-        self.controller = controller;
         self
     }
 
@@ -471,6 +480,12 @@ impl EngineBuilder {
     /// Sets the storage backend for the engine.
     pub fn with_store(mut self, store: Store) -> Self {
         self.store = store;
+        self
+    }
+
+    /// Sets the management builder for the engine.
+    pub fn with_management(mut self, management: ManagementBuilder) -> Self {
+        self.management = management;
         self
     }
 
@@ -609,7 +624,12 @@ impl EngineBuilder {
             self.store,
             Arc::new(remote),
         );
-        let management = Management::new(&ctx, self.controller);
+
+        if self.management.controller == Principal::anonymous() {
+            self.management.controller = self.id;
+        }
+
+        let management = self.management.build(&ctx);
         let management = Arc::new(management);
         let user_state_tool = UserStateTool::new(management.clone());
         let thread_meta_tool = ThreadMetaTool::new(management.clone());
@@ -672,7 +692,7 @@ impl EngineBuilder {
             self.store,
             Arc::new(RemoteEngines::new()),
         );
-        let management = Management::new(&ctx, self.controller);
+        let management = self.management.build(&ctx);
         let management = Arc::new(management);
         AgentCtx::new(
             ctx,

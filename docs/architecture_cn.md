@@ -82,13 +82,17 @@ pub trait Agent<C: AgentContext> {
 
     fn definition(&self) -> FunctionDefinition;
 
+    fn supported_resource_tags(&self) -> Vec<String>;
+
     fn tool_dependencies(&self) -> Vec<String>;
+
+    async fn init(&self, ctx: C);
 
     async fn run(
         &self,
         ctx: C,
         prompt: String,
-        attachment: Option<Vec<u8>>,
+        resources: Option<Vec<Resource>>,
     ) -> Result<AgentOutput, BoxError>;
 }
 ```
@@ -110,11 +114,16 @@ pub trait Tool<BaseContext> {
 
     fn definition(&self) -> FunctionDefinition;
 
+    fn supported_resource_tags(&self) -> Vec<String>;
+
+    async fn init(&self, ctx: C);
+
     async fn call(
         &self,
         ctx: C,
         args: Self::Args,
-    ) -> Result<Self::Output, BoxError>;
+        resources: Option<Vec<Resource>>,
+    ) -> Result<ToolOutput<Self::Output>, BoxError>;
 }
 ```
 
@@ -154,7 +163,7 @@ let engine = Engine::builder()
    .register_agent(my_agent)
    .build("default_agent")?;
 
-let output = engine.agent_run(None, "Hello", None, Some(user), None).await?;
+let output = engine.agent_run(caller, AgentInput{ prompt: "Hello".to_string(), ..Default::default() }).await?;
 ```
 
 ### 关键特性

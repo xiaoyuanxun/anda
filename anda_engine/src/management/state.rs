@@ -113,6 +113,16 @@ impl UserStateWrapper {
         }
     }
 
+    pub(crate) fn increment_agent_requests(&mut self, now_ms: u64) {
+        self.state.agent_requests = self.state.agent_requests.saturating_add(1);
+        self.state.last_access = now_ms;
+    }
+
+    pub(crate) fn increment_tool_requests(&mut self, now_ms: u64) {
+        self.state.tool_requests = self.state.tool_requests.saturating_add(1);
+        self.state.last_access = now_ms;
+    }
+
     /// Topup the credit balance for the user.
     pub(crate) fn topup_credit(&mut self, credit: u64, expiry_ms: u64) {
         self.state.credit_balance = self.state.credit_balance.saturating_add(credit);
@@ -321,13 +331,17 @@ impl Tool<BaseCtx> for UserStateTool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::EngineBuilder;
+    use crate::{
+        engine::EngineBuilder,
+        management::{ManagementBuilder, Visibility},
+    };
 
     #[tokio::test]
     async fn test_user_state_tool() {
         let engine = EngineBuilder::new();
         let ctx = engine.mock_ctx();
-        let management = Arc::new(Management::new(&ctx.base, ctx.id()));
+        let management =
+            Arc::new(ManagementBuilder::new(Visibility::Private, ctx.id()).build(&ctx.base));
 
         let tool = UserStateTool::new(management);
         let definition = tool.definition();

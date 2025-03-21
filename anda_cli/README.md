@@ -13,6 +13,7 @@ cargo build -p anda_cli
 ./target/debug/anda_cli rand-bytes -l 48 -f hex
 ./target/debug/anda_cli agent-run --help
 ./target/debug/anda_cli agent-run -p 'Please check my PANDA balance'
+./target/debug/anda_cli agent-run --id path_to_my_identity.pem -p 'Please check my PANDA balance'
 ```
 
 ## License

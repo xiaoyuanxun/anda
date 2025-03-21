@@ -9,8 +9,12 @@ use std::sync::Arc;
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
-    #[clap(short, long, default_value = "https://icp-api.io")]
-    ic_host: String,
+    #[clap(long, default_value = "https://icp-api.io")]
+    host: String,
+
+    /// Path to ICP identity pem file or 32 bytes identity secret in hex.
+    #[arg(long, env = "ID_SECRET", default_value = "Anonymous")]
+    id: String,
 
     #[command(subcommand)]
     command: Option<Commands>,
@@ -35,27 +39,19 @@ pub enum Commands {
         #[arg(short, long, default_value = "http://127.0.0.1:8042/default")]
         endpoint: String,
 
-        /// Path to ICP identity pem file or 32 bytes identity secret in hex.
-        #[arg(short, long, env = "ID_SECRET", default_value = "Anonymous")]
-        id_secret: String,
-
         /// RPC method name
         #[arg(short, long)]
         method: String,
 
-        /// RPC arguments, default is []
-        #[arg(short, long)]
-        args: Option<Vec<String>>,
+        /// RPC arguments in JSON string, default is [], means no arguments.
+        #[arg(short, long, default_value = "[]")]
+        data: String,
     },
 
     /// Run an AI agent with the given prompt and name on the endpoint.
     AgentRun {
         #[arg(short, long, default_value = "http://127.0.0.1:8042/default")]
         endpoint: String,
-
-        /// Path to ICP identity pem file or 32 bytes identity secret in hex.
-        #[arg(short, long, env = "ID_SECRET", default_value = "Anonymous")]
-        id_secret: String,
 
         #[arg(short, long)]
         prompt: String,
@@ -69,10 +65,6 @@ pub enum Commands {
         #[arg(short, long, default_value = "http://127.0.0.1:8042/default")]
         endpoint: String,
 
-        /// Path to ICP identity pem file or 32 bytes identity secret in hex.
-        #[arg(short, long, env = "ID_SECRET", default_value = "Anonymous")]
-        id_secret: String,
-
         #[arg(short, long)]
         name: String,
 
@@ -85,6 +77,8 @@ pub enum Commands {
 async fn main() -> Result<(), BoxError> {
     dotenv::dotenv().ok();
     let cli = Cli::parse();
+    let identity = load_identity(&cli.id)?;
+    println!("principal: {}", identity.sender()?);
 
     match &cli.command {
         Some(Commands::RandBytes { len, format }) => {
@@ -106,20 +100,23 @@ async fn main() -> Result<(), BoxError> {
 
         Some(Commands::Rpc {
             endpoint,
-            id_secret,
             method,
-            args,
+            data,
         }) => {
-            let identity = load_identity(id_secret)?;
             let web3 = Web3Client::builder()
-                .with_ic_host(&cli.ic_host)
+                .with_ic_host(&cli.host)
                 .with_identity(Arc::new(identity))
                 .with_allow_http(true, None)
                 .build()
                 .await?;
 
             println!("principal: {}", web3.get_principal());
-            let args = args.clone().unwrap_or_default();
+            let args: serde_json::Value = serde_json::from_str(data)?;
+            let args = if args.is_array() {
+                args
+            } else {
+                serde_json::json!(vec![args])
+            };
 
             let res: Value = web3.https_signed_rpc(endpoint, method, &args).await?;
             println!("{:?}", res);
@@ -127,13 +124,11 @@ async fn main() -> Result<(), BoxError> {
 
         Some(Commands::AgentRun {
             endpoint,
-            id_secret,
-            prompt,
             name,
+            prompt,
         }) => {
-            let identity = load_identity(id_secret)?;
             let web3 = Web3Client::builder()
-                .with_ic_host(&cli.ic_host)
+                .with_ic_host(&cli.host)
                 .with_identity(Arc::new(identity))
                 .with_allow_http(true, None)
                 .build()
@@ -157,13 +152,11 @@ async fn main() -> Result<(), BoxError> {
 
         Some(Commands::ToolCall {
             endpoint,
-            id_secret,
             name,
             args,
         }) => {
-            let identity = load_identity(id_secret)?;
             let web3 = Web3Client::builder()
-                .with_ic_host(&cli.ic_host)
+                .with_ic_host(&cli.host)
                 .with_identity(Arc::new(identity))
                 .with_allow_http(true, None)
                 .build()
