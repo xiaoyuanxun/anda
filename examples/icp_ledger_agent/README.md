@@ -19,8 +19,6 @@ anda_cli agent-run -p 'Please check my PANDA balance'
 anda_cli tool-call -n icp_ledger_balance_of -a '{"account":"535yc-uxytb-gfk7h-tny7p-vjkoe-i4krp-3qmcl-uqfgr-cpgej-yqtjq-rqe","symbol":"PANDA"}'
 ```
 
-**Notice**: The current version only supports OpenAI and Grok. Deepseek's Function Calling capabilitity is unstable. https://api-docs.deepseek.com/guides/function_calling
-
 ## License
 Copyright © 2025 [LDC Labs](https://github.com/ldclabs).
 

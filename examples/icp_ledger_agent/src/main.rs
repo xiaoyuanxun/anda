@@ -1,8 +1,8 @@
 use anda_core::BoxError;
 use anda_engine::{
     context::Web3SDK,
-    engine::EngineBuilder,
-    model::{Model, openai, xai},
+    engine::{EngineBuilder, ManagementBuilder, Visibility},
+    model::{Model, deepseek, openai, xai},
     store::{InMemory, Store},
 };
 use anda_engine_server::{ServerBuilder, shutdown_signal};
@@ -126,7 +126,12 @@ async fn main() -> Result<(), BoxError> {
     );
 
     // Configure AI model
-    let model = Model::with_completer(if !cli.openai_api_key.is_empty() {
+    let model = Model::with_completer(if !cli.deepseek_api_key.is_empty() {
+        Arc::new(
+            deepseek::Client::new(&cli.deepseek_api_key, Some(cli.model_endpoint))
+                .completion_model(&cli.model_name),
+        )
+    } else if !cli.openai_api_key.is_empty() {
         Arc::new(
             openai::Client::new(&cli.openai_api_key, Some(cli.model_endpoint))
                 .completion_model(&cli.model_name),
@@ -158,6 +163,7 @@ async fn main() -> Result<(), BoxError> {
         .with_web3_client(Arc::new(Web3SDK::from_web3(Arc::new(web3.clone()))))
         .with_model(model)
         .with_store(Store::new(object_store))
+        .with_management(ManagementBuilder::new(Visibility::Public, my_principal))
         .register_tools(agent.tools()?)?
         .register_agent(agent)?
         .export_tools(vec![BalanceOfTool::NAME.to_string()]);
