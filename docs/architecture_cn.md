@@ -157,6 +157,7 @@ pub trait Tool<BaseContext> {
 
 ```rust
 let engine = Engine::builder()
+   .with_name(my_agent_name)
    .with_tee_client(my_tee_client)
    .with_model(my_llm_model)
    .register_tool(my_tool)
