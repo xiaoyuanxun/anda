@@ -1,5 +1,5 @@
 [package]
-name = "anda_icp"
+name = "anda_bsc"
 description = "Anda agent tools offers integration with the Internet Computer (ICP)."
 repository = "https://github.com/ldclabs/anda/tree/main/tools/anda_icp"
 publish = true
@@ -12,6 +12,9 @@ license.workspace = true
 [dependencies]
 anda_core = { path = "../../anda_core", version = "0.6" }
 anda_engine = { path = "../../anda_engine", version = "0.6" }
+anda_icp = { path = "../../tools/anda_icp", version = "0.6" }
+anda_web3_client = { path = "../../anda_web3_client", version = "0.6" }
+anda_engine_server = { path = "../../anda_engine_server", version = "0.6" }
 candid = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -20,5 +23,36 @@ num-traits = { workspace = true }
 tokio = { workspace = true }
 log = { workspace = true }
 icrc-ledger-types = "0.1"
+const-hex = { workspace = true }
+dotenv = { workspace = true }
+http = { workspace = true }
+reqwest = { workspace = true }
+hex = "0.4"
+ic-cdk = "0.15"
+ic-crypto-ecdsa-secp256k1 = { git = "https://github.com/dfinity/ic", tag = "release-2024-06-26_23-01-base", package = "ic-crypto-ecdsa-secp256k1" }
+ic-crypto-extended-bip32 = { git = "https://github.com/dfinity/ic", tag = "release-2024-06-26_23-01-base", package = "ic-crypto-extended-bip32" }
+ic-crypto-sha3 = { git = "https://github.com/dfinity/ic", tag = "release-2024-06-26_23-01-base", package = "ic-crypto-sha3" }
+ic-ethereum-types = { git = "https://github.com/dfinity/ic", tag = "release-2024-06-26_23-01-base", package = "ic-ethereum-types" }
+# TODO: remove redundant features
+alloy = { version = "0.12", features = [
+    "eips",
+    "full",
+    "hyper",
+    "json-rpc",
+    "node-bindings",
+    "rpc-client",
+    "rpc-types-debug",
+    "rpc-types-trace",
+] }
+rlp = "0.6.1"
+keccak-hash = "0.11.0"
+bytes = "1.10.1"
+hex-literal = "1.0.0"
+secp256k1 = {version = "0.30.0", features = ["recovery"]}
+ic-ed25519 = "0.2.0"
+num-bigint = "0.4"
 
 [dev-dependencies]
+rand = { workspace = true }
+ruint = "1.14.0"
+env_logger = "0.10"

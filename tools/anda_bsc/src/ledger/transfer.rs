@@ -8,7 +8,7 @@
 //! - Atomic transfers with proper error handling
 
 use anda_core::{
-    BoxError, FunctionDefinition, Resource, StateFeatures, Tool, ToolOutput, gen_schema_for,
+    BoxError, FunctionDefinition, Resource, Tool, ToolOutput, gen_schema_for,
 };
 use anda_engine::context::BaseCtx;
 use num_traits::cast::ToPrimitive;
@@ -16,8 +16,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
-
-use super::ICPLedgers;
+use std::str::FromStr;
+use alloy::primitives::Address;
+use super::BSCLedgers;
 
 /// Arguments for transferring tokens to an account
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
@@ -33,14 +34,14 @@ pub struct TransferToArgs {
 /// Implementation of the ICP Ledger Transfer tool
 #[derive(Debug, Clone)]
 pub struct TransferTool {
-    ledgers: Arc<ICPLedgers>,
+    ledgers: Arc<BSCLedgers>,
     schema: Value,
 }
 
 impl TransferTool {
-    pub const NAME: &'static str = "icp_ledger_transfer";
+    pub const NAME: &'static str = "bsc_ledger_transfer";
 
-    pub fn new(ledgers: Arc<ICPLedgers>) -> Self {
+    pub fn new(ledgers: Arc<BSCLedgers>) -> Self {
         let schema = gen_schema_for::<TransferToArgs>();
 
         TransferTool { ledgers, schema }
@@ -92,11 +93,12 @@ impl Tool<BaseCtx> for TransferTool {
         data: Self::Args,
         _resources: Option<Vec<Resource>>,
     ) -> Result<ToolOutput<Self::Output>, BoxError> {
-        let (ledger, tx) = self.ledgers.transfer(&ctx, ctx.id(), data).await?;
+        let address = Address::from_str(&data.account)?; // Todo: pass sender address as a parameter in call
+        let (ledger, tx) = self.ledgers.transfer(&ctx, address, data).await?;
         Ok(ToolOutput::new(format!(
-            "Successful, transaction ID: {}, detail: https://www.icexplorer.io/token/details/{}",
+            "Successful, transaction ID: {}, detail: https://www.icexplorer.io/token/details/{}", // Todo: change for BS
             tx.0.to_u64().unwrap_or(0),
-            ledger.to_text()
+            ledger.to_string()
         )))
     }
 }
@@ -104,95 +106,112 @@ impl Tool<BaseCtx> for TransferTool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anda_engine::context::mock;
-    use candid::{Nat, Principal, decode_args, encode_args};
-    use icrc_ledger_types::icrc1::{
-        account::principal_to_subaccount,
-        transfer::{TransferArg, TransferError},
+    use anda_engine::{
+        extension::extractor::Extractor,
+        context::Web3SDK,
+        engine::EngineBuilder,
+    };
+    use anda_web3_client::client::{
+        Client as Web3Client, load_identity
+    };
+    use alloy::{
+        hex, primitives::address, providers::ProviderBuilder
     };
     use std::collections::BTreeMap;
+    use rand::Rng;
+    use super::super::{BSCLedgers, ERC20STD};
+    use super::super::super::utils_evm::{
+        generate_secret_key, derive_evm_address
+    };
 
     #[tokio::test(flavor = "current_thread")]
-    async fn test_icp_ledger_transfer() {
-        let panda_ledger = Principal::from_text("druyg-tyaaa-aaaaq-aactq-cai").unwrap();
-        let ledgers = ICPLedgers {
+    async fn test_bsc_ledger_transfer() {
+        let _ = env_logger::builder()
+        .is_test(true)
+        .filter_level(log::LevelFilter::Debug)
+        .try_init();
+
+        // Generate random bytes for identity and root secret
+        let mut rng = rand::thread_rng();
+        let random_bytes: Vec<u8> = (0..32).map(|_| rng.r#gen()).collect();
+        let id_secret = hex::encode(random_bytes);
+        let random_bytes: Vec<u8> = (0..48).map(|_| rng.r#gen()).collect();  // Todo: why gen is a keyword?
+        // let root_secret_org = hex::encode(random_bytes);
+        let root_secret_org = dotenv::var("ROOT_SECRET").unwrap();  // Todo: Read root secret from rng
+
+        // Parse and validate cryptographic secrets
+        let identity = load_identity(&id_secret).unwrap();
+        let root_secret = const_hex::decode(&root_secret_org).unwrap();
+        let root_secret: [u8; 48] = root_secret
+            .try_into()
+            .map_err(|_| format!("invalid root_secret: {:?}", &root_secret_org))
+            .unwrap();
+
+        // Initialize Web3 client for ICP network interaction
+        let web3 = Web3Client::builder()
+        .with_ic_host("https://bsc-testnet.bnbchain.org")
+        .with_identity(Arc::new(identity))
+        .with_root_secret(root_secret)
+        .build().await.unwrap();
+    
+        // Derive EVM address from derivation path
+        // let derivation_path: &[&[u8]] = &[b"44'", b"60'", b"10'", b"20", b"30"];  // Todo: how to retrieve derivation path?
+        // let pk = web3.ed25519_public_key(&derivation_path).await.unwrap();
+
+        // Generate sepc256k1 secrete key from root secret
+        let sk = generate_secret_key(&root_secret.as_slice()).unwrap();
+        derive_evm_address(&sk); // For debugging
+
+        let rpc_url = "https://bsc-testnet.bnbchain.org".parse().unwrap();
+        let provider = ProviderBuilder::new().on_http(rpc_url);
+        let token_addr = address!("0xDE3a190D9D26A8271Ae9C27573c03094A8A2c449");
+        let contract = ERC20STD::new(token_addr, provider.clone());
+
+        // Get token symbol.
+        let symbol = contract.symbol().call().await.unwrap()._0;
+        let decimals = contract.decimals().call().await.unwrap()._0;
+        log::debug!("symbol: {:?}, decimals: {:?}", symbol.clone(), decimals);
+
+        let ledgers = BSCLedgers {
             ledgers: BTreeMap::from([
                 (
-                    String::from("ICP"),
+                    symbol.clone(),
                     (
-                        Principal::from_text("ryjl3-tyaaa-aaaaa-aaaba-cai").unwrap(),
-                        8,
+                        token_addr,
+                        decimals,
                     ),
                 ),
-                (String::from("PANDA"), (panda_ledger, 8)),
-            ]),
-            from_user_subaccount: true,
+            ])
         };
+
         let ledgers = Arc::new(ledgers);
         let tool = TransferTool::new(ledgers.clone());
         let definition = tool.definition();
-        assert_eq!(definition.name, "icp_ledger_transfer");
-        let s = serde_json::to_string_pretty(&definition).unwrap();
-        println!("{}", s);
-        // {
-        //     "name": "icp_ledger_transfer",
-        //     "description": "Transfer ICP, PANDA tokens to the specified account on ICP blockchain.",
-        //     "parameters": {
-        //       "additionalProperties": false,
-        //       "description": "Arguments for transferring tokens to an account",
-        //       "properties": {
-        //         "account": {
-        //           "description": "ICP account address (principal) to receive token, e.g. \"77ibd-jp5kr-moeco-kgoar-rro5v-5tng4-krif5-5h2i6-osf2f-2sjtv-kqe\"",
-        //           "type": "string"
-        //         },
-        //         "amount": {
-        //           "description": "Token amount, e.g. 1.1 ICP",
-        //           "type": "number"
-        //         },
-        //         "symbol": {
-        //           "description": "Token symbol, e.g. \"ICP\"",
-        //           "type": "string"
-        //         }
-        //       },
-        //       "required": [
-        //         "account",
-        //         "amount",
-        //         "symbol"
-        //       ],
-        //       "title": "TransferToArgs",
-        //       "type": "object"
-        //     },
-        //     "strict": true
-        // }
+        assert_eq!(definition.name, "bsc_ledger_transfer");
+        assert_eq!(tool.description().contains(&symbol), true);
 
-        let args = TransferToArgs {
-            account: Principal::anonymous().to_string(),
-            symbol: "PANDA".to_string(),
-            amount: 9999.000012345678,
+        let to_addr = address!("0xDE3a190D9D26A8271Ae9C27573c03094A8A2c449");
+        let transfer_amount = 0.0;  // Todo: set a positive amount
+        let transfer_to_args = TransferToArgs {
+            account: to_addr.to_string(),
+            symbol: symbol.clone(),
+            amount: transfer_amount,
         };
-        let mocker = mock::MockCanisterCaller::new(|canister, method, args| {
-            if method == "icrc1_balance_of" {
-                return encode_args((Nat::from(999900001234u64),)).unwrap();
-            }
-            assert_eq!(canister, &panda_ledger);
-            assert_eq!(method, "icrc1_transfer");
-            let (args,): (TransferArg,) = decode_args(&args).unwrap();
-            println!("{:?}", args);
-            assert_eq!(
-                args.from_subaccount,
-                Some(principal_to_subaccount(Principal::anonymous()))
-            );
-            assert_eq!(args.to.owner, Principal::anonymous());
-            assert_eq!(args.amount, Nat::from(999900001234u64));
 
-            let res: Result<Nat, TransferError> = Ok(Nat::from(321u64));
-            encode_args((res,)).unwrap()
-        });
+        #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+        struct TestStruct {
+            name: String,
+            age: Option<u8>,
+        }    
+        let agent = Extractor::<TestStruct>::default();
 
-        let (_, res) = ledgers
-            .transfer(&mocker, Principal::anonymous(), args)
-            .await
-            .unwrap();
-        assert_eq!(res, Nat::from(321u64));
+        let engine_ctx = EngineBuilder::new()
+                    // .with_id(principal)  // Todo: how to retrieve sender address?
+                    .with_name("BSC_TEST".to_string()).unwrap()
+                    .with_web3_client(Arc::new(Web3SDK::from_web3(Arc::new(web3.clone()))))
+                    .register_agent(agent).unwrap()
+                    .mock_ctx();
+        let base_ctx = engine_ctx.base.clone();
+        tool.call(base_ctx, transfer_to_args, None).await.unwrap();
     }
 }

@@ -9,8 +9,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::sync::Arc;
-
-use super::ICPLedgers;
+use super::BSCLedgers;
 
 /// Arguments for the balance of an account for a token
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
@@ -24,14 +23,14 @@ pub struct BalanceOfArgs {
 /// ICP Ledger BalanceOf tool implementation
 #[derive(Debug, Clone)]
 pub struct BalanceOfTool {
-    ledgers: Arc<ICPLedgers>,
+    ledgers: Arc<BSCLedgers>,
     schema: Value,
 }
 
 impl BalanceOfTool {
-    pub const NAME: &'static str = "icp_ledger_balance_of";
+    pub const NAME: &'static str = "bsc_ledger_balance_of";
     /// Creates a new BalanceOfTool instance
-    pub fn new(ledgers: Arc<ICPLedgers>) -> Self {
+    pub fn new(ledgers: Arc<BSCLedgers>) -> Self {
         let schema = gen_schema_for::<BalanceOfArgs>();
 
         BalanceOfTool {
@@ -89,53 +88,103 @@ mod tests {
     use super::*;
     use candid::Principal;
     use std::collections::BTreeMap;
+    use alloy::{
+        hex, primitives::address, providers::ProviderBuilder
+    };
+    use anda_web3_client::client::{
+        Client as Web3Client, load_identity
+    };
+    use anda_engine::{
+        extension::extractor::Extractor,
+        context::{Web3SDK, Web3ClientFeatures},
+        engine::EngineBuilder,
+    };
+    use rand::Rng;
+    use super::super::ERC20STD;
 
-    #[tokio::test(flavor = "current_thread")]
-    async fn test_icp_ledger_transfer() {
-        let panda_ledger = Principal::from_text("druyg-tyaaa-aaaaq-aactq-cai").unwrap();
-        let ledgers = ICPLedgers {
+    #[tokio::test]
+    async fn test_bsc_ledger_balance() {
+        let _ = env_logger::builder()
+        .is_test(true)
+        .filter_level(log::LevelFilter::Debug)
+        .try_init();
+
+        // Generate random bytes for identity and root secret
+        let mut rng = rand::thread_rng();
+        let random_bytes: Vec<u8> = (0..32).map(|_| rng.r#gen()).collect();
+        let id_secret = hex::encode(random_bytes);
+        let random_bytes: Vec<u8> = (0..48).map(|_| rng.r#gen()).collect();  // Todo: why gen is a keyword?
+        let root_secret_org = hex::encode(random_bytes);
+
+        // Parse and validate cryptographic secrets
+        let identity = load_identity(&id_secret).unwrap();
+        let root_secret = const_hex::decode(&root_secret_org).unwrap();
+        let root_secret: [u8; 48] = root_secret
+            .try_into()
+            .map_err(|_| format!("invalid root_secret: {:?}", &root_secret_org))
+            .unwrap();
+
+        // Initialize Web3 client for ICP network interaction
+        let web3 = Web3Client::builder()
+            .with_ic_host("https://bsc-testnet.bnbchain.org")
+            .with_identity(Arc::new(identity))
+            .with_root_secret(root_secret)
+            .build().await.unwrap();
+
+        // Derive EVM address from derivation path
+        let derivation_path: &[&[u8]] = &[b"44'", b"60'", b"10'", b"20", b"30"];  // Todo: how to retrieve derivation path?
+        let pk = web3.ed25519_public_key(&derivation_path).await.unwrap();
+        let address = format!("0x{}", hex::encode(&pk[12..]));
+        // let address = "0xA8c4AAE4ce759072D933bD4a51172257622eF128".to_string();
+        log::debug!("User EVM address: {:?}", address);
+
+        let rpc_url = "https://bsc-testnet.bnbchain.org".parse().unwrap();
+        let provider = ProviderBuilder::new().on_http(rpc_url);
+        let token_addr = address!("0xDE3a190D9D26A8271Ae9C27573c03094A8A2c449");
+        let contract = ERC20STD::new(token_addr, provider.clone());
+
+        // Get token symbol.
+        let symbol = contract.symbol().call().await.unwrap()._0;
+        let decimals = contract.decimals().call().await.unwrap()._0;
+        log::debug!("symbol: {:?}, decimals: {:?}", symbol.clone(), decimals);
+
+        let principal = Principal::from_text("druyg-tyaaa-aaaaq-aactq-cai").unwrap();
+        let ledgers = BSCLedgers {
             ledgers: BTreeMap::from([
                 (
-                    String::from("ICP"),
+                    symbol.clone(),
                     (
-                        Principal::from_text("ryjl3-tyaaa-aaaaa-aaaba-cai").unwrap(),
-                        8,
+                        token_addr,
+                        decimals,
                     ),
                 ),
-                (String::from("PANDA"), (panda_ledger, 8)),
-            ]),
-            from_user_subaccount: true,
+            ])
         };
+
         let ledgers = Arc::new(ledgers);
         let tool = BalanceOfTool::new(ledgers.clone());
         let definition = tool.definition();
-        assert_eq!(definition.name, "icp_ledger_balance_of");
+        assert_eq!(definition.name, "bsc_ledger_balance_of");
         let s = serde_json::to_string_pretty(&definition).unwrap();
-        println!("{}", s);
-        // {
-        //     "name": "icp_ledger_balance_of",
-        //     "description": "Query the balance of the specified account on ICP blockchain for the following tokens: ICP, PANDA",
-        //     "parameters": {
-        //       "additionalProperties": false,
-        //       "description": "Arguments for the balance of an account for a token",
-        //       "properties": {
-        //         "account": {
-        //           "description": "ICP account address (principal) to query, e.g. \"77ibd-jp5kr-moeco-kgoar-rro5v-5tng4-krif5-5h2i6-osf2f-2sjtv-kqe\"",
-        //           "type": "string"
-        //         },
-        //         "symbol": {
-        //           "description": "Token symbol, e.g. \"ICP\"",
-        //           "type": "string"
-        //         }
-        //       },
-        //       "required": [
-        //         "account",
-        //         "symbol"
-        //       ],
-        //       "title": "BalanceOfArgs",
-        //       "type": "object"
-        //     },
-        //     "strict": true
-        // }
+
+        #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+        struct TestStruct {
+            name: String,
+            age: Option<u8>,
+        }    
+        let agent = Extractor::<TestStruct>::default();
+
+        let engine_ctx = EngineBuilder::new()
+                    .with_id(principal)
+                    .with_name("BSC_TEST".to_string()).unwrap()
+                    .with_web3_client(Arc::new(Web3SDK::from_web3(Arc::new(web3.clone()))))
+                    .register_agent(agent).unwrap()
+                    .mock_ctx();
+        let base_ctx = engine_ctx.base.clone();
+        let args = BalanceOfArgs {
+            account: address,
+            symbol: symbol.clone(),
+        };
+        tool.call(base_ctx, args, None).await.unwrap();
     }
 }
