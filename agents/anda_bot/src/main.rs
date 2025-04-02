@@ -49,7 +49,7 @@ const APP_NAME: &str = env!("CARGO_PKG_NAME");
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 static IC_OBJECT_STORE: &str = "ic://object_store";
-static ENGINE_NAME: &str = "Anda.bot";
+static ENGINE_NAME: &str = "Anda_bot";
 static COSE_SECRET_PERMANENT_KEY: &str = "v1";
 const LOCAL_SERVER_SHUTDOWN_DURATION: Duration = Duration::from_secs(5);
 
@@ -586,10 +586,10 @@ fn connect_model(cfg: &config::Llm) -> Result<Model, BoxError> {
     } else {
         let cli = openai::Client::new(
             &cfg.openai_api_key,
-            if cfg.deepseek_endpoint.is_empty() {
+            if cfg.openai_endpoint.is_empty() {
                 None
             } else {
-                Some(cfg.deepseek_endpoint.clone())
+                Some(cfg.openai_endpoint.clone())
             },
         );
         Ok(Model::new(
