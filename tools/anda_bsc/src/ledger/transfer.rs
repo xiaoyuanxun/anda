@@ -96,7 +96,7 @@ impl Tool<BaseCtx> for TransferTool {
         let address = Address::from_str(&data.account)?; // Todo: pass sender address as a parameter in call
         let (ledger, tx) = self.ledgers.transfer(&ctx, address, data).await?;
         Ok(ToolOutput::new(format!(
-            "Successful, transaction ID: {}, detail: https://www.icexplorer.io/token/details/{}", // Todo: change for BS
+            "Successful, transaction ID: {}, detail: https://www.icexplorer.io/token/details/{}", // Todo: change for BSC
             tx.0.to_u64().unwrap_or(0),
             ledger.to_string()
         )))
