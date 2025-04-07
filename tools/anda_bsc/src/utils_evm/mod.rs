@@ -87,7 +87,7 @@ pub(crate) fn sign_tx_evm<C: Signing + Verification>(
     tx_hash: &H256,
 ) -> (RecoveryId, [u8; 64]) {
     let msg = Message::from_digest(tx_hash.0);
-    let signature = secp.sign_ecdsa_recoverable(&msg, &sk); // Todo: `secp256k1_sign_message_ecdsa` in anda_web3_client/src/client.rs not return recovery id
+    let signature = secp.sign_ecdsa_recoverable(&msg, &sk);
 
     // Recover public key from signature  // Todo: Add to test, verify signature by pubkey_rcv
     // let pubkey_rcv = secp.recover_ecdsa(&msg, &signature).unwrap().serialize_uncompressed();
@@ -101,7 +101,7 @@ pub(crate) fn get_r_s_v(recovery_id: RecoveryId, serialized_sig: [u8; 64], chain
         let r: [u8; 32] = serialized_sig[0..32].try_into()?;
         let s: [u8; 32] = serialized_sig[32..].try_into()?;
         let recovery_id = i32::from(recovery_id);
-        let v = recovery_id as u64 + 27 + chain_id * 2;
+        let v = recovery_id as u64 + 35 + chain_id * 2;
         Ok((r, s, v))
 }
 
@@ -133,7 +133,7 @@ pub(crate) fn derive_evm_address(sk: &SecretKey) -> String {
     // Remove the 0x04 prefix (first byte)
     let public_key_without_prefix = &mut public_key_bytes[1..];
     
-    // Hash the remaining 64 bytes
+    // Hash the remaining 40 bytes
     let address = &keccak::<&[u8]>(public_key_without_prefix)[12..];
     
     // let address = format!("0x{}", hex::encode(&address));

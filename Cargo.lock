@@ -905,6 +905,7 @@ dependencies = [
  "anda_engine_server",
  "anda_icp",
  "anda_web3_client",
+ "async-trait",
  "bytes",
  "candid",
  "const-hex",
@@ -920,6 +921,7 @@ dependencies = [
  "ic-ed25519",
  "ic-ethereum-types",
  "icrc-ledger-types",
+ "k256",
  "keccak-hash",
  "log",
  "num-bigint",
@@ -932,7 +934,10 @@ dependencies = [
  "secp256k1",
  "serde",
  "serde_json",
+ "spki",
+ "thiserror 1.0.69",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
