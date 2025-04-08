@@ -18,7 +18,7 @@ pub struct AndaSigner {
     /// The public key
     pubkey: [u8; 32],
     /// The base context for communicating with the TEE service
-    client: BaseCtx,
+    client: BaseCtx, // Todo: change to &BaseCtx?
 }
 
 impl fmt::Debug for AndaSigner {  // Todo: verify the formated output
@@ -126,7 +126,7 @@ impl AndaSigner {
             let derivation = derivation.as_slice();
     
         // Fetch the public key from the TEE service
-        let pubkey_bytes = client.ed25519_public_key(&derivation)
+        let pubkey_bytes = client.secp256k1_public_key(&derivation)
             .await
             .map_err(|e| AndaSignerError::WebClient(e.to_string()))?;
         
@@ -138,7 +138,7 @@ impl AndaSigner {
             derivation: derivation_re,
             chain_id,
             address,
-            pubkey: pubkey_bytes.try_into().
+            pubkey: pubkey_bytes[1..].try_into().
                     map_err(|_| AndaSignerError::PubKeyConvertion("Public key length error".to_string()))?,
             client,
         })
@@ -198,4 +198,12 @@ fn y_parity(prehash: &[u8], sig: &[u8], pubkey: &[u8]) -> bool {
         hex::encode(sig),
         hex::encode(pubkey)
     )
+}
+
+pub fn convert_to_boxed(slices: &[&[u8]]) -> Box<[Box<[u8]>]> {
+    slices
+        .iter()
+        .map(|&slice| slice.to_vec().into_boxed_slice())
+        .collect::<Vec<_>>()
+        .into_boxed_slice()
 }

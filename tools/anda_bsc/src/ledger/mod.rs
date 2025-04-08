@@ -40,7 +40,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::json;
 
 use alloy::{
-    consensus::TxEnvelope, primitives::{utils::{format_units, parse_units}, Address, U256}, sol, sol_types::SolInterface
+    consensus::TxEnvelope, network::EthereumWallet, primitives::{utils::{format_units, parse_units}, Address, U256}, providers::ProviderBuilder, sol, sol_types::SolInterface
 };
 use core::str::FromStr;
 
@@ -50,7 +50,7 @@ pub mod transfer;
 pub use balance::*;
 pub use transfer::*;
 
-use crate::utils_evm::*;
+use crate::{signer::{convert_to_boxed, AndaSigner}, utils_evm::*};
 
 // Codegen from artifact.
 sol!(
@@ -148,7 +148,7 @@ impl BSCLedgers {
             account: me.to_string().clone(),
             symbol: args.symbol.clone(),
         };
-        let balance = self.balance_of(&ctx, balance_of_args).await?.1;
+        let balance = self.balance_of(ctx.clone(), balance_of_args).await?.1;
         if balance < *to_amount  {
             return Err("Insufficient balance".into());
         }
@@ -222,43 +222,46 @@ impl BSCLedgers {
     /// Result containing the ledger ID and token balance (f64) or an error
     async fn balance_of(
         &self,
-        ctx: &BaseCtx,
+        ctx: BaseCtx,
         args: balance::BalanceOfArgs,
     ) -> Result<(Address, f64), BoxError> {
         let url = "https://bsc-testnet.bnbchain.org";  // Todo: pass it as a parameter in call
 
+
+        let chain_id: u64 = 97;
+        let derivation_path: &[&[u8]] = &[b"44'", b"60'", b"10'", b"20", b"30"];  // Todo: how to retrieve derivation path?
+
+        // Create an anda signer
+        let signer = AndaSigner::new(
+            ctx, 
+            convert_to_boxed(derivation_path),
+            Some(chain_id),
+        ).await.unwrap();
+
+        // Create an Ethereum wallet from the signer
+        let wallet = EthereumWallet::from(signer);
+
+        // Create a provider with the wallet.
+        let provider = ProviderBuilder::new().
+                wallet(wallet).on_http(reqwest::Url::parse(url).unwrap());
+
+
         let owner_addr = Address::from_str(&args.account)?;
-        let call_args = ERC20STD::balanceOfCall{
-                account: Address::from_str(&args.account).unwrap()
-            };
-        let call_data = ERC20STD::ERC20STDCalls::balanceOf(call_args).abi_encode();
-        log::debug!("call_data: {:?}", call_data);
 
         let (token_addr, _decimals) = self
             .ledgers
             .get(&args.symbol)
             .ok_or_else(|| format!("Token {} is not supported", args.symbol))?;
 
-        let body = json!({
-            "jsonrpc": "2.0",
-            "method": "eth_call",
-            "params": [{
-                "to": token_addr.to_string(),
-                "data": format!("0x{}", hex::encode(call_data)),
-            }, "latest"],
-            "id": 1
-        });
-        let body = serde_json::to_vec(&body)?;
+        let contract = ERC20STD::new(*token_addr, provider);
 
-        let res = ctx.https_call(
-                url, 
-                http::Method::POST, 
-                Some(get_http_header()), 
-                Some(body)
-            ).await?;
-        let body = res.json::<JsonRpcResponse>().await?;
-        log::debug!("BSC balance query: {:#?}", body);
-        let balance = get_balance(body)?;
+        // Get token symbol.
+        let symbol = contract.symbol().call().await.unwrap()._0;
+        let decimals = contract.decimals().call().await.unwrap()._0;
+        let balance = contract.balanceOf(owner_addr).call().await.unwrap()._0;
+        log::debug!("symbol: {:?}, decimals: {:?}", symbol.clone(), decimals);
+        log::debug!("BSC balance query: {:#?}", balance);
+        let balance = get_balance(balance)?;
 
         log::info!(  // Todo: why not log in test
             account = args.account,

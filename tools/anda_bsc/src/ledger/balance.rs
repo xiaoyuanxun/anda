@@ -78,7 +78,7 @@ impl Tool<BaseCtx> for BalanceOfTool {
         data: Self::Args,
         _resources: Option<Vec<Resource>>,
     ) -> Result<ToolOutput<Self::Output>, BoxError> {
-        let (_, amount) = self.ledgers.balance_of(&ctx, data).await?;
+        let (_, amount) = self.ledgers.balance_of(ctx, data).await?;
         Ok(ToolOutput::new(amount))
     }
 }
@@ -91,6 +91,7 @@ mod tests {
     use alloy::{
         hex, primitives::address, providers::ProviderBuilder
     };
+    use alloy::network::EthereumWallet;
     use anda_web3_client::client::{
         Client as Web3Client, load_identity
     };
@@ -100,6 +101,7 @@ mod tests {
         engine::EngineBuilder,
     };
     use rand::Rng;
+    use crate::signer::{AndaSigner, convert_to_boxed};
     use super::super::ERC20STD;
 
     #[tokio::test]
@@ -125,8 +127,9 @@ mod tests {
             .unwrap();
 
         // Initialize Web3 client for ICP network interaction
+        let url = "https://bsc-testnet.bnbchain.org";
         let web3 = Web3Client::builder()
-            .with_ic_host("https://bsc-testnet.bnbchain.org")
+            .with_ic_host(url)
             .with_identity(Arc::new(identity))
             .with_root_secret(root_secret)
             .build().await.unwrap();

@@ -151,9 +151,7 @@ pub(crate) fn get_http_header() -> http::HeaderMap {
 }
 
 /// Helper function to parse the balance from the JSON response
-pub(crate) fn get_balance(body: JsonRpcResponse) -> Result<f64, BoxError> {
-    let balance = body.result.strip_prefix("0x").unwrap_or(&body.result);
-    let balance = U256::from_str_radix(balance, 16)?;
+pub(crate) fn get_balance(balance: U256) -> Result<f64, BoxError> {
     let balance = format_units(balance, 18)?;
     let balance = balance.parse::<f64>()?;
     Ok(balance)
