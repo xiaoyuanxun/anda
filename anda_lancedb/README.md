@@ -1,4 +1,4 @@
-# `anda_lancedb`
+# `anda_lancedb` DEPRECATED
 
 Anda vector store based on LanceDB.
 
