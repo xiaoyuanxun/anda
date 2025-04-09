@@ -720,6 +720,7 @@ impl KeysFeatures for AgentCtx {
     }
 
     /// Signs a message using Secp256k1 ECDSA signature from the given derivation path.
+    /// The message will be hashed with SHA-256 before signing.
     async fn secp256k1_sign_message_ecdsa(
         &self,
         derivation_path: &[&[u8]],
@@ -730,15 +731,26 @@ impl KeysFeatures for AgentCtx {
             .await
     }
 
+    /// Signs a message hash using Secp256k1 ECDSA signature from the given derivation path.
+    async fn secp256k1_sign_digest_ecdsa(
+        &self,
+        derivation_path: &[&[u8]],
+        message_hash: &[u8],
+    ) -> Result<[u8; 64], BoxError> {
+        self.base
+            .secp256k1_sign_digest_ecdsa(derivation_path, message_hash)
+            .await
+    }
+
     /// Verifies a Secp256k1 ECDSA signature from the given derivation path.
     async fn secp256k1_verify_ecdsa(
         &self,
         derivation_path: &[&[u8]],
-        message: &[u8],
+        message_hash: &[u8],
         signature: &[u8],
     ) -> Result<(), BoxError> {
         self.base
-            .secp256k1_verify_ecdsa(derivation_path, message, signature)
+            .secp256k1_verify_ecdsa(derivation_path, message_hash, signature)
             .await
     }
 

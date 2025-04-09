@@ -23,9 +23,9 @@ pub static APP_USER_AGENT: &str = concat!(
 /// Generates a random number within the given range
 pub fn rand_number<T, R>(range: R) -> T
 where
-    T: rand::distributions::uniform::SampleUniform,
-    R: rand::distributions::uniform::SampleRange<T>,
+    T: rand::distr::uniform::SampleUniform,
+    R: rand::distr::uniform::SampleRange<T>,
 {
-    let mut rng = rand::thread_rng();
-    rng.gen_range(range)
+    let mut rng = rand::rng();
+    rng.random_range(range)
 }

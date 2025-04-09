@@ -3,7 +3,7 @@ use anda_web3_client::client::{Client as Web3Client, load_identity};
 use base64::{Engine, prelude::BASE64_URL_SAFE};
 use ciborium::value::Value;
 use clap::{Parser, Subcommand};
-use rand::{RngCore, thread_rng};
+use rand::RngCore;
 use std::sync::Arc;
 
 #[derive(Parser)]
@@ -82,7 +82,7 @@ async fn main() -> Result<(), BoxError> {
 
     match &cli.command {
         Some(Commands::RandBytes { len, format }) => {
-            let mut rng = thread_rng();
+            let mut rng = rand::rng();
             let mut bytes = vec![0u8; (*len).min(1024)];
             rng.fill_bytes(&mut bytes);
             match format.as_str() {
