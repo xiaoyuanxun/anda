@@ -347,6 +347,19 @@ impl Web3ClientFeatures for Client {
         Box::pin(futures::future::ready(Ok(res.into_array())))
     }
 
+    fn secp256k1_sign_digest_ecdsa(
+        &self,
+        derivation_path: &[&[u8]],
+        message_hash: &[u8],
+    ) -> BoxPinFut<Result<[u8; 64], BoxError>> {
+        let res = crypto::secp256k1_sign_digest_ecdsa(
+            &self.root_secret,
+            derivation_path.iter().map(|v| v.to_vec()).collect(),
+            message_hash,
+        );
+        Box::pin(futures::future::ready(Ok(res.into_array())))
+    }
+
     /// Verifies a Secp256k1 ECDSA signature
     ///
     /// # Arguments

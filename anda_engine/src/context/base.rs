@@ -376,6 +376,7 @@ impl KeysFeatures for BaseCtx {
     }
 
     /// Signs a message using Secp256k1 ECDSA signature from the given derivation path.
+    /// The message will be hashed with SHA-256 before signing.
     async fn secp256k1_sign_message_ecdsa(
         &self,
         derivation_path: &[&[u8]],
@@ -399,18 +400,42 @@ impl KeysFeatures for BaseCtx {
         }
     }
 
+    /// Signs a message hash using Secp256k1 ECDSA signature from the given derivation path.
+    async fn secp256k1_sign_digest_ecdsa(
+        &self,
+        derivation_path: &[&[u8]],
+        message_hash: &[u8],
+    ) -> Result<[u8; 64], BoxError> {
+        match self.web3.as_ref() {
+            Web3SDK::Tee(cli) => {
+                cli.secp256k1_sign_digest_ecdsa(
+                    &derivation_path_with(&self.path, derivation_path),
+                    message_hash,
+                )
+                .await
+            }
+            Web3SDK::Web3(Web3Client { client: cli }) => {
+                cli.secp256k1_sign_digest_ecdsa(
+                    &derivation_path_with(&self.path, derivation_path),
+                    message_hash,
+                )
+                .await
+            }
+        }
+    }
+
     /// Verifies a Secp256k1 ECDSA signature from the given derivation path.
     async fn secp256k1_verify_ecdsa(
         &self,
         derivation_path: &[&[u8]],
-        message: &[u8],
+        message_hash: &[u8],
         signature: &[u8],
     ) -> Result<(), BoxError> {
         match self.web3.as_ref() {
             Web3SDK::Tee(cli) => {
                 cli.secp256k1_verify_ecdsa(
                     &derivation_path_with(&self.path, derivation_path),
-                    message,
+                    message_hash,
                     signature,
                 )
                 .await
@@ -418,7 +443,7 @@ impl KeysFeatures for BaseCtx {
             Web3SDK::Web3(Web3Client { client: cli }) => {
                 cli.secp256k1_verify_ecdsa(
                     &derivation_path_with(&self.path, derivation_path),
-                    message,
+                    message_hash,
                     signature,
                 )
                 .await
