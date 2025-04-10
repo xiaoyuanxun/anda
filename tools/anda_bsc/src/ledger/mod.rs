@@ -40,7 +40,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::json;
 
 use alloy::{
-    consensus::TxEnvelope, network::EthereumWallet, primitives::{utils::{format_units, parse_units}, Address, U256}, providers::ProviderBuilder, sol, sol_types::SolInterface
+    consensus::TxEnvelope, 
+    network::{AnyNetwork, EthereumWallet, NetworkWallet}, 
+    primitives::{utils::{format_units, parse_units}, Address, U256}, 
+    providers::ProviderBuilder, 
+    signers::local::PrivateKeySigner, 
+    sol, sol_types::SolInterface
 };
 use core::str::FromStr;
 
@@ -50,7 +55,7 @@ pub mod transfer;
 pub use balance::*;
 pub use transfer::*;
 
-use crate::{signer::{convert_to_boxed, AndaSigner}, utils_evm::*};
+use crate::{signer::{convert_to_boxed, derive_address_from_pubkey, AndaSigner}, utils_evm::*};
 
 // Codegen from artifact.
 sol!(
@@ -129,12 +134,42 @@ impl BSCLedgers {
     /// Result containing the ledger ID and transaction ID (Nat) or an error
     async fn transfer(
         &self,
-        ctx: &BaseCtx, // Todo: impl HttpFeatures
+        ctx: BaseCtx, // Todo: impl HttpFeatures
         me: Address,
         args: transfer::TransferToArgs,
     ) -> Result<(Address, Nat), BoxError> {
         use hex;
         use std::str::FromStr;
+        use anda_core::KeysFeatures;
+
+        let url = "https://bsc-testnet.bnbchain.org";  // Todo: pass it as a parameter in call
+        let chain_id: u64 = 97;
+        let derivation_path: &[&[u8]] = &[b"44'", b"60'", b"10'", b"20", b"30"];  // Todo: how to retrieve derivation path?
+
+        // Create an anda signer
+        let signer = AndaSigner::new(
+            ctx.clone(), 
+            convert_to_boxed(derivation_path),
+            Some(chain_id),
+        ).await?;
+
+        // Todo: to remove
+        // let root_secret_org = dotenv::var("ROOT_SECRET").unwrap();
+        // let root_secret = const_hex::decode(&root_secret_org).unwrap();
+        // let sk = ic_secp256k1::PrivateKey::generate_from_seed(&root_secret);
+        // let sk = sk.serialize_sec1();
+        // let sk = hex::encode(&sk);
+        // let signer: PrivateKeySigner = sk.as_str().parse().expect("should parse private key");
+
+        // // Create an Ethereum wallet from the signer
+        let wallet = EthereumWallet::from(signer);
+        // Get sender EVM address
+        let sender_address = NetworkWallet::<AnyNetwork>::default_signer_address(&wallet);
+        log::debug!("Sender EVM address: {:?}", sender_address);                
+        
+        // Create a provider with the wallet.
+        let provider = ProviderBuilder::new().
+                wallet(wallet).on_http(reqwest::Url::parse(url).unwrap());
 
         let to_addr = Address::from_str(&args.account)?;  
         let to_amount = &args.amount;
@@ -144,72 +179,25 @@ impl BSCLedgers {
             .get(&args.symbol)
             .ok_or_else(|| format!("Token {} is not supported", args.symbol))?;
 
-        let balance_of_args = BalanceOfArgs {
-            account: me.to_string().clone(),
-            symbol: args.symbol.clone(),
-        };
-        let balance = self.balance_of(ctx.clone(), balance_of_args).await?.1;
-        if balance < *to_amount  {
+        // Create contract instance, get token symbol and decimals
+        let contract = ERC20STD::new(*token_addr, provider);
+        let symbol = contract.symbol().call().await?._0;
+        let decimals = contract.decimals().call().await?._0;
+        let balance = contract.balanceOf(sender_address).call().await?._0;
+        log::debug!("symbol: {:?}, decimals: {:?}, balance: {:?}", symbol.clone(), decimals, balance);
+        
+        // Balance check
+        let to_amount = parse_units(&to_amount.to_string(), decimals)?.into();
+        if balance < to_amount  {
             return Err("Insufficient balance".into());
         }
 
-        // Generate Transfer Call Data
-        let call_args = ERC20STD::transferCall{
-            to: to_addr,
-            amount: parse_units(&to_amount.to_string(), *decimals)?.into(),
-        };
-        let amount = call_args.amount.to_be_bytes_vec();
-        let call_data = ERC20STD::ERC20STDCalls::transfer(call_args).abi_encode();
-        log::debug!("call_data: {:?}", call_data);
+        // Transfer token
+        log::debug!("BSC transfer. amount: {:?}, transfer to_addr: {:?}", to_amount, to_addr);
+        let res = contract.transfer(to_addr, to_amount).send().await?.watch().await;
+        log::debug!("BSC transfer result: {:#?}", res);
 
-        // let nonce = get_nonce(sender_address, rpc_url).await?;  // Todo: get real time nonce
-
-        let chain_id: u64 = 97; // Todo: adjust chain id by testnet or mainnet
-        let tx_evm = TxEvm {
-            nonce: 1,
-            gas_price: 5_000_000_000u128, // 5 Gwei
-            gas_limit: 21000u64, // Adjust based on contract
-            to: &token_addr,
-            value: U256::ZERO, // For ERC20 transfers
-            data: &call_data,
-            v: chain_id,
-            r: U256::ZERO,
-            s: U256::ZERO,
-        };
-
-        // let derivation_path: &[&[u8]] = &[b"44'", b"60'", b"10'", b"20", b"30"];  // Todo: after the way to retrieve derivation_path is confirmed
-        // let signature = ctx.secp256k1_sign_message_ecdsa(derivation_path, &tx_hash).await?;
-        
-        let root_secret_org = dotenv::var("ROOT_SECRET")?;  // Todo: Read root secret from ctx
-        let root_secret = const_hex::decode(&root_secret_org)?;
-        let sk = generate_secret_key(root_secret.as_slice())?;
-        let stream = tx_evm.compose_tx_raw(&sk)?;
-
-        let body = json!({
-            "id": 1,
-            "jsonrpc":"2.0",
-            "method":"eth_sendRawTransaction",
-            "params":[
-                format!("0x{}", hex::encode::<&[u8]>(stream.as_raw())), 
-            ],    
-        });
-
-        log::debug!("Transfer req body: {:#?}", body);
-        let body = serde_json::to_vec(&body)?;
-
-        let url = "https://bsc-testnet.bnbchain.org";  // Todo: pass it as a parameter in call
-
-        let res = ctx.https_call(
-            url, 
-            http::Method::POST, 
-            Some(get_http_header()), 
-            Some(body)
-        ).await?;
-        let body = res.text().await?;
-        log::debug!("BSC transfer res body: {:#?}", body);
-
-        let amount = BigUint::from_bytes_be(amount.as_slice());
-        Ok((to_addr, Nat(amount)))
+        Ok((to_addr, Nat::from(0u32)))
     }
 
     /// Retrieves the balance of a specific account for a given token
@@ -226,8 +214,6 @@ impl BSCLedgers {
         args: balance::BalanceOfArgs,
     ) -> Result<(Address, f64), BoxError> {
         let url = "https://bsc-testnet.bnbchain.org";  // Todo: pass it as a parameter in call
-
-
         let chain_id: u64 = 97;
         let derivation_path: &[&[u8]] = &[b"44'", b"60'", b"10'", b"20", b"30"];  // Todo: how to retrieve derivation path?
 
@@ -245,8 +231,7 @@ impl BSCLedgers {
         let provider = ProviderBuilder::new().
                 wallet(wallet).on_http(reqwest::Url::parse(url).unwrap());
 
-
-        let owner_addr = Address::from_str(&args.account)?;
+        let user_addr = Address::from_str(&args.account)?;
 
         let (token_addr, _decimals) = self
             .ledgers
@@ -255,12 +240,13 @@ impl BSCLedgers {
 
         let contract = ERC20STD::new(*token_addr, provider);
 
-        // Get token symbol.
         let symbol = contract.symbol().call().await.unwrap()._0;
         let decimals = contract.decimals().call().await.unwrap()._0;
-        let balance = contract.balanceOf(owner_addr).call().await.unwrap()._0;
-        log::debug!("symbol: {:?}, decimals: {:?}", symbol.clone(), decimals);
-        log::debug!("BSC balance query: {:#?}", balance);
+        let balance = contract.balanceOf( user_addr).call().await.unwrap()._0;
+        log::debug!("Query balance. user_addr: {:?}, token_addr: {:?}. \
+                    symbol: {:?}, decimals: {:?}, balance query: {:?}", 
+                    user_addr, token_addr, symbol.clone(), decimals, balance);
+
         let balance = get_balance(balance)?;
 
         log::info!(  // Todo: why not log in test
@@ -270,6 +256,6 @@ impl BSCLedgers {
             "balance_of_bsc",
         );
 
-        return Ok((owner_addr, balance));
+        return Ok((user_addr, balance));
     }
 }

@@ -94,7 +94,7 @@ impl Tool<BaseCtx> for TransferTool {
         _resources: Option<Vec<Resource>>,
     ) -> Result<ToolOutput<Self::Output>, BoxError> {
         let address = Address::from_str(&data.account)?; // Todo: pass sender address as a parameter in call
-        let (ledger, tx) = self.ledgers.transfer(&ctx, address, data).await?;
+        let (ledger, tx) = self.ledgers.transfer(ctx, address, data).await?;
         Ok(ToolOutput::new(format!(
             "Successful, transaction ID: {}, detail: https://www.icexplorer.io/token/details/{}", // Todo: change for BSC
             tx.0.to_u64().unwrap_or(0),
@@ -105,6 +105,8 @@ impl Tool<BaseCtx> for TransferTool {
 
 #[cfg(test)]
 mod tests {
+    use crate::signer::derive_address_from_pubkey;
+
     use super::*;
     use anda_engine::{
         extension::extractor::Extractor,
@@ -132,11 +134,9 @@ mod tests {
         .try_init();
 
         // Generate random bytes for identity and root secret
-        let mut rng = rand::thread_rng();
-        let random_bytes: Vec<u8> = (0..32).map(|_| rng.r#gen()).collect();
+        let mut rng = rand::rng();
+        let random_bytes: Vec<u8> = (0..32).map(|_| rng.random()).collect();
         let id_secret = hex::encode(random_bytes);
-        let random_bytes: Vec<u8> = (0..48).map(|_| rng.r#gen()).collect();  // Todo: why gen is a keyword?
-        // let root_secret_org = hex::encode(random_bytes);
         let root_secret_org = dotenv::var("ROOT_SECRET").unwrap();  // Todo: Read root secret from rng
 
         // Parse and validate cryptographic secrets
@@ -149,19 +149,11 @@ mod tests {
 
         // Initialize Web3 client for ICP network interaction
         let web3 = Web3Client::builder()
-        .with_ic_host("https://bsc-testnet.bnbchain.org")
-        .with_identity(Arc::new(identity))
-        .with_root_secret(root_secret)
-        .build().await.unwrap();
+            .with_ic_host("https://bsc-testnet.bnbchain.org")
+            .with_identity(Arc::new(identity))
+            .with_root_secret(root_secret)
+            .build().await.unwrap();
     
-        // Derive EVM address from derivation path
-        // let derivation_path: &[&[u8]] = &[b"44'", b"60'", b"10'", b"20", b"30"];  // Todo: how to retrieve derivation path?
-        // let pk = web3.ed25519_public_key(&derivation_path).await.unwrap();
-
-        // Generate sepc256k1 secrete key from root secret
-        let sk = generate_secret_key(&root_secret.as_slice()).unwrap();
-        derive_evm_address(&sk); // For debugging
-
         let rpc_url = "https://bsc-testnet.bnbchain.org".parse().unwrap();
         let provider = ProviderBuilder::new().on_http(rpc_url);
         let token_addr = address!("0xDE3a190D9D26A8271Ae9C27573c03094A8A2c449");
@@ -190,8 +182,8 @@ mod tests {
         assert_eq!(definition.name, "bsc_ledger_transfer");
         assert_eq!(tool.description().contains(&symbol), true);
 
-        let to_addr = address!("0xDE3a190D9D26A8271Ae9C27573c03094A8A2c449");
-        let transfer_amount = 0.0;  // Todo: set a positive amount
+        let to_addr = address!("0xA8c4AAE4ce759072D933bD4a51172257622eF128");  // Receiver addr
+        let transfer_amount = 0.012;
         let transfer_to_args = TransferToArgs {
             account: to_addr.to_string(),
             symbol: symbol.clone(),
@@ -212,6 +204,7 @@ mod tests {
                     .register_agent(agent).unwrap()
                     .mock_ctx();
         let base_ctx = engine_ctx.base.clone();
+        
         tool.call(base_ctx, transfer_to_args, None).await.unwrap();
     }
 }

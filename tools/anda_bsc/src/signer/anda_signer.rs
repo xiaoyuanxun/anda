@@ -1,10 +1,14 @@
 use alloy::consensus::SignableTransaction;
-use alloy::primitives::{Address, ChainId, PrimitiveSignature as Signature, B256, U256};
+use alloy::primitives::{address, Address, ChainId, PrimitiveSignature as Signature, B256, U256};
 use alloy::signers::{self as alloy_signer, sign_transaction_with_chain_id, Result, Signer, Error};
 use async_trait::async_trait;
+use keccak_hash::H256;
+use secp256k1::Secp256k1;
 use std::fmt;
 use anda_engine::context::BaseCtx;
 use anda_core::KeysFeatures;
+
+use crate::utils_evm::{generate_secret_key, get_r_s_v, sign_tx_evm};
 
 /// Anda signer that uses a remote TEE service via a web client.
 #[derive(Clone)]
@@ -16,7 +20,7 @@ pub struct AndaSigner {
     /// The Ethereum address
     address: Address,
     /// The public key
-    pubkey: [u8; 32],
+    pubkey: [u8; 33],
     /// The base context for communicating with the TEE service
     client: BaseCtx, // Todo: change to &BaseCtx?
 }
@@ -46,6 +50,10 @@ pub enum AndaSignerError {
     /// Public key convertion error
     #[error("public key convertion error: {0}")]
     PubKeyConvertion(String),
+
+    /// Signature error
+    #[error("signature error: {0}")]
+    SignatureError(String),
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
@@ -60,6 +68,7 @@ impl alloy::network::TxSigner<Signature> for AndaSigner {
         &self,
         tx: &mut dyn SignableTransaction<Signature>,
     ) -> Result<Signature> {
+        log::debug!("Anda signing transaction: {:#?}", tx);
         sign_transaction_with_chain_id!(self, tx, self.sign_hash(&tx.signature_hash()).await)
     }
 }
@@ -73,24 +82,41 @@ impl Signer for AndaSigner {
             .iter().map(|x| x.as_ref()).collect::<Vec<_>>();
         let derivation = derivation.as_slice();
 
-        let sig_ic = self.client.secp256k1_sign_message_ecdsa(derivation, hash.as_slice())
+        // Todo: possiblely problemstic
+        let sig_ic = self.client.secp256k1_sign_digest_ecdsa(derivation, hash.as_slice())
             .await
-            .map_err(|e| Error::other(AndaSignerError::WebClient(e.to_string())))?;
+            .map_err(|e| Error::other(AndaSignerError::SignatureError(e.to_string())))?;
 
         let signature = Signature::new (
             U256::from_be_slice(&sig_ic[0..32]),  // r
             U256::from_be_slice(&sig_ic[32..64]), // s
-            y_parity(hash.as_slice(), &sig_ic, self.pubkey.as_slice()) // Todo: Is it compatible with EIP155        
+            y_parity(hash.as_slice(), &sig_ic, self.pubkey.as_slice())? // Todo: possiblely problemstic
         );
 
+/*      // Todo: To remove
+        let root_secret_org = dotenv::var("ROOT_SECRET").unwrap();
+        let root_secret = const_hex::decode(&root_secret_org)?;
+        let sk = generate_secret_key(root_secret.as_slice()).unwrap();
+        let secp = Secp256k1::new();
+        let pubkey = sk.public_key(&secp).serialize();
+        let address = derive_address_from_pubkey(&pubkey)
+            .map_err(|e| AndaSignerError::AddressDerivation(e)).unwrap();
+        log::debug!("Signer EVM address: {:?} from pubkey : {:?}", address, hex::encode(&pubkey));
+        let (recovery_id, serialized_sig) = sign_tx_evm(&secp, &sk, &H256(hash.0));
+        let (r, s, v) = get_r_s_v(recovery_id, serialized_sig, 97)?;
+        let v =  match v % 2 {
+            0 => false,
+            1 => true,
+            _ => unreachable!(),
+        };
+        let signature = Signature::new (
+            U256::from_be_slice(&r),  // r
+            U256::from_be_slice(&s), // s
+            v,
+        );
+*/
         Ok(signature)
     }
-
-    // async fn sign_message(&self, message: &[u8]) -> Result<Signature> {
-    //     self.client.secp256k1_sign_message_ecdsa(&self.derivation, message)
-    //         .await
-    //         .map_err(|e| Error::other(AndaSignerError::WebClient(e.to_string())))
-    // }
 
     #[inline]
     fn address(&self) -> Address {
@@ -126,19 +152,21 @@ impl AndaSigner {
             let derivation = derivation.as_slice();
     
         // Fetch the public key from the TEE service
-        let pubkey_bytes = client.secp256k1_public_key(&derivation)
+        let pubkey_bytes = client.secp256k1_public_key(derivation)
             .await
             .map_err(|e| AndaSignerError::WebClient(e.to_string()))?;
-        
+
         // Convert the public key to an Ethereum address
         let address = derive_address_from_pubkey(&pubkey_bytes)
             .map_err(|e| AndaSignerError::AddressDerivation(e))?;
-        
+        log::debug!("Signer pubkey: {:?}, Signer EVM address: {:?}",
+            hex::encode(pubkey_bytes), address);
+
         Ok(Self {
             derivation: derivation_re,
             chain_id,
             address,
-            pubkey: pubkey_bytes[1..].try_into().
+            pubkey: pubkey_bytes.try_into().
                     map_err(|_| AndaSignerError::PubKeyConvertion("Public key length error".to_string()))?,
             client,
         })
@@ -158,7 +186,7 @@ impl AndaSigner {
 }
 
 /// Helper function to derive an Ethereum address from a public key
-fn derive_address_from_pubkey(pubkey: &[u8]) -> Result<Address, String> {    
+pub fn derive_address_from_pubkey(pubkey: &[u8]) -> Result<Address, String> {    
     let key = k256::ecdsa::VerifyingKey::from_sec1_bytes(pubkey)
         .map_err(|e| e.to_string())?;
     Ok(alloy::signers::utils::public_key_to_address(&key))
@@ -175,19 +203,19 @@ fn derive_address_from_pubkey(pubkey: &[u8]) -> Result<Address, String> {
 /// # Returns
 ///
 /// The parity bit.
-fn y_parity(prehash: &[u8], sig: &[u8], pubkey: &[u8]) -> bool {
+fn y_parity(prehash: &[u8], sig: &[u8], pubkey: &[u8]) -> Result<bool> {
     use alloy::signers::k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
 
     let orig_key = VerifyingKey::from_sec1_bytes(pubkey).expect("failed to parse the pubkey");
-    let signature = Signature::try_from(sig).unwrap();
+    let signature = Signature::try_from(sig)?;
     for parity in [0u8, 1] {
-        let recid = RecoveryId::try_from(parity).unwrap();
+        let recid = RecoveryId::try_from(parity)?;
         let recovered_key = VerifyingKey::recover_from_prehash(prehash, &signature, recid)
             .expect("failed to recover key");
         if recovered_key == orig_key {
             match parity {
-                0 => return false,
-                1 => return true,
+                0 => return Ok(false),
+                1 => return Ok(true),
                 _ => unreachable!(),
             }
         }

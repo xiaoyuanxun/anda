@@ -101,8 +101,9 @@ mod tests {
         engine::EngineBuilder,
     };
     use rand::Rng;
-    use crate::signer::{AndaSigner, convert_to_boxed};
+    use crate::signer::{convert_to_boxed, derive_address_from_pubkey, AndaSigner};
     use super::super::ERC20STD;
+    use anda_core::KeysFeatures;
 
     #[tokio::test]
     async fn test_bsc_ledger_balance() {
@@ -112,11 +113,10 @@ mod tests {
         .try_init();
 
         // Generate random bytes for identity and root secret
-        let mut rng = rand::thread_rng();
-        let random_bytes: Vec<u8> = (0..32).map(|_| rng.r#gen()).collect();
+        let mut rng = rand::rng();
+        let random_bytes: Vec<u8> = (0..32).map(|_| rng.random()).collect();
         let id_secret = hex::encode(random_bytes);
-        let random_bytes: Vec<u8> = (0..48).map(|_| rng.r#gen()).collect();  // Todo: why gen is a keyword?
-        let root_secret_org = hex::encode(random_bytes);
+        let root_secret_org = dotenv::var("ROOT_SECRET").unwrap();  // Todo: use fixed root secret for test
 
         // Parse and validate cryptographic secrets
         let identity = load_identity(&id_secret).unwrap();
@@ -134,24 +134,18 @@ mod tests {
             .with_root_secret(root_secret)
             .build().await.unwrap();
 
-        // Derive EVM address from derivation path
-        let derivation_path: &[&[u8]] = &[b"44'", b"60'", b"10'", b"20", b"30"];  // Todo: how to retrieve derivation path?
-        let pk = web3.ed25519_public_key(&derivation_path).await.unwrap();
-        let address = format!("0x{}", hex::encode(&pk[12..]));
-        // let address = "0xA8c4AAE4ce759072D933bD4a51172257622eF128".to_string();
-        log::debug!("User EVM address: {:?}", address);
-
-        let rpc_url = "https://bsc-testnet.bnbchain.org".parse().unwrap();
+        let rpc_url = url.parse().unwrap();
         let provider = ProviderBuilder::new().on_http(rpc_url);
+
+        // ERC20 token contract address and instance
         let token_addr = address!("0xDE3a190D9D26A8271Ae9C27573c03094A8A2c449");
         let contract = ERC20STD::new(token_addr, provider.clone());
 
-        // Get token symbol.
+        // Get token symbol and decimals
         let symbol = contract.symbol().call().await.unwrap()._0;
         let decimals = contract.decimals().call().await.unwrap()._0;
         log::debug!("symbol: {:?}, decimals: {:?}", symbol.clone(), decimals);
 
-        let principal = Principal::from_text("druyg-tyaaa-aaaaq-aactq-cai").unwrap();
         let ledgers = BSCLedgers {
             ledgers: BTreeMap::from([
                 (
@@ -178,14 +172,26 @@ mod tests {
         let agent = Extractor::<TestStruct>::default();
 
         let engine_ctx = EngineBuilder::new()
-                    .with_id(principal)
                     .with_name("BSC_TEST".to_string()).unwrap()
                     .with_web3_client(Arc::new(Web3SDK::from_web3(Arc::new(web3.clone()))))
                     .register_agent(agent).unwrap()
                     .mock_ctx();
         let base_ctx = engine_ctx.base.clone();
+
+        // Derive EVM address from derivation path
+        let derivation_path: &[&[u8]] = &[b"44'", b"60'", b"10'", b"20", b"30"];  // Todo: how to retrieve derivation path?
+        let pubkey_bytes = base_ctx.secp256k1_public_key(derivation_path)
+            .await
+            .map_err(|e| 
+                format!("Failed to get public key from derivation path: {:?}. Error: {:?}", derivation_path, e.to_string()
+                ) 
+            ).unwrap();
+        let user_address = derive_address_from_pubkey(&pubkey_bytes).unwrap();
+        log::debug!("User pubkey: {:?}, User EVM address: {:?}",
+                    user_address, hex::encode(pubkey_bytes));
+
         let args = BalanceOfArgs {
-            account: address,
+            account: user_address.to_string(),
             symbol: symbol.clone(),
         };
         tool.call(base_ctx, args, None).await.unwrap();

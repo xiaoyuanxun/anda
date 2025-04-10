@@ -90,8 +90,11 @@ pub(crate) fn sign_tx_evm<C: Signing + Verification>(
     let signature = secp.sign_ecdsa_recoverable(&msg, &sk);
 
     // Recover public key from signature  // Todo: Add to test, verify signature by pubkey_rcv
-    // let pubkey_rcv = secp.recover_ecdsa(&msg, &signature).unwrap().serialize_uncompressed();
-    // println!("pubkey_rcv: {:?}", hex::encode(&pubkey_rcv));
+    // let pubkey_rcv = secp.recover_ecdsa(&msg, &signature).unwrap().serialize();
+    // let address = keccak::<&[u8]>(&pubkey_rcv[1..]);
+    // let address = (&Address::from_slice(&address[12..32])).to_checksum(None);
+    // println!("pubkey_rcv: {:?}, address from pubkey_rcv: {:?}",
+    //          hex::encode(&pubkey_rcv), address);
     signature.serialize_compact()
 }
 

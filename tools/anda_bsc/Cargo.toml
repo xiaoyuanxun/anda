@@ -56,6 +56,7 @@ thiserror = "1.0"
 tracing = "0.1"
 k256 = { version = "0.13", features = ["ecdsa"] }
 spki = "0.7"
+ic-secp256k1 = "0.1"
 
 [dev-dependencies]
 rand = { workspace = true }
