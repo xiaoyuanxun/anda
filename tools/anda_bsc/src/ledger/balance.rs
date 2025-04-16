@@ -14,9 +14,9 @@ use super::BSCLedgers;
 /// Arguments for the balance of an account for a token
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct BalanceOfArgs {
-    /// ICP account address (principal) to query, e.g. "77ibd-jp5kr-moeco-kgoar-rro5v-5tng4-krif5-5h2i6-osf2f-2sjtv-kqe"
+    /// account address
     pub account: String,
-    /// Token symbol, e.g. "ICP"
+    /// Token symbol, e.g. "cake"
     pub symbol: String,
 }
 
@@ -44,7 +44,7 @@ impl BalanceOfTool {
 /// Enables AI Agent to query the balance of an account for a ICP token
 impl Tool<BaseCtx> for BalanceOfTool {
     type Args = BalanceOfArgs;
-    type Output = f64;
+    type Output = String;
 
     fn name(&self) -> String {
         Self::NAME.to_string()
@@ -78,31 +78,35 @@ impl Tool<BaseCtx> for BalanceOfTool {
         data: Self::Args,
         _resources: Option<Vec<Resource>>,
     ) -> Result<ToolOutput<Self::Output>, BoxError> {
-        let (_, amount) = self.ledgers.balance_of(ctx, data).await?;
-        Ok(ToolOutput::new(amount))
+        let token_symbol = data.symbol.clone();
+        let (address, amount) = self.ledgers.balance_of(ctx, data).await?;
+        Ok(ToolOutput::new(format!(
+            "Successful {} balance query, user address: {}, balance {}",
+            token_symbol,
+            address.to_string(),
+            amount
+        )))
+
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use candid::Principal;
     use std::collections::BTreeMap;
     use alloy::{
         hex, primitives::Address, providers::ProviderBuilder
     };
-    use alloy::network::EthereumWallet;
     use anda_web3_client::client::{
         Client as Web3Client, load_identity
     };
     use anda_engine::{
         extension::extractor::Extractor,
-        context::{Web3SDK, Web3ClientFeatures},
+        context::Web3SDK,
         engine::EngineBuilder,
     };
-    use rand::Rng;
-    use crate::ledger::{BSC_RPC, DRVT_PATH, TOKEN_ADDR};
-    use crate::signer::{convert_to_boxed, derive_address_from_pubkey, AndaSigner};
+    use crate::ledger::{bsc_rpc, DRVT_PATH, TOKEN_ADDR};
+    use crate::signer::derive_address_from_pubkey;
     use super::super::ERC20STD;
     use anda_core::KeysFeatures;
 
@@ -113,11 +117,9 @@ mod tests {
         .filter_level(log::LevelFilter::Debug)
         .try_init();
 
-        // Generate random bytes for identity and root secret
-        let mut rng = rand::rng();
-        let random_bytes: Vec<u8> = (0..32).map(|_| rng.random()).collect();
-        let id_secret = hex::encode(random_bytes);
-        let root_secret_org = dotenv::var("ROOT_SECRET").unwrap();  // Todo: use fixed root secret for test
+        // Read identity and root secret
+        let id_secret = dotenv::var("ID_SECRET").unwrap();
+        let root_secret_org = dotenv::var("ROOT_SECRET").unwrap();
 
         // Parse and validate cryptographic secrets
         let identity = load_identity(&id_secret).unwrap();
@@ -129,13 +131,15 @@ mod tests {
 
         // Initialize Web3 client for ICP network interaction
         let web3 = Web3Client::builder()
-            // .with_ic_host(url)  // Todo: Why local url would hang the programe?
+            // .with_ic_host(url)  // Todo: Why local url, i.e "localhost:8545", would hang the programe?
             .with_identity(Arc::new(identity))
             .with_root_secret(root_secret)
             .build().await.unwrap();
 
-        let rpc_url = BSC_RPC.parse().unwrap();
+        // Create provider
+        let rpc_url = bsc_rpc().parse().unwrap();
         let provider = ProviderBuilder::new().on_http(rpc_url);
+
         // ERC20 token contract address and instance
         let token_addr =  Address::parse_checksummed(TOKEN_ADDR, None).unwrap();
         let contract = ERC20STD::new(token_addr, provider.clone());
@@ -145,6 +149,7 @@ mod tests {
         let decimals = contract.decimals().call().await.unwrap();
         log::debug!("symbol: {:?}, decimals: {:?}", symbol.clone(), decimals);
 
+        // Create ledgers instance
         let ledgers = BSCLedgers {
             ledgers: BTreeMap::from([
                 (
@@ -156,13 +161,12 @@ mod tests {
                 ),
             ])
         };
-
         let ledgers = Arc::new(ledgers);
         let tool = BalanceOfTool::new(ledgers.clone());
         let definition = tool.definition();
         assert_eq!(definition.name, "bsc_ledger_balance_of");
-        let s = serde_json::to_string_pretty(&definition).unwrap();
 
+        // Create an agent for testing
         #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
         struct TestStruct {
             name: String,
@@ -170,6 +174,7 @@ mod tests {
         }    
         let agent = Extractor::<TestStruct>::default();
 
+        // Create a context for testing
         let engine_ctx = EngineBuilder::new()
                     .with_name("BSC_TEST".to_string()).unwrap()
                     .with_web3_client(Arc::new(Web3SDK::from_web3(Arc::new(web3))))
@@ -188,10 +193,13 @@ mod tests {
         log::debug!("User pubkey: {:?}, User EVM address: {:?}",
                     hex::encode(pubkey_bytes), user_address);
 
+        // Create arguments for balance query
         let args = BalanceOfArgs {
             account: user_address.to_string(),
             symbol: symbol.clone(),
         };
-        tool.call(base_ctx, args, None).await.unwrap();
-    }
-}
+        // Call the tool to query balance
+        let res = tool.call(base_ctx, args, None).await;
+        assert!(res.is_ok(), "Balance query failed: {:?}", res);
+        println!("Balance query result: {:#?}", res.unwrap());
+    }}

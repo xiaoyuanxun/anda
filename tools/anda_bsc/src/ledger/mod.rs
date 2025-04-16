@@ -23,29 +23,18 @@
 //! }
 //! ```
 
-use anda_core::{context::HttpFeatures, BoxError, CanisterCaller, CONTENT_TYPE_JSON};
+use anda_core::{BoxError, CanisterCaller};
 use anda_engine::context::BaseCtx;
-use candid::{Nat, Principal};
-use icrc_ledger_types::{
-    icrc::generic_metadata_value::MetadataValue,
-    icrc1::{
-        account::{Account, principal_to_subaccount},
-        transfer::{TransferArg, TransferError},
-    },
-};
-use num_bigint::BigUint;
+use candid::Principal;
+use icrc_ledger_types::icrc::generic_metadata_value::MetadataValue;
 use num_traits::cast::ToPrimitive;
-use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
-use serde_json::json;
 
 use alloy::{
-    consensus::TxEnvelope, 
     network::{AnyNetwork, EthereumWallet, NetworkWallet}, 
-    primitives::{utils::{format_units, parse_units}, Address, U256}, 
+    primitives::{utils::parse_units, Address, FixedBytes}, 
     providers::ProviderBuilder, 
-    signers::local::PrivateKeySigner, 
-    sol, sol_types::SolInterface
+    sol,
 };
 use core::str::FromStr;
 
@@ -55,7 +44,7 @@ pub mod transfer;
 pub use balance::*;
 pub use transfer::*;
 
-use crate::{signer::{convert_to_boxed, derive_address_from_pubkey, AndaSigner}, utils_evm::*};
+use crate::{signer::AndaSigner, utils_evm::*};
 
 // Codegen from artifact.
 sol!(
@@ -66,21 +55,16 @@ sol!(
     "artifacts/ERC20Example.json"
 );
 
-// public static url of BSC testnet RPC
-pub static BSC_RPC: &str = "https://bsc-testnet.infura.io/v3/827156e77aab4c168ad4d70412790dc5"; // BSC testnet
-// pub static BSC_RPC: &str = "http://127.0.0.1:8545/"; // Ganache
-// pub static BSC_RPC: &str = "https://sepolia.infura.io/v3/827156e77aab4c168ad4d70412790dc5";  // Sepolia testnet
+// Read the BSC_RPC from environment variable
+pub fn bsc_rpc() -> String {
+    dotenv::var("BSC_RPC").unwrap_or_else(|_| "https://bsc-testnet.bnbchain.org".to_string())
+}
 
-// public static url of BSC BRC20 contract address
+// public static url of BSC BEP20 contract address
 pub static TOKEN_ADDR: &str = "0xDE3a190D9D26A8271Ae9C27573c03094A8A2c449";  // BSC testnet
-// pub static TOKEN_ADDR: &str = "0xfbDc5aad85c7B78Ec01b9AcA8c203A876322cD30";  // Ganache
-// pub static TOKEN_ADDR: &str = "0xb72988b5dd549da72231d4A4F1Af121f2f1467b8";  // Sepolia testnet
 
 // public static chain id of BSC
 pub static CHAIN_ID: u64 = 97;  // BSC testnet
-// pub static CHAIN_ID: u64 = 1337;  // Ganache
-// pub static CHAIN_ID: u64 = 11155111;  // Sepolia testnet
-
 
 // public static derivation path
 pub static DRVT_PATH: &[&[u8]] = &[b"44'", b"60'", b"10'", b"20", b"30"];  // Todo: how to retrieve derivation path?
@@ -146,38 +130,27 @@ impl BSCLedgers {
     /// Performs the token transfer operation
     ///
     /// # Arguments
-    /// * `ctx` - BSC/EVM caller context
+    /// * `ctx` - EVM caller context
     /// * `args` - Transfer arguments containing destination account, amount, and memo
     ///
     /// # Returns
-    /// Result containing the ledger ID and transaction ID (Nat) or an error
+    /// Result containing the account address and transaction ID or an error
     async fn transfer(
         &self,
-        ctx: BaseCtx, // Todo: impl HttpFeatures
-        me: Address,
+        ctx: BaseCtx,
         args: transfer::TransferToArgs,
-    ) -> Result<(Address, Nat), BoxError> {
-        use hex;
+    ) -> Result<(Address, FixedBytes<32>), BoxError> {
         use std::str::FromStr;
-        use anda_core::KeysFeatures;
 
         // Create an anda signer
         let signer = AndaSigner::new(
-            ctx.clone(), 
+            ctx,
             convert_to_boxed(DRVT_PATH),
             Some(CHAIN_ID),
         ).await?;
 
-        // Todo: to remove
-        // let root_secret_org = dotenv::var("ROOT_SECRET").unwrap();
-        // let root_secret = const_hex::decode(&root_secret_org).unwrap();
-        // let sk = ic_secp256k1::PrivateKey::generate_from_seed(&root_secret);
-        // let sk = sk.serialize_sec1();
-        // let sk = hex::encode(&sk);
-        // let signer: PrivateKeySigner = sk.as_str().parse().expect("should parse private key");
-
         // Create an Ethereum wallet from the signer
-        let wallet = EthereumWallet::from(signer.clone());
+        let wallet = EthereumWallet::from(signer);
         // Get sender EVM address
         let sender_address = NetworkWallet::<AnyNetwork>::default_signer_address(&wallet);
         log::debug!("Sender EVM address: {:?}", sender_address);                
@@ -185,14 +158,13 @@ impl BSCLedgers {
         // Create a provider with the wallet.
         let provider = ProviderBuilder::new()
                 .with_simple_nonce_management()
-                .network::<AnyNetwork>()
                 .with_gas_estimation()
-                .wallet(signer).on_http(reqwest::Url::parse(BSC_RPC).unwrap());
+                .wallet(wallet).on_http(reqwest::Url::parse(bsc_rpc().as_ref()).unwrap());  // Todo: read rpc url from web3 client
 
+        // Get receiver address, transfer amount, and token address to transfer
         let to_addr = Address::from_str(&args.account)?;  
         let to_amount = &args.amount;
-
-        let (token_addr, decimals) = self
+        let (token_addr, _decimals) = self
             .ledgers
             .get(&args.symbol)
             .ok_or_else(|| format!("Token {} is not supported", args.symbol))?;
@@ -201,10 +173,9 @@ impl BSCLedgers {
         let contract = ERC20STD::new(*token_addr, provider);
         let symbol = contract.symbol().call().await?;
         let decimals = contract.decimals().call().await?;
-        let balance = contract.balanceOf(sender_address).call().await?;
-        log::debug!("symbol: {:?}, decimals: {:?}, balance: {:?}", symbol.clone(), decimals, balance);
-        
         // Balance check
+        let balance = contract.balanceOf(sender_address).call().await?;
+        log::debug!("symbol: {:?}, decimals: {:?}, balance: {:?}", &symbol, decimals, balance);
         let to_amount = parse_units(&to_amount.to_string(), decimals)?.into();
         if balance < to_amount  {
             return Err("Insufficient balance".into());
@@ -212,63 +183,57 @@ impl BSCLedgers {
 
         // Transfer token
         log::debug!("BSC transfer. amount: {:?}, transfer to_addr: {:?}", to_amount, to_addr);
-        let res = contract.transfer(to_addr, to_amount).send().await?.watch().await;
+        let pending_tx = contract.transfer(to_addr, to_amount).send().await?;
+        log::debug!("BSC transfer pending tx: {:?}", pending_tx);
+        let res = pending_tx.watch().await?;
         log::debug!("BSC transfer result: {:#?}", res);
 
-        Ok((to_addr, Nat::from(0u32)))
+        Ok((to_addr, res))
     }
 
     /// Retrieves the balance of a specific account for a given token
     ///
     /// # Arguments
-    /// * `ctx` - Canister caller context
+    /// * `ctx` - EVM caller context
     /// * `args` - Balance query arguments containing account and token symbol
     ///
     /// # Returns
-    /// Result containing the ledger ID and token balance (f64) or an error
+    /// Result containing the account address and token balance (f64) or an error
     async fn balance_of(
         &self,
-        ctx: BaseCtx,
+        _ctx: BaseCtx,
         args: balance::BalanceOfArgs,
     ) -> Result<(Address, f64), BoxError> {
-
-        // Create an anda signer
-        let signer = AndaSigner::new(
-            ctx, 
-            convert_to_boxed(DRVT_PATH),
-            Some(CHAIN_ID),
-        ).await.unwrap();
-
-        // Create an Ethereum wallet from the signer
-        let wallet = EthereumWallet::from(signer);
-
         // Create a provider with the wallet.
-        let provider = ProviderBuilder::new().
-                wallet(wallet).on_http(reqwest::Url::parse(BSC_RPC).unwrap());
+        let provider = ProviderBuilder::new()
+                    .on_http(reqwest::Url::parse(bsc_rpc().as_ref()).unwrap());  // Todo: read rpc url from web3 client
 
+        // Read the account address from the arguments
         let user_addr = Address::from_str(&args.account)?;
 
+        // Read the token address and decimals
         let (token_addr, _decimals) = self
             .ledgers
             .get(&args.symbol)
             .ok_or_else(|| format!("Token {} is not supported", args.symbol))?;
 
+        // Create contract instance, get token symbol and decimals
         let contract = ERC20STD::new(*token_addr, provider);
-
         let symbol = contract.symbol().call().await.unwrap();
         let decimals = contract.decimals().call().await.unwrap();
+        // Query balance
         let balance = contract.balanceOf( user_addr).call().await.unwrap();
         log::debug!("Query balance. user_addr: {:?}, token_addr: {:?}. \
                     symbol: {:?}, decimals: {:?}, balance query: {:?}", 
-                    user_addr, token_addr, symbol.clone(), decimals, balance);
+                    user_addr, token_addr, &symbol, decimals, balance);
 
+        // Convert balance to f64
         let balance = get_balance(balance)?;
-
         log::info!(  // Todo: why not log in test
             account = args.account,
             symbol = args.symbol,
             balance = balance;
-            "balance_of_bsc",
+            "balance_of_bsc"
         );
 
         return Ok((user_addr, balance));

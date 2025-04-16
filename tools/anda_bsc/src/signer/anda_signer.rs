@@ -1,14 +1,12 @@
 use alloy::consensus::SignableTransaction;
-use alloy::primitives::{address, Address, ChainId, PrimitiveSignature as Signature, B256, U256};
-use alloy::signers::{self as alloy_signer, sign_transaction_with_chain_id, Result, Signer, Error};
+use alloy::primitives::{Address, ChainId, B256, U256};
+use alloy::signers::{self as alloy_signer, sign_transaction_with_chain_id, Error, Result, Signature, Signer};
 use async_trait::async_trait;
-use keccak_hash::H256;
-use secp256k1::Secp256k1;
 use std::fmt;
 use anda_engine::context::BaseCtx;
 use anda_core::KeysFeatures;
 
-use crate::utils_evm::{generate_secret_key, get_r_s_v, sign_tx_evm};
+use crate::utils_evm::{box_to_slice, convert_to_boxed};
 
 /// Anda signer that uses a remote TEE service via a web client.
 #[derive(Clone)]
@@ -22,7 +20,7 @@ pub struct AndaSigner {
     /// The public key
     pubkey: [u8; 33],
     /// The base context for communicating with the TEE service
-    client: BaseCtx, // Todo: change to &BaseCtx?
+    client: BaseCtx,
 }
 
 impl fmt::Debug for AndaSigner {  // Todo: verify the formated output
@@ -81,7 +79,6 @@ impl Signer for AndaSigner {
             .iter().map(|x| x.as_ref()).collect::<Vec<_>>();
         let derivation = derivation.as_slice();
 
-        // Todo: possiblely problemstic
         let sig_ic = self.client.secp256k1_sign_digest_ecdsa(derivation, hash.as_slice())
             .await
             .map_err(|e| Error::other(AndaSignerError::SignatureError(e.to_string())))?;
@@ -89,7 +86,7 @@ impl Signer for AndaSigner {
         let signature = Signature::new (
             U256::from_be_slice(&sig_ic[0..32]),  // r
             U256::from_be_slice(&sig_ic[32..64]), // s
-            y_parity(hash.as_slice(), &sig_ic, self.pubkey.as_slice())? // Todo: possiblely problemstic
+            y_parity(hash.as_slice(), &sig_ic, self.pubkey.as_slice())?
         );
 
         Ok(signature)
@@ -113,19 +110,30 @@ impl Signer for AndaSigner {
 
 alloy::network::impl_into_wallet!(AndaSigner);
 
+/// Represents the AndaSigner, which is responsible for signing operations
+/// using a TEE (Trusted Execution Environment) service.
 impl AndaSigner {
-    /// Create a new Anda signer.
-    ///
-    /// This will fetch the public key from the TEE service and derive the Ethereum address.
+    /// Creates a new instance of `AndaSigner`.
+    /// 
+    /// This method performs the following steps:
+    /// 1. Fetches the public key from the TEE service using the provided derivation path.
+    /// 2. Derives the Ethereum address from the fetched public key.
+    /// 3. Initializes the `AndaSigner` instance with the derived address, public key, and other parameters.
+    /// 
+    /// ### Parameters
+    /// - `client`: An instance of `BaseCtx` used to interact with the TEE service.
+    /// - `derivation`: A boxed slice of boxed byte slices representing the derivation path for the key.
+    /// - `chain_id`: An optional chain ID for the Ethereum network.
+    /// 
+    /// ### Returns
+    /// - `Result<Self, AndaSignerError>`: On success, returns an instance of `AndaSigner`. On failure, returns an `AndaSignerError`.
     pub async fn new(
-        client: BaseCtx, // Updated type
+        client: BaseCtx,
         derivation: Box<[Box<[u8]>]>,
         chain_id: Option<ChainId>,
     ) -> Result<Self, AndaSignerError> {
-            let derivation_re = derivation.clone();
             // Convert Box<[Box<[u8]>]> to &[&[u8]]
-            let derivation = derivation
-                .iter().map(|x| x.as_ref()).collect::<Vec<_>>();
+            let derivation = box_to_slice(&derivation);
             let derivation = derivation.as_slice();
     
         // Fetch the public key from the TEE service
@@ -140,7 +148,7 @@ impl AndaSigner {
             hex::encode(pubkey_bytes), address);
 
         Ok(Self {
-            derivation: derivation_re,
+            derivation: convert_to_boxed(derivation),
             chain_id,
             address,
             pubkey: pubkey_bytes.try_into().
@@ -152,6 +160,14 @@ impl AndaSigner {
 }
 
 /// Helper function to derive an Ethereum address from a public key
+///
+/// # Arguments
+///
+/// * `pubkey` - A byte slice representing the public key in SEC1 format.
+///
+/// # Returns
+///
+/// The Ethereum address derived from the public key, or an error if conversion fails.
 pub fn derive_address_from_pubkey(pubkey: &[u8]) -> Result<Address, String> {    
     let key = k256::ecdsa::VerifyingKey::from_sec1_bytes(pubkey)
         .map_err(|e| e.to_string())?;
@@ -192,12 +208,4 @@ fn y_parity(prehash: &[u8], sig: &[u8], pubkey: &[u8]) -> Result<bool> {
         hex::encode(sig),
         hex::encode(pubkey)
     )
-}
-
-pub fn convert_to_boxed(slices: &[&[u8]]) -> Box<[Box<[u8]>]> {
-    slices
-        .iter()
-        .map(|&slice| slice.to_vec().into_boxed_slice())
-        .collect::<Vec<_>>()
-        .into_boxed_slice()
 }

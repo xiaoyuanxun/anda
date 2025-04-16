@@ -25,40 +25,14 @@ log = { workspace = true }
 icrc-ledger-types = "0.1"
 const-hex = { workspace = true }
 dotenv = { workspace = true }
-http = { workspace = true }
 reqwest = { workspace = true }
 hex = "0.4"
-ic-cdk = "0.15"
-ic-crypto-ecdsa-secp256k1 = { git = "https://github.com/dfinity/ic", tag = "release-2024-06-26_23-01-base", package = "ic-crypto-ecdsa-secp256k1" }
-ic-crypto-extended-bip32 = { git = "https://github.com/dfinity/ic", tag = "release-2024-06-26_23-01-base", package = "ic-crypto-extended-bip32" }
-ic-crypto-sha3 = { git = "https://github.com/dfinity/ic", tag = "release-2024-06-26_23-01-base", package = "ic-crypto-sha3" }
-ic-ethereum-types = { git = "https://github.com/dfinity/ic", tag = "release-2024-06-26_23-01-base", package = "ic-ethereum-types" }
-# TODO: remove redundant features
 alloy = { version = "0.14.0", features = [
-    "eips",
-    "full",
-    "hyper",
-    "json-rpc",
-    "node-bindings",
-    "rpc-client",
-    "rpc-types-debug",
-    "rpc-types-trace",
+    "providers", "network", "sol-types", "consensus", "signers",
 ] }
-rlp = "0.6.1"
-keccak-hash = "0.11.0"
-bytes = "1.10.1"
-hex-literal = "1.0.0"
-secp256k1 = {version = "0.30.0", features = ["recovery"]}
-ic-ed25519 = "0.2.0"
-num-bigint = "0.4"
-async-trait = "0.1"
 thiserror = "1.0"
-tracing = "0.1"
 k256 = { version = "0.13", features = ["ecdsa"] }
-spki = "0.7"
-ic-secp256k1 = "0.1"
+async-trait = "0.1"
 
 [dev-dependencies]
-rand = { workspace = true }
-ruint = "1.14.0"
 env_logger = "0.10"
