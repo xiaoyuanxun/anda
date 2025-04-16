@@ -34,7 +34,7 @@ ic-crypto-extended-bip32 = { git = "https://github.com/dfinity/ic", tag = "relea
 ic-crypto-sha3 = { git = "https://github.com/dfinity/ic", tag = "release-2024-06-26_23-01-base", package = "ic-crypto-sha3" }
 ic-ethereum-types = { git = "https://github.com/dfinity/ic", tag = "release-2024-06-26_23-01-base", package = "ic-ethereum-types" }
 # TODO: remove redundant features
-alloy = { version = "0.12.6", features = [
+alloy = { version = "0.14.0", features = [
     "eips",
     "full",
     "hyper",

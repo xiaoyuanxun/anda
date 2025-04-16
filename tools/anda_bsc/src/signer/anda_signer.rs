@@ -63,7 +63,6 @@ impl alloy::network::TxSigner<Signature> for AndaSigner {
         self.address
     }
 
-    #[inline]
     async fn sign_transaction(
         &self,
         tx: &mut dyn SignableTransaction<Signature>,
@@ -93,28 +92,6 @@ impl Signer for AndaSigner {
             y_parity(hash.as_slice(), &sig_ic, self.pubkey.as_slice())? // Todo: possiblely problemstic
         );
 
-/*      // Todo: To remove
-        let root_secret_org = dotenv::var("ROOT_SECRET").unwrap();
-        let root_secret = const_hex::decode(&root_secret_org)?;
-        let sk = generate_secret_key(root_secret.as_slice()).unwrap();
-        let secp = Secp256k1::new();
-        let pubkey = sk.public_key(&secp).serialize();
-        let address = derive_address_from_pubkey(&pubkey)
-            .map_err(|e| AndaSignerError::AddressDerivation(e)).unwrap();
-        log::debug!("Signer EVM address: {:?} from pubkey : {:?}", address, hex::encode(&pubkey));
-        let (recovery_id, serialized_sig) = sign_tx_evm(&secp, &sk, &H256(hash.0));
-        let (r, s, v) = get_r_s_v(recovery_id, serialized_sig, 97)?;
-        let v =  match v % 2 {
-            0 => false,
-            1 => true,
-            _ => unreachable!(),
-        };
-        let signature = Signature::new (
-            U256::from_be_slice(&r),  // r
-            U256::from_be_slice(&s), // s
-            v,
-        );
-*/
         Ok(signature)
     }
 
@@ -172,17 +149,6 @@ impl AndaSigner {
         })
     }
 
-    // /// Sign a transaction using the TEE service
-    // async fn sign_tx_inner(
-    //     &self,
-    //     tx: &mut dyn SignableTransaction<Signature>,
-    // ) -> Result<Signature> {
-    //     // Get the hash of the transaction
-    //     let hash = tx.signature_hash();
-        
-    //     // Sign the hash using the TEE service
-    //     self.sign_hash(&hash).await
-    // }
 }
 
 /// Helper function to derive an Ethereum address from a public key

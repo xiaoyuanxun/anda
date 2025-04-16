@@ -66,6 +66,25 @@ sol!(
     "artifacts/ERC20Example.json"
 );
 
+// public static url of BSC testnet RPC
+pub static BSC_RPC: &str = "https://bsc-testnet.infura.io/v3/827156e77aab4c168ad4d70412790dc5"; // BSC testnet
+// pub static BSC_RPC: &str = "http://127.0.0.1:8545/"; // Ganache
+// pub static BSC_RPC: &str = "https://sepolia.infura.io/v3/827156e77aab4c168ad4d70412790dc5";  // Sepolia testnet
+
+// public static url of BSC BRC20 contract address
+pub static TOKEN_ADDR: &str = "0xDE3a190D9D26A8271Ae9C27573c03094A8A2c449";  // BSC testnet
+// pub static TOKEN_ADDR: &str = "0xfbDc5aad85c7B78Ec01b9AcA8c203A876322cD30";  // Ganache
+// pub static TOKEN_ADDR: &str = "0xb72988b5dd549da72231d4A4F1Af121f2f1467b8";  // Sepolia testnet
+
+// public static chain id of BSC
+pub static CHAIN_ID: u64 = 97;  // BSC testnet
+// pub static CHAIN_ID: u64 = 1337;  // Ganache
+// pub static CHAIN_ID: u64 = 11155111;  // Sepolia testnet
+
+
+// public static derivation path
+pub static DRVT_PATH: &[&[u8]] = &[b"44'", b"60'", b"10'", b"20", b"30"];  // Todo: how to retrieve derivation path?
+
 /// ICP Ledger Transfer tool implementation
 #[derive(Debug, Clone)]
 pub struct BSCLedgers {
@@ -142,15 +161,11 @@ impl BSCLedgers {
         use std::str::FromStr;
         use anda_core::KeysFeatures;
 
-        let url = "https://bsc-testnet.bnbchain.org";  // Todo: pass it as a parameter in call
-        let chain_id: u64 = 97;
-        let derivation_path: &[&[u8]] = &[b"44'", b"60'", b"10'", b"20", b"30"];  // Todo: how to retrieve derivation path?
-
         // Create an anda signer
         let signer = AndaSigner::new(
             ctx.clone(), 
-            convert_to_boxed(derivation_path),
-            Some(chain_id),
+            convert_to_boxed(DRVT_PATH),
+            Some(CHAIN_ID),
         ).await?;
 
         // Todo: to remove
@@ -161,15 +176,18 @@ impl BSCLedgers {
         // let sk = hex::encode(&sk);
         // let signer: PrivateKeySigner = sk.as_str().parse().expect("should parse private key");
 
-        // // Create an Ethereum wallet from the signer
-        let wallet = EthereumWallet::from(signer);
+        // Create an Ethereum wallet from the signer
+        let wallet = EthereumWallet::from(signer.clone());
         // Get sender EVM address
         let sender_address = NetworkWallet::<AnyNetwork>::default_signer_address(&wallet);
         log::debug!("Sender EVM address: {:?}", sender_address);                
         
         // Create a provider with the wallet.
-        let provider = ProviderBuilder::new().
-                wallet(wallet).on_http(reqwest::Url::parse(url).unwrap());
+        let provider = ProviderBuilder::new()
+                .with_simple_nonce_management()
+                .network::<AnyNetwork>()
+                .with_gas_estimation()
+                .wallet(signer).on_http(reqwest::Url::parse(BSC_RPC).unwrap());
 
         let to_addr = Address::from_str(&args.account)?;  
         let to_amount = &args.amount;
@@ -181,9 +199,9 @@ impl BSCLedgers {
 
         // Create contract instance, get token symbol and decimals
         let contract = ERC20STD::new(*token_addr, provider);
-        let symbol = contract.symbol().call().await?._0;
-        let decimals = contract.decimals().call().await?._0;
-        let balance = contract.balanceOf(sender_address).call().await?._0;
+        let symbol = contract.symbol().call().await?;
+        let decimals = contract.decimals().call().await?;
+        let balance = contract.balanceOf(sender_address).call().await?;
         log::debug!("symbol: {:?}, decimals: {:?}, balance: {:?}", symbol.clone(), decimals, balance);
         
         // Balance check
@@ -213,15 +231,12 @@ impl BSCLedgers {
         ctx: BaseCtx,
         args: balance::BalanceOfArgs,
     ) -> Result<(Address, f64), BoxError> {
-        let url = "https://bsc-testnet.bnbchain.org";  // Todo: pass it as a parameter in call
-        let chain_id: u64 = 97;
-        let derivation_path: &[&[u8]] = &[b"44'", b"60'", b"10'", b"20", b"30"];  // Todo: how to retrieve derivation path?
 
         // Create an anda signer
         let signer = AndaSigner::new(
             ctx, 
-            convert_to_boxed(derivation_path),
-            Some(chain_id),
+            convert_to_boxed(DRVT_PATH),
+            Some(CHAIN_ID),
         ).await.unwrap();
 
         // Create an Ethereum wallet from the signer
@@ -229,7 +244,7 @@ impl BSCLedgers {
 
         // Create a provider with the wallet.
         let provider = ProviderBuilder::new().
-                wallet(wallet).on_http(reqwest::Url::parse(url).unwrap());
+                wallet(wallet).on_http(reqwest::Url::parse(BSC_RPC).unwrap());
 
         let user_addr = Address::from_str(&args.account)?;
 
@@ -240,9 +255,9 @@ impl BSCLedgers {
 
         let contract = ERC20STD::new(*token_addr, provider);
 
-        let symbol = contract.symbol().call().await.unwrap()._0;
-        let decimals = contract.decimals().call().await.unwrap()._0;
-        let balance = contract.balanceOf( user_addr).call().await.unwrap()._0;
+        let symbol = contract.symbol().call().await.unwrap();
+        let decimals = contract.decimals().call().await.unwrap();
+        let balance = contract.balanceOf( user_addr).call().await.unwrap();
         log::debug!("Query balance. user_addr: {:?}, token_addr: {:?}. \
                     symbol: {:?}, decimals: {:?}, balance query: {:?}", 
                     user_addr, token_addr, symbol.clone(), decimals, balance);

@@ -89,7 +89,7 @@ mod tests {
     use candid::Principal;
     use std::collections::BTreeMap;
     use alloy::{
-        hex, primitives::address, providers::ProviderBuilder
+        hex, primitives::Address, providers::ProviderBuilder
     };
     use alloy::network::EthereumWallet;
     use anda_web3_client::client::{
@@ -101,6 +101,7 @@ mod tests {
         engine::EngineBuilder,
     };
     use rand::Rng;
+    use crate::ledger::{BSC_RPC, DRVT_PATH, TOKEN_ADDR};
     use crate::signer::{convert_to_boxed, derive_address_from_pubkey, AndaSigner};
     use super::super::ERC20STD;
     use anda_core::KeysFeatures;
@@ -127,23 +128,21 @@ mod tests {
             .unwrap();
 
         // Initialize Web3 client for ICP network interaction
-        let url = "https://bsc-testnet.bnbchain.org";
         let web3 = Web3Client::builder()
-            .with_ic_host(url)
+            // .with_ic_host(url)  // Todo: Why local url would hang the programe?
             .with_identity(Arc::new(identity))
             .with_root_secret(root_secret)
             .build().await.unwrap();
 
-        let rpc_url = url.parse().unwrap();
+        let rpc_url = BSC_RPC.parse().unwrap();
         let provider = ProviderBuilder::new().on_http(rpc_url);
-
         // ERC20 token contract address and instance
-        let token_addr = address!("0xDE3a190D9D26A8271Ae9C27573c03094A8A2c449");
+        let token_addr =  Address::parse_checksummed(TOKEN_ADDR, None).unwrap();
         let contract = ERC20STD::new(token_addr, provider.clone());
 
         // Get token symbol and decimals
-        let symbol = contract.symbol().call().await.unwrap()._0;
-        let decimals = contract.decimals().call().await.unwrap()._0;
+        let symbol = contract.symbol().call().await.unwrap();
+        let decimals = contract.decimals().call().await.unwrap();
         log::debug!("symbol: {:?}, decimals: {:?}", symbol.clone(), decimals);
 
         let ledgers = BSCLedgers {
@@ -173,22 +172,21 @@ mod tests {
 
         let engine_ctx = EngineBuilder::new()
                     .with_name("BSC_TEST".to_string()).unwrap()
-                    .with_web3_client(Arc::new(Web3SDK::from_web3(Arc::new(web3.clone()))))
+                    .with_web3_client(Arc::new(Web3SDK::from_web3(Arc::new(web3))))
                     .register_agent(agent).unwrap()
                     .mock_ctx();
         let base_ctx = engine_ctx.base.clone();
 
         // Derive EVM address from derivation path
-        let derivation_path: &[&[u8]] = &[b"44'", b"60'", b"10'", b"20", b"30"];  // Todo: how to retrieve derivation path?
-        let pubkey_bytes = base_ctx.secp256k1_public_key(derivation_path)
+        let pubkey_bytes = base_ctx.secp256k1_public_key(DRVT_PATH)
             .await
             .map_err(|e| 
-                format!("Failed to get public key from derivation path: {:?}. Error: {:?}", derivation_path, e.to_string()
+                format!("Failed to get public key from derivation path: {:?}. Error: {:?}", DRVT_PATH, e.to_string()
                 ) 
             ).unwrap();
         let user_address = derive_address_from_pubkey(&pubkey_bytes).unwrap();
         log::debug!("User pubkey: {:?}, User EVM address: {:?}",
-                    user_address, hex::encode(pubkey_bytes));
+                    hex::encode(pubkey_bytes), user_address);
 
         let args = BalanceOfArgs {
             account: user_address.to_string(),
