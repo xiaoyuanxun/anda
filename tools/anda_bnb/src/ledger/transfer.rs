@@ -110,6 +110,7 @@ mod tests {
         Client as Web3Client, load_identity
     };
     use alloy::primitives::address;
+    use alloy::hex;
     use super::super::BNBLedgers;
 
     #[tokio::test(flavor = "current_thread")]
@@ -125,7 +126,7 @@ mod tests {
 
         // Parse cryptographic secrets
         let identity = load_identity(&id_secret).unwrap();
-        let root_secret = const_hex::decode(&root_secret_org).unwrap();
+        let root_secret = hex::decode(&root_secret_org).unwrap();
         let root_secret: [u8; 48] = root_secret
             .try_into()
             .map_err(|_| format!("invalid root_secret: {:?}", &root_secret_org))

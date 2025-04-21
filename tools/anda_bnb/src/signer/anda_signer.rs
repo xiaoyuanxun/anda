@@ -1,6 +1,7 @@
 use alloy::consensus::SignableTransaction;
 use alloy::primitives::{Address, ChainId, B256, U256};
 use alloy::signers::{self as alloy_signer, sign_transaction_with_chain_id, Error, Result, Signature, Signer};
+use alloy::hex;
 use async_trait::async_trait;
 use std::fmt;
 use anda_engine::context::BaseCtx;
