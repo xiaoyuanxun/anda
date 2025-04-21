@@ -111,14 +111,12 @@ mod tests {
     };
     use alloy::primitives::address;
     use alloy::hex;
+    use structured_logger::Builder;
     use super::super::BNBLedgers;
 
     #[tokio::test(flavor = "current_thread")]
     async fn test_bnb_ledger_transfer() {
-        let _ = env_logger::builder()
-        .is_test(true)
-        .filter_level(log::LevelFilter::Debug)
-        .try_init();
+        Builder::with_level("debug").init();
 
         // Generate random bytes for identity and root secret
         let id_secret = dotenv::var("ID_SECRET").unwrap();

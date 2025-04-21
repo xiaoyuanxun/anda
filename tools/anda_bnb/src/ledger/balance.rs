@@ -105,13 +105,11 @@ mod tests {
     use crate::ledger::DRVT_PATH;
     use crate::signer::derive_address_from_pubkey;
     use anda_core::KeysFeatures;
+    use structured_logger::Builder;
 
     #[tokio::test]
     async fn test_bnb_ledger_balance() {
-        let _ = env_logger::builder()
-        .is_test(true)
-        .filter_level(log::LevelFilter::Debug)
-        .try_init();
+        Builder::with_level("debug").init();
 
         // Read identity and root secret
         let id_secret = dotenv::var("ID_SECRET").unwrap();

@@ -36,7 +36,7 @@ pub mod transfer;
 pub use balance::*;
 pub use transfer::*;
 
-use crate::{signer::AndaSigner, utils_evm::*};
+use crate::{signer::AndaEvmSigner, utils_evm::*};
 
 // Codegen from artifact.
 sol!(
@@ -124,7 +124,7 @@ impl BNBLedgers {
         use std::str::FromStr;
 
         // Create an anda signer
-        let signer = AndaSigner::new(
+        let signer = AndaEvmSigner::new(
             ctx,
             DRVT_PATH.iter()
                 .map(|&s| s.to_vec())
@@ -206,15 +206,14 @@ impl BNBLedgers {
         let decimals = contract.decimals().call().await.unwrap();
         // Query balance
         let balance = contract.balanceOf( user_addr).call().await.unwrap();
-        log::debug!("Query balance. user_addr: {:?}, token_addr: {:?}. \
-                    symbol: {:?}, decimals: {:?}, balance query: {:?}", 
-                    user_addr, token_addr, &symbol, decimals, balance);
 
         // Convert balance to f64
         let balance = get_balance(balance)?;
-        log::info!(  // Todo: why not log in test
-            account = args.account,
-            symbol = args.symbol,
+        log::info!(
+            user_addr = user_addr.to_string(),
+            token_addr = token_addr.to_string(),
+            symbol = &symbol,
+            decimals = decimals,
             balance = balance;
             "balance_of_bnb"
         );

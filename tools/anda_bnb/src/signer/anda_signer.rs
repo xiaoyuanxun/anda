@@ -9,7 +9,7 @@ use anda_core::KeysFeatures;
 
 /// Anda signer that uses a remote TEE service via a web client.
 #[derive(Clone)]
-pub struct AndaSigner {
+pub struct AndaEvmSigner {
     /// The derivation path
     derivation: Vec<Vec<u8>>,
     /// The chain ID
@@ -22,18 +22,18 @@ pub struct AndaSigner {
     client: BaseCtx,
 }
 
-impl fmt::Debug for AndaSigner {  // Todo: verify the formated output
+impl fmt::Debug for AndaEvmSigner {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("AndaSigner")
+        f.debug_struct("AndaEvmSigner")
             .field("derivation", &self.derivation)
             .field("chain_id", &self.chain_id)
             .field("address", &self.address)
-            .field("pubkey", &self.pubkey) // Include `pubkey` in the debug output
+            .field("pubkey", &hex::encode(&self.pubkey))
             .finish()
     }
 }
 
-/// Errors thrown by [`AndaSigner`].
+/// Errors thrown by [`AndaEvmSigner`].
 #[derive(Debug, thiserror::Error)]
 pub enum AndaSignerError {
     /// Web client error
@@ -55,7 +55,7 @@ pub enum AndaSignerError {
 
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-impl alloy::network::TxSigner<Signature> for AndaSigner {
+impl alloy::network::TxSigner<Signature> for AndaEvmSigner {
     fn address(&self) -> Address {
         self.address
     }
@@ -71,7 +71,7 @@ impl alloy::network::TxSigner<Signature> for AndaSigner {
 
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-impl Signer for AndaSigner {
+impl Signer for AndaEvmSigner {
     async fn sign_hash(&self, hash: &B256) -> Result<Signature> {
         // Convert Vec<Vec<u8>> to &[&[u8]]
         let derivation = self.derivation
@@ -107,17 +107,17 @@ impl Signer for AndaSigner {
     }
 }
 
-alloy::network::impl_into_wallet!(AndaSigner);
+alloy::network::impl_into_wallet!(AndaEvmSigner);
 
-/// Represents the AndaSigner, which is responsible for signing operations
+/// Represents the AndaEvmSigner, which is responsible for signing operations
 /// using a TEE (Trusted Execution Environment) service.
-impl AndaSigner {
-    /// Creates a new instance of `AndaSigner`.
+impl AndaEvmSigner {
+    /// Creates a new instance of `AndaEvmSigner`.
     /// 
     /// This method performs the following steps:
     /// 1. Fetches the public key from the TEE service using the provided derivation path.
     /// 2. Derives the Ethereum address from the fetched public key.
-    /// 3. Initializes the `AndaSigner` instance with the derived address, public key, and other parameters.
+    /// 3. Initializes the `AndaEvmSigner` instance with the derived address, public key, and other parameters.
     /// 
     /// ### Parameters
     /// - `client`: An instance of `BaseCtx` used to interact with the TEE service.
@@ -125,7 +125,7 @@ impl AndaSigner {
     /// - `chain_id`: An optional chain ID for the Ethereum network.
     /// 
     /// ### Returns
-    /// - `Result<Self, AndaSignerError>`: On success, returns an instance of `AndaSigner`. On failure, returns an `AndaSignerError`.
+    /// - `Result<Self, AndaSignerError>`: On success, returns an instance of `AndaEvmSigner`. On failure, returns an `AndaSignerError`.
     pub async fn new(
         client: BaseCtx,
         derivation: Vec<Vec<u8>>,
