@@ -23,18 +23,14 @@
 //! }
 //! ```
 
-use anda_core::{BoxError, CanisterCaller};
+use anda_core::BoxError;
 use anda_engine::context::BaseCtx;
-use candid::Principal;
-use icrc_ledger_types::icrc::generic_metadata_value::MetadataValue;
-use num_traits::cast::ToPrimitive;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use alloy::{
     network::{AnyNetwork, EthereumWallet, NetworkWallet}, 
     primitives::{utils::parse_units, Address, FixedBytes}, 
-    providers::ProviderBuilder, 
-    sol,
+    providers::ProviderBuilder, sol
 };
 use core::str::FromStr;
 
@@ -67,7 +63,7 @@ pub static TOKEN_ADDR: &str = "0xDE3a190D9D26A8271Ae9C27573c03094A8A2c449";  // 
 pub static CHAIN_ID: u64 = 97;  // BSC testnet
 
 // public static derivation path
-pub static DRVT_PATH: &[&[u8]] = &[b"44'", b"60'", b"10'", b"20", b"30"];  // Todo: how to retrieve derivation path?
+pub static DRVT_PATH: &[&[u8]] = &[b"44'", b"60'", b"10'", b"20", b"30"];
 
 /// ICP Ledger Transfer tool implementation
 #[derive(Debug, Clone)]
@@ -77,54 +73,43 @@ pub struct BSCLedgers {
 }
 
 impl BSCLedgers {
-    /// Creates a new ICPLedgerTransfer instance
+    /// Loads a BSCLedgers instance by retrieving token information from the BSC token contract
     ///
-    /// # Arguments
-    /// * `ctx` - Canister caller context
-    /// * `ledger_canisters` - Set of 1 to N ICP token ledger canister IDs
-    /// * `from_user_subaccount` - When false, the from account is the Agent's main account.
-    ///   When true, the from account is a user-specific subaccount derived from the Agent's main account.
-    pub async fn load(
-        ctx: &impl CanisterCaller,
-        ledger_canisters: BTreeSet<Principal>,
-        from_user_subaccount: bool,
-    ) -> Result<BSCLedgers, BoxError> {
-        if ledger_canisters.is_empty() {
-            return Err("No ledger canister specified".into());
-        }
-        let mut ledgers = BTreeMap::new();
-        for canister in ledger_canisters {
-            let res: Vec<(String, MetadataValue)> =
-                ctx.canister_query(&canister, "icrc1_metadata", ()).await?;
-            let mut symbol = "ICP".to_string();
-            let mut decimals = -1i8;
-            for (k, v) in res {
-                match k.as_str() {
-                    // icrc1:symbol
-                    "icrc1:symbol" => {
-                        if let MetadataValue::Text(s) = v {
-                            symbol = s;
-                        }
-                    }
-                    // icrc1:decimals
-                    "icrc1:decimals" => {
-                        if let MetadataValue::Nat(n) = v {
-                            decimals = n.0.to_i8().unwrap_or(-1)
-                        }
-                    }
-                    _ => {}
-                }
-            }
+    /// # Returns
+    /// A `Result` containing the initialized `BSCLedgers` with token symbol, address, and decimals,
+    /// or an error if token information retrieval fails
+    ///
+    /// # Errors
+    /// Returns a `BoxError` if RPC connection fails, token symbol/decimals cannot be retrieved,
+    /// or address parsing encounters an issue
+    pub async fn load() -> Result<BSCLedgers, BoxError> {
+        // Create a provider
+        let rpc_url = bsc_rpc().parse()?;
+        let provider = ProviderBuilder::new().on_http(rpc_url);
 
-            if decimals > -1 {
-                ledgers.insert(symbol, (canister, decimals as u8));
-            }
-        }
+        // ERC20 token contract address and instance
+        let token_addr =  Address::parse_checksummed(TOKEN_ADDR, None).unwrap();
+        let contract = ERC20STD::new(token_addr, provider.clone());
 
-        let mut _ledgers = BTreeMap::new();
-        Ok(BSCLedgers {
-            ledgers: _ledgers,
-        })
+        // Get token symbol and decimals
+        let symbol = contract.symbol().call().await?;
+        let decimals = contract.decimals().call().await?;
+        log::debug!("symbol: {:?}, decimals: {:?}", symbol.clone(), decimals);
+        
+        // Create ledgers instance
+        let ledgers = BSCLedgers {
+            ledgers: BTreeMap::from([
+                (
+                    symbol.clone(),
+                    (
+                        token_addr,
+                        decimals,
+                    ),
+                ),
+            ])
+        };
+
+        Ok(ledgers)
     }
 
     /// Performs the token transfer operation
@@ -145,7 +130,9 @@ impl BSCLedgers {
         // Create an anda signer
         let signer = AndaSigner::new(
             ctx,
-            convert_to_boxed(DRVT_PATH),
+            DRVT_PATH.iter()
+                .map(|&s| s.to_vec())
+                .collect(),
             Some(CHAIN_ID),
         ).await?;
 
@@ -204,7 +191,7 @@ impl BSCLedgers {
         _ctx: BaseCtx,
         args: balance::BalanceOfArgs,
     ) -> Result<(Address, f64), BoxError> {
-        // Create a provider with the wallet.
+        // Create a provider
         let provider = ProviderBuilder::new()
                     .on_http(reqwest::Url::parse(bsc_rpc().as_ref()).unwrap());  // Todo: read rpc url from web3 client
 

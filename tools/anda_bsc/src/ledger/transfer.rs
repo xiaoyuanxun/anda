@@ -102,7 +102,6 @@ impl Tool<BaseCtx> for TransferTool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ledger::{bsc_rpc, TOKEN_ADDR};
     use anda_engine::{
         extension::extractor::Extractor,
         context::Web3SDK,
@@ -111,11 +110,8 @@ mod tests {
     use anda_web3_client::client::{
         Client as Web3Client, load_identity
     };
-    use alloy::{
-        primitives::{address, Address}, providers::ProviderBuilder
-    };
-    use std::collections::BTreeMap;
-    use super::super::{BSCLedgers, ERC20STD};
+    use alloy::primitives::address;
+    use super::super::BSCLedgers;
 
     #[tokio::test(flavor = "current_thread")]
     async fn test_bsc_ledger_transfer() {
@@ -136,43 +132,14 @@ mod tests {
             .map_err(|_| format!("invalid root_secret: {:?}", &root_secret_org))
             .unwrap();
 
-        // Create provider and contract instances for BSC
-        let rpc_url = bsc_rpc().parse().unwrap();
-        let provider = ProviderBuilder::new().on_http(rpc_url);
-        let token_addr = Address::parse_checksummed(TOKEN_ADDR, None).unwrap();
-        let contract = ERC20STD::new(token_addr, provider);
-
-        // Get token symbol.
-        let symbol = contract.symbol().call().await.unwrap();
-        let decimals = contract.decimals().call().await.unwrap();
-        log::debug!("symbol: {:?}, decimals: {:?}", &symbol, decimals);
-
         // Create a BSC ledger instance
-        let ledgers = BSCLedgers {
-            ledgers: BTreeMap::from([
-                (
-                    symbol.clone(),
-                    (
-                        token_addr,
-                        decimals,
-                    ),
-                ),
-            ])
-        };
+        let ledgers = BSCLedgers::load().await.unwrap();
         let ledgers = Arc::new(ledgers);
-        let tool = TransferTool::new(ledgers);
+        let tool = TransferTool::new(ledgers.clone());
         let definition = tool.definition();
         assert_eq!(definition.name, "bsc_ledger_transfer");
-        assert_eq!(tool.description().contains(&symbol), true);
-
-        // Init transfer arguments
-        let to_addr = address!("0xA8c4AAE4ce759072D933bD4a51172257622eF128");  // Receiver addr
-        let transfer_amount = 0.00012;
-        let transfer_to_args = TransferToArgs {
-            account: to_addr.to_string(),
-            symbol: symbol.clone(),
-            amount: transfer_amount,
-        };
+        assert_eq!(tool.description()
+                    .contains(ledgers.ledgers.clone().first_key_value().unwrap().0), true);
 
         // Create an agent for testing
         #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
@@ -184,7 +151,6 @@ mod tests {
 
         // Initialize Web3 client for BSC network
         let web3 = Web3Client::builder()
-            .with_ic_host("https://bsc-testnet.bnbchain.org") // Todo: How to get the bsc rpc url from a web3 client?
             .with_identity(Arc::new(identity))
             .with_root_secret(root_secret)
             .build().await.unwrap();
@@ -196,10 +162,23 @@ mod tests {
                     .register_agent(agent).unwrap()
                     .mock_ctx();
         let base_ctx = engine_ctx.base;
-        
-        // Call tool to transfer tokens
-        let res = tool.call(base_ctx, transfer_to_args, None).await;
-        assert!(res.is_ok(), "Transfer failed: {:?}", res);
-        println!("Transfer result: {:#?}", res.unwrap());
+
+        // Iterate through the ledgers and perform transfers
+        for (symbol, _) in ledgers.ledgers.clone() {
+            // Init transfer arguments
+            let to_addr = address!("0xA8c4AAE4ce759072D933bD4a51172257622eF128");  // Receiver addr
+            let transfer_amount = 0.00012;
+            let transfer_to_args = TransferToArgs {
+                account: to_addr.to_string(),
+                symbol: symbol.clone(),
+                amount: transfer_amount,
+            };
+            
+            // Call tool to transfer tokens
+            let res = tool.call(base_ctx.clone(), transfer_to_args, None).await;
+            assert!(res.is_ok(), "Transfer failed: {:?}", res);
+            println!("Transfer result: {:#?}", res.unwrap());            
+        }
+
     }
 }

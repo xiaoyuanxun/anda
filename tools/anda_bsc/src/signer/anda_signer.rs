@@ -6,13 +6,11 @@ use std::fmt;
 use anda_engine::context::BaseCtx;
 use anda_core::KeysFeatures;
 
-use crate::utils_evm::{box_to_slice, convert_to_boxed};
-
 /// Anda signer that uses a remote TEE service via a web client.
 #[derive(Clone)]
 pub struct AndaSigner {
     /// The derivation path
-    derivation: Box<[Box<[u8]>]>,
+    derivation: Vec<Vec<u8>>,
     /// The chain ID
     chain_id: Option<ChainId>,
     /// The Ethereum address
@@ -74,7 +72,7 @@ impl alloy::network::TxSigner<Signature> for AndaSigner {
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl Signer for AndaSigner {
     async fn sign_hash(&self, hash: &B256) -> Result<Signature> {
-        // Convert Box<[Box<[u8]>]> to &[&[u8]]
+        // Convert Vec<Vec<u8>> to &[&[u8]]
         let derivation = self.derivation
             .iter().map(|x| x.as_ref()).collect::<Vec<_>>();
         let derivation = derivation.as_slice();
@@ -122,19 +120,20 @@ impl AndaSigner {
     /// 
     /// ### Parameters
     /// - `client`: An instance of `BaseCtx` used to interact with the TEE service.
-    /// - `derivation`: A boxed slice of boxed byte slices representing the derivation path for the key.
+    /// - `derivation`: A vector of vector byte representing the derivation path for the key.
     /// - `chain_id`: An optional chain ID for the Ethereum network.
     /// 
     /// ### Returns
     /// - `Result<Self, AndaSignerError>`: On success, returns an instance of `AndaSigner`. On failure, returns an `AndaSignerError`.
     pub async fn new(
         client: BaseCtx,
-        derivation: Box<[Box<[u8]>]>,
+        derivation: Vec<Vec<u8>>,
         chain_id: Option<ChainId>,
     ) -> Result<Self, AndaSignerError> {
-            // Convert Box<[Box<[u8]>]> to &[&[u8]]
-            let derivation = box_to_slice(&derivation);
-            let derivation = derivation.as_slice();
+        // Convert Vec<Vec<u8>> to &[&[u8]]
+        let derivation = &derivation
+            .iter().map(|x| x.as_ref()).collect::<Vec<_>>();
+        let derivation = derivation.as_slice();
     
         // Fetch the public key from the TEE service
         let pubkey_bytes = client.secp256k1_public_key(derivation)
@@ -148,7 +147,9 @@ impl AndaSigner {
             hex::encode(pubkey_bytes), address);
 
         Ok(Self {
-            derivation: convert_to_boxed(derivation),
+            derivation: derivation.iter()
+                        .map(|&s| s.to_vec())
+                        .collect(),
             chain_id,
             address,
             pubkey: pubkey_bytes.try_into().

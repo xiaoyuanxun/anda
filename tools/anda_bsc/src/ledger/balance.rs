@@ -93,10 +93,7 @@ impl Tool<BaseCtx> for BalanceOfTool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeMap;
-    use alloy::{
-        hex, primitives::Address, providers::ProviderBuilder
-    };
+    use alloy::hex;
     use anda_web3_client::client::{
         Client as Web3Client, load_identity
     };
@@ -105,9 +102,8 @@ mod tests {
         context::Web3SDK,
         engine::EngineBuilder,
     };
-    use crate::ledger::{bsc_rpc, DRVT_PATH, TOKEN_ADDR};
+    use crate::ledger::DRVT_PATH;
     use crate::signer::derive_address_from_pubkey;
-    use super::super::ERC20STD;
     use anda_core::KeysFeatures;
 
     #[tokio::test]
@@ -131,36 +127,12 @@ mod tests {
 
         // Initialize Web3 client for ICP network interaction
         let web3 = Web3Client::builder()
-            // .with_ic_host(url)  // Todo: Why local url, i.e "localhost:8545", would hang the programe?
             .with_identity(Arc::new(identity))
             .with_root_secret(root_secret)
             .build().await.unwrap();
 
-        // Create provider
-        let rpc_url = bsc_rpc().parse().unwrap();
-        let provider = ProviderBuilder::new().on_http(rpc_url);
-
-        // ERC20 token contract address and instance
-        let token_addr =  Address::parse_checksummed(TOKEN_ADDR, None).unwrap();
-        let contract = ERC20STD::new(token_addr, provider.clone());
-
-        // Get token symbol and decimals
-        let symbol = contract.symbol().call().await.unwrap();
-        let decimals = contract.decimals().call().await.unwrap();
-        log::debug!("symbol: {:?}, decimals: {:?}", symbol.clone(), decimals);
-
         // Create ledgers instance
-        let ledgers = BSCLedgers {
-            ledgers: BTreeMap::from([
-                (
-                    symbol.clone(),
-                    (
-                        token_addr,
-                        decimals,
-                    ),
-                ),
-            ])
-        };
+        let ledgers = BSCLedgers::load().await.unwrap();
         let ledgers = Arc::new(ledgers);
         let tool = BalanceOfTool::new(ledgers.clone());
         let definition = tool.definition();
@@ -193,13 +165,19 @@ mod tests {
         log::debug!("User pubkey: {:?}, User EVM address: {:?}",
                     hex::encode(pubkey_bytes), user_address);
 
-        // Create arguments for balance query
-        let args = BalanceOfArgs {
-            account: user_address.to_string(),
-            symbol: symbol.clone(),
-        };
-        // Call the tool to query balance
-        let res = tool.call(base_ctx, args, None).await;
-        assert!(res.is_ok(), "Balance query failed: {:?}", res);
-        println!("Balance query result: {:#?}", res.unwrap());
-    }}
+        // Iterate through the ledgers and perform balance queries
+        for (symbol, _) in ledgers.ledgers.clone() {
+            // Create arguments for balance query
+            let args = BalanceOfArgs {
+                account: user_address.to_string(),
+                symbol: symbol.into(),
+            };
+
+            // Call the tool to query balance
+            let res = tool.call(base_ctx.clone(), args, None).await;
+            assert!(res.is_ok(), "Balance query failed: {:?}", res);
+            println!("Balance query result: {:#?}", res.unwrap());
+        }
+
+    }
+}    
