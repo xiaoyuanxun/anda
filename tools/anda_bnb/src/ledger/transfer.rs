@@ -1,10 +1,9 @@
-//! Enables AI Agent to perform ICP token transfers
+//! Enables AI Agent to perform BNB token transfers
 //!
-//! Provides functionality for transferring tokens between accounts on the Internet Computer Protocol (ICP) network.
+//! Provides functionality for transferring tokens between accounts on the BNB Chain network.
 //! Supports:
-//! - Multiple token types (e.g., ICP, PANDA)
-//! - Memo fields for transaction identification
-//! - Integration with ICP ledger standards
+//! - Multiple token types
+//! - Integration with BNB Chain standards
 //! - Atomic transfers with proper error handling
 
 use anda_core::{
@@ -15,30 +14,30 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
-use super::BSCLedgers;
+use super::BNBLedgers;
 
 /// Arguments for transferring tokens to an account
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct TransferToArgs {
-    /// ICP account address (principal) to receive token, e.g. "77ibd-jp5kr-moeco-kgoar-rro5v-5tng4-krif5-5h2i6-osf2f-2sjtv-kqe"
+    /// BNB Chain account address to receive token, e.g. "0xA8c4AAE4ce759072D933bD4a51172257622eF128"
     pub account: String,
-    /// Token symbol, e.g. "ICP"
+    /// Token symbol, e.g. "BNB"
     pub symbol: String,
-    /// Token amount, e.g. 1.1 ICP
+    /// Token amount, e.g. 1.1 BNB
     pub amount: f64,
 }
 
-/// Implementation of the ICP Ledger Transfer tool
+/// Implementation of the BNB Chain Ledger Transfer tool
 #[derive(Debug, Clone)]
 pub struct TransferTool {
-    ledgers: Arc<BSCLedgers>,
+    ledgers: Arc<BNBLedgers>,
     schema: Value,
 }
 
 impl TransferTool {
-    pub const NAME: &'static str = "bsc_ledger_transfer";
+    pub const NAME: &'static str = "bnb_ledger_transfer";
 
-    pub fn new(ledgers: Arc<BSCLedgers>) -> Self {
+    pub fn new(ledgers: Arc<BNBLedgers>) -> Self {
         let schema = gen_schema_for::<TransferToArgs>();
 
         TransferTool { ledgers, schema }
@@ -46,7 +45,7 @@ impl TransferTool {
 }
 
 /// Implementation of the [`Tool`] trait for TransferTool
-/// Enables AI Agent to perform ICP token transfers
+/// Enables AI Agent to perform BNB token transfers
 impl Tool<BaseCtx> for TransferTool {
     type Args = TransferToArgs;
     type Output = String;
@@ -64,12 +63,12 @@ impl Tool<BaseCtx> for TransferTool {
             .collect::<Vec<_>>();
         if tokens.len() > 1 {
             format!(
-                "Transfer {} tokens to the specified account on ICP blockchain.",
+                "Transfer {} tokens to the specified account on BNB Chain blockchain.",
                 tokens.join(", ")
             )
         } else {
             format!(
-                "Transfer {} token to the specified account on ICP blockchain.",
+                "Transfer {} token to the specified account on BNB Chain blockchain.",
                 tokens[0]
             )
         }
@@ -111,10 +110,10 @@ mod tests {
         Client as Web3Client, load_identity
     };
     use alloy::primitives::address;
-    use super::super::BSCLedgers;
+    use super::super::BNBLedgers;
 
     #[tokio::test(flavor = "current_thread")]
-    async fn test_bsc_ledger_transfer() {
+    async fn test_bnb_ledger_transfer() {
         let _ = env_logger::builder()
         .is_test(true)
         .filter_level(log::LevelFilter::Debug)
@@ -132,12 +131,12 @@ mod tests {
             .map_err(|_| format!("invalid root_secret: {:?}", &root_secret_org))
             .unwrap();
 
-        // Create a BSC ledger instance
-        let ledgers = BSCLedgers::load().await.unwrap();
+        // Create a BNB ledger instance
+        let ledgers = BNBLedgers::load().await.unwrap();
         let ledgers = Arc::new(ledgers);
         let tool = TransferTool::new(ledgers.clone());
         let definition = tool.definition();
-        assert_eq!(definition.name, "bsc_ledger_transfer");
+        assert_eq!(definition.name, "bnb_ledger_transfer");
         assert_eq!(tool.description()
                     .contains(ledgers.ledgers.clone().first_key_value().unwrap().0), true);
 
@@ -149,7 +148,7 @@ mod tests {
         }    
         let agent = Extractor::<TestStruct>::default();
 
-        // Initialize Web3 client for BSC network
+        // Initialize Web3 client for BNB network
         let web3 = Web3Client::builder()
             .with_identity(Arc::new(identity))
             .with_root_secret(root_secret)
@@ -157,7 +156,7 @@ mod tests {
     
         // Create a context for testing
         let engine_ctx = EngineBuilder::new()
-                    .with_name("BSC_TEST".to_string()).unwrap()
+                    .with_name("BNB_TEST".to_string()).unwrap()
                     .with_web3_client(Arc::new(Web3SDK::from_web3(Arc::new(web3))))
                     .register_agent(agent).unwrap()
                     .mock_ctx();
@@ -179,6 +178,5 @@ mod tests {
             assert!(res.is_ok(), "Transfer failed: {:?}", res);
             println!("Transfer result: {:#?}", res.unwrap());            
         }
-
     }
 }

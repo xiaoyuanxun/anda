@@ -684,6 +684,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "anda_bnb"
+version = "0.6.0"
+dependencies = [
+ "alloy",
+ "anda_core",
+ "anda_engine",
+ "anda_engine_server",
+ "anda_icp",
+ "anda_web3_client",
+ "async-trait",
+ "candid",
+ "const-hex",
+ "dotenv",
+ "env_logger",
+ "hex",
+ "icrc-ledger-types",
+ "k256",
+ "log",
+ "num-traits",
+ "reqwest 0.12.15",
+ "schemars",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+]
+
+[[package]]
 name = "anda_bot"
 version = "0.6.0"
 dependencies = [
@@ -713,34 +741,6 @@ dependencies = [
  "tokio",
  "tokio-util",
  "toml",
-]
-
-[[package]]
-name = "anda_bsc"
-version = "0.6.0"
-dependencies = [
- "alloy",
- "anda_core",
- "anda_engine",
- "anda_engine_server",
- "anda_icp",
- "anda_web3_client",
- "async-trait",
- "candid",
- "const-hex",
- "dotenv",
- "env_logger",
- "hex",
- "icrc-ledger-types",
- "k256",
- "log",
- "num-traits",
- "reqwest 0.12.15",
- "schemars",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "tokio",
 ]
 
 [[package]]

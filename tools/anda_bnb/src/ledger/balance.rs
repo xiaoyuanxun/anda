@@ -1,7 +1,7 @@
-//! Enables AI Agent to query the balance of an account for a ICP token
+//! Enables AI Agent to query the balance of an account for a BNB token
 //!
-//! This module provides functionality for querying account balances on the ICP network.
-//! It implements the [`Tool`] trait to enable AI agents to interact with ICP ledgers.
+//! This module provides functionality for querying account balances on the BNB Chain network.
+//! It implements the [`Tool`] trait to enable AI agents to interact with BNB Chain ledgers.
 
 use anda_core::{BoxError, FunctionDefinition, Resource, Tool, ToolOutput, gen_schema_for};
 use anda_engine::context::BaseCtx;
@@ -9,7 +9,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::sync::Arc;
-use super::BSCLedgers;
+use super::BNBLedgers;
 
 /// Arguments for the balance of an account for a token
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
@@ -20,17 +20,17 @@ pub struct BalanceOfArgs {
     pub symbol: String,
 }
 
-/// ICP Ledger BalanceOf tool implementation
+/// BNB Chain Ledger BalanceOf tool implementation
 #[derive(Debug, Clone)]
 pub struct BalanceOfTool {
-    ledgers: Arc<BSCLedgers>,
+    ledgers: Arc<BNBLedgers>,
     schema: Value,
 }
 
 impl BalanceOfTool {
-    pub const NAME: &'static str = "bsc_ledger_balance_of";
+    pub const NAME: &'static str = "bnb_ledger_balance_of";
     /// Creates a new BalanceOfTool instance
-    pub fn new(ledgers: Arc<BSCLedgers>) -> Self {
+    pub fn new(ledgers: Arc<BNBLedgers>) -> Self {
         let schema = gen_schema_for::<BalanceOfArgs>();
 
         BalanceOfTool {
@@ -41,7 +41,7 @@ impl BalanceOfTool {
 }
 
 /// Implementation of the [`Tool`]` trait for BalanceOfTool
-/// Enables AI Agent to query the balance of an account for a ICP token
+/// Enables AI Agent to query the balance of an account for a BNB token
 impl Tool<BaseCtx> for BalanceOfTool {
     type Args = BalanceOfArgs;
     type Output = String;
@@ -58,7 +58,7 @@ impl Tool<BaseCtx> for BalanceOfTool {
             .map(|k| k.as_str())
             .collect::<Vec<_>>();
         format!(
-            "Query the balance of the specified account on ICP blockchain for the following tokens: {}",
+            "Query the balance of the specified account on BNB Chain blockchain for the following tokens: {}",
             tokens.join(", ")
         )
     }
@@ -107,7 +107,7 @@ mod tests {
     use anda_core::KeysFeatures;
 
     #[tokio::test]
-    async fn test_bsc_ledger_balance() {
+    async fn test_bnb_ledger_balance() {
         let _ = env_logger::builder()
         .is_test(true)
         .filter_level(log::LevelFilter::Debug)
@@ -125,18 +125,18 @@ mod tests {
             .map_err(|_| format!("invalid root_secret: {:?}", &root_secret_org))
             .unwrap();
 
-        // Initialize Web3 client for ICP network interaction
+        // Initialize Web3 client for BNB Chain network interaction
         let web3 = Web3Client::builder()
             .with_identity(Arc::new(identity))
             .with_root_secret(root_secret)
             .build().await.unwrap();
 
         // Create ledgers instance
-        let ledgers = BSCLedgers::load().await.unwrap();
+        let ledgers = BNBLedgers::load().await.unwrap();
         let ledgers = Arc::new(ledgers);
         let tool = BalanceOfTool::new(ledgers.clone());
         let definition = tool.definition();
-        assert_eq!(definition.name, "bsc_ledger_balance_of");
+        assert_eq!(definition.name, "bnb_ledger_balance_of");
 
         // Create an agent for testing
         #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
@@ -148,7 +148,7 @@ mod tests {
 
         // Create a context for testing
         let engine_ctx = EngineBuilder::new()
-                    .with_name("BSC_TEST".to_string()).unwrap()
+                    .with_name("BNB_TEST".to_string()).unwrap()
                     .with_web3_client(Arc::new(Web3SDK::from_web3(Arc::new(web3))))
                     .register_agent(agent).unwrap()
                     .mock_ctx();
@@ -178,6 +178,5 @@ mod tests {
             assert!(res.is_ok(), "Balance query failed: {:?}", res);
             println!("Balance query result: {:#?}", res.unwrap());
         }
-
     }
-}    
+}

@@ -1,34 +1,30 @@
-//! Module for interacting with ICP Ledgers using ICRC-1 standard
+//! Module for interacting with BNB Chain Ledgers
 //!
 //! This module provides functionality for:
-//! - Loading and managing multiple ICP ledger canisters
+//! - Loading and managing BNB Chain token contracts
 //! - Transferring tokens between accounts
 //! - Querying account balances
 //!
 //! The implementation supports:
-//! - Multiple token symbols (though primarily designed for ICP)
-//! - Configurable subaccount usage for transfers
-//! - ICRC-1 standard compliant operations
+//! - Multiple token symbols
+//! - ERC20 standard compliant operations
 //!
 //! # Examples
-//! ```rust,ignore
-//! use anda_icp::ledger::ICPLedgers;
-//! use anda_core::CanisterCaller;
-//! use std::collections::BTreeSet;
-//!
-//! async fn example(ctx: &impl CanisterCaller) {
-//!     let canisters = BTreeSet::from([Principal::from_text("ryjl3-tyaaa-aaaaa-aaaba-cai").unwrap()]);
-//!     let ledgers = ICPLedgers::load(ctx, canisters, false).await.unwrap();
+//! ,ignore
+//! use anda_bnb::ledger::BNBLedgers;
+//! 
+//! async fn example() {
+//!     let ledgers = BNBLedgers::load().await.unwrap();
 //!     // Use ledgers for transfers or balance queries
 //! }
-//! ```
+//! 
 
 use anda_core::BoxError;
 use anda_engine::context::BaseCtx;
 use std::collections::BTreeMap;
 
 use alloy::{
-    network::{AnyNetwork, EthereumWallet, NetworkWallet}, 
+    network::{AnyNetwork, EthereumWallet, NetworkWallet},
     primitives::{utils::parse_units, Address, FixedBytes}, 
     providers::ProviderBuilder, sol
 };
@@ -51,40 +47,40 @@ sol!(
     "artifacts/ERC20Example.json"
 );
 
-// Read the BSC_RPC from environment variable
-pub fn bsc_rpc() -> String {
-    dotenv::var("BSC_RPC").unwrap_or_else(|_| "https://bsc-testnet.bnbchain.org".to_string())
+// Read the BNB_RPC from environment variable
+pub fn bnb_rpc() -> String {
+    dotenv::var("BNB_RPC").unwrap_or_else(|_| "https://bsc-testnet.bnbchain.org".to_string())
 }
 
-// public static url of BSC BEP20 contract address
-pub static TOKEN_ADDR: &str = "0xDE3a190D9D26A8271Ae9C27573c03094A8A2c449";  // BSC testnet
+// public static url of BNB BEP20 contract address
+pub static TOKEN_ADDR: &str = "0xDE3a190D9D26A8271Ae9C27573c03094A8A2c449";  // BNB testnet
 
-// public static chain id of BSC
-pub static CHAIN_ID: u64 = 97;  // BSC testnet
+// public static chain id of BNB
+pub static CHAIN_ID: u64 = 97;  // BNB testnet
 
 // public static derivation path
 pub static DRVT_PATH: &[&[u8]] = &[b"44'", b"60'", b"10'", b"20", b"30"];
 
-/// ICP Ledger Transfer tool implementation
+/// BNB Ledger Transfer tool implementation
 #[derive(Debug, Clone)]
-pub struct BSCLedgers {
+pub struct BNBLedgers {
     /// Map of token symbols to their corresponding canister ID and decimals places
     pub ledgers: BTreeMap<String, (Address, u8)>,
 }
 
-impl BSCLedgers {
-    /// Loads a BSCLedgers instance by retrieving token information from the BSC token contract
+impl BNBLedgers {
+    /// Loads a BNBLedgers instance by retrieving token information from the BNB token contract
     ///
     /// # Returns
-    /// A `Result` containing the initialized `BSCLedgers` with token symbol, address, and decimals,
+    /// A `Result` containing the initialized `BNBLedgers` with token symbol, address, and decimals,
     /// or an error if token information retrieval fails
     ///
     /// # Errors
     /// Returns a `BoxError` if RPC connection fails, token symbol/decimals cannot be retrieved,
     /// or address parsing encounters an issue
-    pub async fn load() -> Result<BSCLedgers, BoxError> {
+    pub async fn load() -> Result<BNBLedgers, BoxError> {
         // Create a provider
-        let rpc_url = bsc_rpc().parse()?;
+        let rpc_url = bnb_rpc().parse()?;
         let provider = ProviderBuilder::new().on_http(rpc_url);
 
         // ERC20 token contract address and instance
@@ -97,7 +93,7 @@ impl BSCLedgers {
         log::debug!("symbol: {:?}, decimals: {:?}", symbol.clone(), decimals);
         
         // Create ledgers instance
-        let ledgers = BSCLedgers {
+        let ledgers = BNBLedgers {
             ledgers: BTreeMap::from([
                 (
                     symbol.clone(),
@@ -146,7 +142,7 @@ impl BSCLedgers {
         let provider = ProviderBuilder::new()
                 .with_simple_nonce_management()
                 .with_gas_estimation()
-                .wallet(wallet).on_http(reqwest::Url::parse(bsc_rpc().as_ref()).unwrap());  // Todo: read rpc url from web3 client
+                .wallet(wallet).on_http(reqwest::Url::parse(bnb_rpc().as_ref()).unwrap());  // Todo: read rpc url from web3 client
 
         // Get receiver address, transfer amount, and token address to transfer
         let to_addr = Address::from_str(&args.account)?;  
@@ -169,11 +165,11 @@ impl BSCLedgers {
         }
 
         // Transfer token
-        log::debug!("BSC transfer. amount: {:?}, transfer to_addr: {:?}", to_amount, to_addr);
+        log::debug!("BNB transfer. amount: {:?}, transfer to_addr: {:?}", to_amount, to_addr);
         let pending_tx = contract.transfer(to_addr, to_amount).send().await?;
-        log::debug!("BSC transfer pending tx: {:?}", pending_tx);
+        log::debug!("BNB transfer pending tx: {:?}", pending_tx);
         let res = pending_tx.watch().await?;
-        log::debug!("BSC transfer result: {:#?}", res);
+        log::debug!("BNB transfer result: {:#?}", res);
 
         Ok((to_addr, res))
     }
@@ -193,7 +189,7 @@ impl BSCLedgers {
     ) -> Result<(Address, f64), BoxError> {
         // Create a provider
         let provider = ProviderBuilder::new()
-                    .on_http(reqwest::Url::parse(bsc_rpc().as_ref()).unwrap());  // Todo: read rpc url from web3 client
+                    .on_http(reqwest::Url::parse(bnb_rpc().as_ref()).unwrap());  // Todo: read rpc url from web3 client
 
         // Read the account address from the arguments
         let user_addr = Address::from_str(&args.account)?;
@@ -220,7 +216,7 @@ impl BSCLedgers {
             account = args.account,
             symbol = args.symbol,
             balance = balance;
-            "balance_of_bsc"
+            "balance_of_bnb"
         );
 
         return Ok((user_addr, balance));
