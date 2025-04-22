@@ -696,6 +696,31 @@ dependencies = [
  "dotenv",
  "k256",
  "log",
+ "rand 0.9.0",
+ "reqwest 0.12.15",
+ "schemars",
+ "serde",
+ "serde_json",
+ "structured-logger",
+ "thiserror 1.0.69",
+ "tokio",
+]
+
+[[package]]
+name = "anda_bnb_examples"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anda_bnb",
+ "anda_core",
+ "anda_engine",
+ "anda_engine_server",
+ "anda_web3_client",
+ "async-trait",
+ "dotenv",
+ "k256",
+ "log",
+ "rand 0.9.0",
  "reqwest 0.12.15",
  "schemars",
  "serde",
