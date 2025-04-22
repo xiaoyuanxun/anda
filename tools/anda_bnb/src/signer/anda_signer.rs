@@ -211,3 +211,61 @@ fn y_parity(prehash: &[u8], sig: &[u8], pubkey: &[u8]) -> Result<bool> {
         hex::encode(pubkey)
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use anda_engine::{context::Web3SDK, engine::EngineBuilder, extension::extractor::Extractor};
+    use anda_web3_client::client::Client as Web3Client;
+    use schemars::JsonSchema;
+    use serde::{Deserialize, Serialize};
+    use rand::Rng;
+    use crate::ledger::{CHAIN_ID, DRVT_PATH};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_sign_message() {
+        // Create an agent for testing
+        #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+        struct TestStruct {
+            name: String,
+            age: Option<u8>,
+        }    
+        let agent = Extractor::<TestStruct>::default();
+
+        // Generate random bytes for root secret
+        let mut rng = rand::rng();
+        let random_bytes: Vec<u8> = (0..48).map(|_| rng.random()).collect();
+        let root_secret: [u8; 48] = random_bytes.clone()
+            .try_into()
+            .map_err(|_| format!("invalid root_secret: {:?}", &random_bytes))
+            .unwrap();
+
+        // Initialize Web3 client
+        let web3 = Web3Client::builder()
+            .with_root_secret(root_secret)
+            .build().await.unwrap();
+    
+        // Create a context for testing
+        let engine_ctx = EngineBuilder::new()
+                    .with_name("BNB_TEST".to_string()).unwrap()
+                    .with_web3_client(Arc::new(Web3SDK::from_web3(Arc::new(web3))))
+                    .register_agent(agent).unwrap()
+                    .mock_ctx();
+        let ctx = engine_ctx.base;
+
+        let signer = AndaEvmSigner::new(
+            ctx,
+            DRVT_PATH.iter()
+                .map(|&s| s.to_vec())
+                .collect(),
+            Some(CHAIN_ID),
+        ).await.unwrap();
+
+        let message = vec![0, 1, 2, 3];
+        let sig = signer.sign_message(&message).await.unwrap();
+        assert_eq!(sig.recover_address_from_msg(message).unwrap(), signer.address());
+    }
+}
