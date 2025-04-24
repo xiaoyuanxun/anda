@@ -5,7 +5,7 @@ use anda_core::{
 use anda_engine::{
     context::AgentCtx, engine::Engine, extension::character::CharacterAgent, rand_number,
 };
-use anda_lancedb::knowledge::KnowledgeStore;
+use anda_kdb::KnowledgeStore;
 use std::sync::Arc;
 use tokio::{
     sync::RwLock,

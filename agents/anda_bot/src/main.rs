@@ -15,7 +15,7 @@ use anda_engine::{
     store::{LocalFileSystem, ObjectStore, Store},
 };
 use anda_icp::ledger::{BalanceOfTool, ICPLedgers};
-use anda_lancedb::{knowledge::KnowledgeStore, lancedb::LanceVectorStore};
+use anda_kdb::{AndaKDB, KnowledgeStore, StorageConfig};
 use anda_web3_client::client::{Client as Web3Client, load_identity};
 use axum::{Router, routing};
 use candid::Principal;
@@ -48,7 +48,7 @@ mod twitter;
 const APP_NAME: &str = env!("CARGO_PKG_NAME");
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-static IC_OBJECT_STORE: &str = "ic://object_store";
+static IC_OBJECT_STORE: &str = "object_store";
 static ENGINE_NAME: &str = "Anda_bot";
 static COSE_SECRET_PERMANENT_KEY: &str = "v1";
 const LOCAL_SERVER_SHUTDOWN_DURATION: Duration = Duration::from_secs(5);
@@ -311,7 +311,7 @@ async fn bootstrap_tee(
     let agent = character.build(
         Arc::new(Attention::default()),
         Arc::new(DocumentSegmenter::default()),
-        knowledge_store.clone(),
+        knowledge_store,
     );
 
     let mut engine = EngineBuilder::new()
@@ -358,7 +358,6 @@ async fn bootstrap_tee(
             object_store_canister: Some(object_store_canister),
             caller: Principal::anonymous(),
         }),
-        knowledge_store,
         cose_namespace,
         manager: "".to_string(),
     };
@@ -435,7 +434,7 @@ async fn bootstrap_local(
     let agent = character.build(
         Arc::new(Attention::default()),
         Arc::new(DocumentSegmenter::default()),
-        knowledge_store.clone(),
+        knowledge_store,
     );
 
     let mut engine = EngineBuilder::new()
@@ -482,7 +481,6 @@ async fn bootstrap_local(
             object_store_canister: None,
             caller: Principal::anonymous(),
         }),
-        knowledge_store,
         cose_namespace: "".to_string(),
         manager,
     };
@@ -545,17 +543,19 @@ async fn connect_knowledge_store(
     namespace: Path,
     model: &Model,
 ) -> Result<KnowledgeStore, BoxError> {
-    let mut store = LanceVectorStore::new_with_object_store(
+    let mut store = AndaKDB::new(
         IC_OBJECT_STORE.to_string(),
         object_store,
-        Some(CHUNK_SIZE),
+        StorageConfig {
+            object_chunk_size: CHUNK_SIZE as usize,
+            ..Default::default()
+        },
         Some(model.embedder.clone()),
     )
     .await?;
 
     log::info!("knowledge_store start init");
-    let ks =
-        KnowledgeStore::init(&mut store, namespace, model.ndims() as u16, Some(1024 * 10)).await?;
+    let ks = KnowledgeStore::init(&mut store, namespace.to_string(), model.ndims()).await?;
     log::info!("knowledge_store ks: {:?}", ks.name());
     Ok(ks)
 }

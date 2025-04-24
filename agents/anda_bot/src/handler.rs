@@ -1,5 +1,5 @@
 use anda_engine::context::TEEClient;
-use anda_lancedb::knowledge::KnowledgeStore;
+use anda_kdb::KnowledgeStore;
 use axum::{
     extract::{Request, State},
     http::StatusCode,
@@ -19,7 +19,6 @@ pub struct AppState {
     pub web3: Arc<Web3SDK>,
     pub x_status: Arc<RwLock<ServiceStatus>>,
     pub info: Arc<AppInformation>,
-    pub knowledge_store: Arc<KnowledgeStore>,
     pub cose_namespace: String, // used for TEE
     pub manager: String,        // used for local
 }
@@ -137,24 +136,6 @@ async fn handle_proposal(req: &RPCRequest, app: &AppState) -> RPCResponse {
         "stop_x_bot" => {
             let mut x_status = app.x_status.write().await;
             *x_status = ServiceStatus::Stopped;
-            Ok(to_cbor_bytes(&"Ok").into())
-        }
-        "knowledge_store_create_index" => {
-            let knowledge_store = app.knowledge_store.clone();
-            tokio::spawn(async move {
-                if let Err(err) = knowledge_store.create_index().await {
-                    log::error!("knowledge_store: failed to create index: {}", err);
-                }
-            });
-            Ok(to_cbor_bytes(&"Ok").into())
-        }
-        "knowledge_store_optimize" => {
-            let knowledge_store = app.knowledge_store.clone();
-            tokio::spawn(async move {
-                if let Err(err) = knowledge_store.optimize().await {
-                    log::error!("knowledge_store: failed to optimize: {}", err);
-                }
-            });
             Ok(to_cbor_bytes(&"Ok").into())
         }
         _ => Err(format!("unsupported method {}", req.method)),

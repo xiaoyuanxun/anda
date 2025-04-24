@@ -14,7 +14,7 @@ anda_core = { path = "../../anda_core", version = "0.6" }
 anda_engine = { path = "../../anda_engine", version = "0.6" }
 anda_web3_client = { path = "../../anda_web3_client", version = "0.6" }
 anda_icp = { path = "../../tools/anda_icp", version = "0.6" }
-anda_lancedb = { path = "../../anda_lancedb", version = "0.6" }
+anda_kdb = { path = "../../anda_kdb", version = "0.1" }
 axum = { workspace = true }
 candid = { workspace = true }
 clap = { workspace = true }

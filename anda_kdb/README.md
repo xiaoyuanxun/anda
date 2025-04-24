@@ -1,6 +1,6 @@
-# `anda_lancedb` DEPRECATED
+# `anda_kdb`
 
-Anda vector store based on LanceDB.
+Anda AI Agent knowledge store based on [Anda DB](https://github.com/ldclabs/anda-db).
 
 ## License
 Copyright © 2025 [LDC Labs](https://github.com/ldclabs).
