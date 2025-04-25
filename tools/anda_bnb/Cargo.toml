@@ -31,11 +31,3 @@ async-trait = "0.1"
 [dev-dependencies]
 structured-logger = { workspace = true }
 rand = { workspace = true } 
-
-[[example]]
-name = "balance_test"
-path = "examples/balance_test.rs"
-
-[[example]]
-name = "transfer_test"
-path = "examples/transfer_test.rs"
