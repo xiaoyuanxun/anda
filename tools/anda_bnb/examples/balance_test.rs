@@ -98,3 +98,10 @@ pub async fn test_bnb_ledger_balance() {
         println!("Balance query result: {:#?}", res.unwrap());
     }
 }
+
+// cargo run --example balance_test
+#[tokio::main]
+async fn main() {
+    println!("Anda BNB query test!");
+    test_bnb_ledger_balance().await;
+}

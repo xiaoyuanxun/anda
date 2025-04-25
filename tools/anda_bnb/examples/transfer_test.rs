@@ -95,3 +95,10 @@ pub async fn test_bnb_ledger_transfer() {
       println!("Transfer result: {:#?}", res.unwrap());            
   }
 }
+
+// cargo run --example transfer_test
+#[tokio::main]
+async fn main() {
+    println!("Anda BNB transfer test!");
+    test_bnb_ledger_transfer().await;
+}
