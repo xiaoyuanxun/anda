@@ -1,9 +1,9 @@
 [package]
-name = "anda_lancedb"
-description = "Anda vector store based on LanceDB"
-repository = "https://github.com/ldclabs/anda/tree/main/anda_lancedb"
+name = "anda_kdb"
+description = "Anda AI Agent knowledge store based on Anda DB"
+repository = "https://github.com/ldclabs/anda/tree/main/anda_kdb"
 publish = false
-version = "0.6.0"
+version = "0.1.0"
 edition.workspace = true
 keywords.workspace = true
 categories.workspace = true
@@ -19,14 +19,11 @@ candid = { workspace = true }
 ic_object_store = { workspace = true }
 ic_cose_types = { workspace = true }
 ic-agent = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 xid = { workspace = true }
 ed25519-consensus = { workspace = true }
-half = "2.4"
-lancedb = { git = "https://github.com/ldclabs/lancedb", rev = "7dc28e8ece3131ae7acbde6f28f5a2244e095786" }
-lance-index = { version = "=0.25.0", tag = "v0.25.0-beta.2", git = "https://github.com/lancedb/lance.git" }
-lance-io = { version = "=0.25.0", tag = "v0.25.0-beta.2", git = "https://github.com/lancedb/lance.git" }
-arrow-array = "54.1"
-arrow-schema = "54.1"
+anda_db = { version = "0.1", features = ["full"] }
+anda_db_tfs = { version = "0.4", features = ["full"] }
 
 [dev-dependencies]
