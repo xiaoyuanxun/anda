@@ -673,7 +673,7 @@ impl EngineBuilder {
     }
 
     /// Creates a mock context for testing purposes.
-    #[cfg(test)]
+    // #[cfg(test)]
     pub fn mock_ctx(self) -> AgentCtx {
         let mut names: BTreeSet<Path> = self
             .tools
