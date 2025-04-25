@@ -3,26 +3,31 @@ use anda_db::{
     collection::{Collection, CollectionConfig},
     error::DBError,
     index::HnswConfig,
-    schema::{Fe, Ft, Schema},
+    query::{Filter, Query, RangeQuery, Search},
+    schema::{Document, Fe, Ft, Fv, Json, Schema, Segment},
 };
 use anda_db_tfs::jieba_tokenizer;
-use anda_engine::model::EmbeddingFeaturesDyn;
-use std::{collections::BTreeMap, sync::Arc};
+use anda_engine::{model::EmbeddingFeaturesDyn, unix_ms};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use std::{sync::Arc, vec};
 
 use crate::db::*;
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct LocalKnowledge {
+    pub id: u64,
+    pub user: String,
+    pub meta: Json,
+    pub segments: Vec<Segment>,
+    pub created_at: u64, // timestamp in milliseconds
+}
 
 #[derive(Clone)]
 pub struct KnowledgeStore {
     name: String,
-    dimension: usize,
     collection: Arc<Collection>,
     embedder: Option<Arc<dyn EmbeddingFeaturesDyn>>,
-}
-
-pub fn xid_from_timestamp(unix_secs: u32) -> xid::Id {
-    let mut id = [0u8; 12];
-    id[0..4].copy_from_slice(&unix_secs.to_be_bytes());
-    xid::Id(id)
 }
 
 impl KnowledgeStore {
@@ -33,15 +38,21 @@ impl KnowledgeStore {
     pub async fn init(db: &mut AndaKDB, name: String, dimension: usize) -> Result<Self, DBError> {
         let mut schema = Schema::builder();
         schema
-            .with_xid("xid", false)?
             .add_field(
                 Fe::new("user".to_string(), Ft::Text)?
                     .with_required()
                     .with_description("user name".to_string()),
             )?
             .add_field(
-                Fe::new("meta".to_string(), Ft::Map(BTreeMap::new()))?
+                Fe::new("meta".to_string(), Ft::Json)?
                     .with_description("knowledge metadata".to_string()),
+            )?
+            .add_field(
+                Fe::new("created_at".to_string(), Ft::U64)?
+                    .with_required()
+                    .with_description(
+                        "unix timestamp in milliseconds that knowledge created at".to_string(),
+                    ),
             )?
             .with_segments("segments", true)?;
         let schema = schema.build()?;
@@ -56,6 +67,9 @@ impl KnowledgeStore {
                 collection.set_tokenizer(jieba_tokenizer());
                 collection
                     .create_btree_index_nx("btree_user", "user")
+                    .await?;
+                collection
+                    .create_btree_index_nx("btree_created_at", "created_at")
                     .await?;
                 collection
                     .create_search_index_nx(
@@ -73,10 +87,20 @@ impl KnowledgeStore {
 
         Ok(Self {
             name,
-            dimension,
             collection,
             embedder: db.embedder(),
         })
+    }
+
+    async fn try_embed_query(&self, query: String) -> Option<Vec<f32>> {
+        if let Some(embedder) = self.embedder.as_ref() {
+            match embedder.embed_query(query).await {
+                Ok((embedding, _usage)) => Some(embedding.vec),
+                Err(_) => None,
+            }
+        } else {
+            None
+        }
     }
 }
 
@@ -85,11 +109,60 @@ impl VectorSearchFeatures for KnowledgeStore {
         if n == 0 {
             return Ok(vec![]);
         }
-        unimplemented!()
+
+        let vector = self.try_embed_query(query.to_string()).await;
+        let result: Vec<LocalKnowledge> = self
+            .collection
+            .search_as(Query {
+                limit: Some(n),
+                search: Some(Search {
+                    field: "segments".to_string(),
+                    text: Some(query.to_string()),
+                    vector,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })
+            .await?;
+
+        Ok(result
+            .into_iter()
+            .map(|doc| {
+                doc.segments
+                    .into_iter()
+                    .map(|s| s.text)
+                    .fold("".to_string(), |acc, s| {
+                        if acc.is_empty() {
+                            s
+                        } else {
+                            format!("{}\n\n{}", acc, s)
+                        }
+                    })
+            })
+            .collect())
     }
 
     async fn top_n_ids(&self, query: &str, n: usize) -> Result<Vec<String>, BoxError> {
-        unimplemented!()
+        if n == 0 {
+            return Ok(vec![]);
+        }
+
+        let vector = self.try_embed_query(query.to_string()).await;
+        let result: Vec<u64> = self
+            .collection
+            .search_ids(Query {
+                limit: Some(n),
+                search: Some(Search {
+                    field: "segments".to_string(),
+                    text: Some(query.to_string()),
+                    vector,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })
+            .await?;
+
+        Ok(result.into_iter().map(|id| id.to_string()).collect())
     }
 }
 
@@ -104,7 +177,42 @@ impl KnowledgeFeatures for KnowledgeStore {
             return Ok(vec![]);
         }
 
-        unimplemented!()
+        let vector = self.try_embed_query(query.to_string()).await;
+        let result: Vec<LocalKnowledge> = self
+            .collection
+            .search_as(Query {
+                limit: Some(n),
+                filter: user.map(|u| {
+                    Filter::Field(("user".to_string(), RangeQuery::Eq(Fv::Text(u.to_string()))))
+                }),
+                search: Some(Search {
+                    field: "segments".to_string(),
+                    text: Some(query.to_string()),
+                    vector,
+                    ..Default::default()
+                }),
+            })
+            .await?;
+
+        Ok(result
+            .into_iter()
+            .map(|doc| Knowledge {
+                id: doc.id.to_string(),
+                user: doc.user,
+                text: doc
+                    .segments
+                    .into_iter()
+                    .map(|s| s.text)
+                    .fold("".to_string(), |acc, s| {
+                        if acc.is_empty() {
+                            s
+                        } else {
+                            format!("{}\n\n{}", acc, s)
+                        }
+                    }),
+                meta: serde_json::from_value(doc.meta).unwrap_or_default(),
+            })
+            .collect())
     }
 
     async fn knowledge_latest_n(
@@ -117,14 +225,75 @@ impl KnowledgeFeatures for KnowledgeStore {
             return Ok(vec![]);
         }
 
-        unimplemented!()
+        let mut filter = Filter::Field((
+            "created_at".to_string(),
+            RangeQuery::Ge(Fv::U64(unix_ms() - last_seconds as u64 * 1000)),
+        ));
+
+        if let Some(u) = user {
+            filter = Filter::And(vec![
+                Box::new(Filter::Field((
+                    "user".to_string(),
+                    RangeQuery::Eq(Fv::Text(u.to_string())),
+                ))),
+                Box::new(filter),
+            ]);
+        }
+        let result: Vec<LocalKnowledge> = self
+            .collection
+            .search_as(Query {
+                limit: Some(n),
+                filter: Some(filter),
+                ..Default::default()
+            })
+            .await?;
+
+        Ok(result
+            .into_iter()
+            .map(|doc| Knowledge {
+                id: doc.id.to_string(),
+                user: doc.user,
+                text: doc
+                    .segments
+                    .into_iter()
+                    .map(|s| s.text)
+                    .fold("".to_string(), |acc, s| {
+                        if acc.is_empty() {
+                            s
+                        } else {
+                            format!("{}\n\n{}", acc, s)
+                        }
+                    }),
+                meta: serde_json::from_value(doc.meta).unwrap_or_default(),
+            })
+            .collect())
     }
 
     async fn knowledge_add(&self, docs: Vec<KnowledgeInput>) -> Result<(), BoxError> {
         if docs.is_empty() {
             return Ok(());
         }
+        let now = unix_ms();
+        let docs = docs
+            .into_iter()
+            .map(|doc| {
+                let mut segments = vec![Segment::new(doc.text, None).with_vec_f32(doc.vec)];
+                self.collection.obtain_segment_ids(&mut segments);
+                LocalKnowledge {
+                    id: 0,
+                    user: doc.user,
+                    meta: json!(doc.meta),
+                    segments,
+                    created_at: now,
+                }
+            })
+            .collect::<Vec<_>>();
 
-        unimplemented!()
+        for k in docs {
+            let doc = Document::try_from(self.collection.schema(), &k)?;
+            let _ = self.collection.add(doc).await?;
+        }
+
+        Ok(())
     }
 }
