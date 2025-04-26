@@ -3,7 +3,7 @@ name = "anda_bnb"
 description = "Anda agent tools offers integration with the BNB chain."
 repository = "https://github.com/ldclabs/anda/tree/main/tools/anda_bnb"
 publish = true
-version = "0.6.1"
+version = "0.1.0"
 edition.workspace = true
 keywords.workspace = true
 categories.workspace = true
@@ -22,7 +22,11 @@ log = { workspace = true }
 dotenv = { workspace = true }
 reqwest = { workspace = true }
 alloy = { version = "0.14.0", features = [
-    "providers", "network", "sol-types", "consensus", "signers",
+    "providers",
+    "network",
+    "sol-types",
+    "consensus",
+    "signers",
 ] }
 thiserror = "1.0"
 k256 = { version = "0.13", features = ["ecdsa"] }
@@ -30,4 +34,4 @@ async-trait = "0.1"
 
 [dev-dependencies]
 structured-logger = { workspace = true }
-rand = { workspace = true } 
+rand = { workspace = true }

@@ -1,4 +1,4 @@
-use alloy::primitives::{utils::format_units, U256};
+use alloy::primitives::{U256, utils::format_units};
 use anda_core::BoxError;
 
 /// Helper function to parse the balance from U256 to f64
