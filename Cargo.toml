@@ -75,6 +75,7 @@ moka = { version = "0.12", features = ["future"] }
 xid = "1.1"
 toml = "0.8"
 ed25519-consensus = "2.1"
+k256 = { version = "0.13", features = ["ecdsa"] }
 log = "0.4"
 dotenv = "0.15"
 schemars = { version = "0.8" }

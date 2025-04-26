@@ -81,7 +81,7 @@ impl BNBLedgers {
     ) -> Result<BNBLedgers, BoxError> {
         // Create a provider
         let provider_url: reqwest::Url = provider_url.parse()?;
-        let provider = ProviderBuilder::new().on_http(provider_url.clone());
+        let provider = ProviderBuilder::new().connect_http(provider_url.clone());
         let mut ledgers: BTreeMap<String, (Address, u8)> = BTreeMap::new();
 
         for token in tokens {
@@ -142,7 +142,7 @@ impl BNBLedgers {
             .with_simple_nonce_management()
             .with_gas_estimation()
             .wallet(wallet)
-            .on_http(self.provider_url.clone());
+            .connect_http(self.provider_url.clone());
 
         // Get receiver address, transfer amount, and token address to transfer
         let to_addr = Address::from_str(&args.account)?;
@@ -200,7 +200,7 @@ impl BNBLedgers {
         args: balance::BalanceOfArgs,
     ) -> Result<(Address, f64), BoxError> {
         // Create a provider
-        let provider = ProviderBuilder::new().on_http(self.provider_url.clone());
+        let provider = ProviderBuilder::new().connect_http(self.provider_url.clone());
 
         // Read the account address from the arguments
         let user_addr = Address::from_str(&args.account)?;

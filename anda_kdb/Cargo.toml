@@ -12,17 +12,10 @@ license.workspace = true
 [dependencies]
 anda_core = { path = "../anda_core", version = "0.6" }
 anda_engine = { path = "../anda_engine", version = "0.6" }
-futures = { workspace = true }
-tokio = { workspace = true }
 object_store = { workspace = true }
-candid = { workspace = true }
-ic_object_store = { workspace = true }
-ic_cose_types = { workspace = true }
-ic-agent = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 xid = { workspace = true }
-ed25519-consensus = { workspace = true }
 anda_db = { version = "0.1", features = ["full"] }
 anda_db_tfs = { version = "0.4", features = ["full"] }
 
