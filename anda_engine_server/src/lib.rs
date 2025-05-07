@@ -2,7 +2,7 @@ use anda_core::BoxError;
 use anda_engine::engine::Engine;
 use axum::{Router, routing};
 use candid::Principal;
-use std::{collections::BTreeMap, future::Future, net::SocketAddr, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, future::Future, net::SocketAddr, sync::Arc};
 use structured_logger::unix_ms;
 use tokio::signal;
 use tokio_util::sync::CancellationToken;
@@ -115,7 +115,7 @@ impl ServerBuilder {
     }
 }
 
-pub async fn shutdown_signal(cancel_token: CancellationToken, wait_duration: Duration) {
+pub async fn shutdown_signal(cancel_token: CancellationToken) {
     let ctrl_c = async {
         signal::ctrl_c()
             .await
@@ -140,7 +140,6 @@ pub async fn shutdown_signal(cancel_token: CancellationToken, wait_duration: Dur
 
     log::warn!("received termination signal, starting graceful shutdown");
     cancel_token.cancel();
-    tokio::time::sleep(wait_duration).await;
 }
 
 pub async fn create_reuse_port_listener(

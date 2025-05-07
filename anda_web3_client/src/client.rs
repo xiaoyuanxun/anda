@@ -1,5 +1,6 @@
 use anda_core::{BoxError, BoxPinFut, HttpFeatures, RPCRequestRef, cbor_rpc};
 use anda_engine::context::Web3ClientFeatures;
+use arc_swap::ArcSwap;
 use candid::{
     CandidType, Decode, Principal,
     utils::{ArgumentEncoder, encode_args},
@@ -35,9 +36,9 @@ use anda_engine::APP_USER_AGENT;
 pub struct Client {
     outer_http: reqwest::Client,
     root_secret: [u8; 48],
-    id: Principal,
-    identity: Arc<dyn Identity>,
-    agent: Arc<Agent>,
+    identity: Arc<ArcSwap<Arc<dyn Identity>>>,
+    agent: Arc<ArcSwap<Agent>>,
+    agent_owned: Agent,
     cose_canister: Principal,
     allow_http: bool,
 }
@@ -171,8 +172,14 @@ impl ClientBuilder {
             .with_url(&self.ic_host)
             .with_verify_query_signatures(false)
             .with_arc_identity(self.identity.clone())
-            .with_http_client(self.outer_http.clone())
-            .build()?;
+            .with_http_client(self.outer_http.clone());
+
+        let agent = if self.ic_host.starts_with("https://") {
+            agent.with_background_dynamic_routing().build()?
+        } else {
+            agent.build()?
+        };
+
         if self.ic_host.starts_with("http://") {
             agent.fetch_root_key().await?;
         }
@@ -180,12 +187,9 @@ impl ClientBuilder {
         Ok(Client {
             outer_http: self.outer_http,
             root_secret: self.root_secret,
-            id: self
-                .identity
-                .sender()
-                .expect("Failed to get sender principal"),
-            identity: self.identity,
-            agent: Arc::new(agent),
+            identity: Arc::new(ArcSwap::from_pointee(self.identity)),
+            agent: Arc::new(ArcSwap::from_pointee(agent.clone())),
+            agent_owned: agent,
             cose_canister: self.cose_canister,
             allow_http: self.allow_http,
         })
@@ -198,7 +202,18 @@ impl Client {
     }
 
     pub fn get_principal(&self) -> Principal {
-        self.id
+        self.identity
+            .load()
+            .as_ref()
+            .sender()
+            .expect("Failed to get sender principal")
+    }
+
+    pub fn set_identity(&self, identity: Arc<dyn Identity>) {
+        let mut agent = self.agent_owned.clone();
+        agent.set_identity(identity.clone());
+        self.identity.store(Arc::new(identity));
+        self.agent.store(Arc::new(agent));
     }
 }
 
@@ -210,11 +225,8 @@ impl Web3ClientFeatures for Client {
     ///
     /// # Returns
     /// Result containing the derived 256-bit key or an error
-    fn a256gcm_key(&self, derivation_path: &[&[u8]]) -> BoxPinFut<Result<[u8; 32], BoxError>> {
-        let res = crypto::a256gcm_key(
-            &self.root_secret,
-            derivation_path.iter().map(|v| v.to_vec()).collect(),
-        );
+    fn a256gcm_key(&self, derivation_path: Vec<Vec<u8>>) -> BoxPinFut<Result<[u8; 32], BoxError>> {
+        let res = crypto::a256gcm_key(&self.root_secret, derivation_path);
         Box::pin(futures::future::ready(Ok(res.into_array())))
     }
 
@@ -228,14 +240,10 @@ impl Web3ClientFeatures for Client {
     /// Result containing the 64-byte signature or an error
     fn ed25519_sign_message(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message: &[u8],
     ) -> BoxPinFut<Result<[u8; 64], BoxError>> {
-        let res = crypto::ed25519_sign_message(
-            &self.root_secret,
-            derivation_path.iter().map(|v| v.to_vec()).collect(),
-            message,
-        );
+        let res = crypto::ed25519_sign_message(&self.root_secret, derivation_path, message);
         Box::pin(futures::future::ready(Ok(res.into_array())))
     }
 
@@ -250,14 +258,11 @@ impl Web3ClientFeatures for Client {
     /// Result indicating success or failure of verification
     fn ed25519_verify(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message: &[u8],
         signature: &[u8],
     ) -> BoxPinFut<Result<(), BoxError>> {
-        let res = crypto::ed25519_public_key(
-            &self.root_secret,
-            derivation_path.iter().map(|v| v.to_vec()).collect(),
-        );
+        let res = crypto::ed25519_public_key(&self.root_secret, derivation_path);
         Box::pin(futures::future::ready(
             ed25519_verify(&res.0, message, signature).map_err(|e| e.into()),
         ))
@@ -272,12 +277,9 @@ impl Web3ClientFeatures for Client {
     /// Result containing the 32-byte public key or an error
     fn ed25519_public_key(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
     ) -> BoxPinFut<Result<[u8; 32], BoxError>> {
-        let res = crypto::ed25519_public_key(
-            &self.root_secret,
-            derivation_path.iter().map(|v| v.to_vec()).collect(),
-        );
+        let res = crypto::ed25519_public_key(&self.root_secret, derivation_path);
         Box::pin(futures::future::ready(Ok(res.0.into_array())))
     }
 
@@ -291,14 +293,11 @@ impl Web3ClientFeatures for Client {
     /// Result containing the 64-byte signature or an error
     fn secp256k1_sign_message_bip340(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message: &[u8],
     ) -> BoxPinFut<Result<[u8; 64], BoxError>> {
-        let res = crypto::secp256k1_sign_message_bip340(
-            &self.root_secret,
-            derivation_path.iter().map(|v| v.to_vec()).collect(),
-            message,
-        );
+        let res =
+            crypto::secp256k1_sign_message_bip340(&self.root_secret, derivation_path, message);
         Box::pin(futures::future::ready(Ok(res.into_array())))
     }
 
@@ -313,14 +312,11 @@ impl Web3ClientFeatures for Client {
     /// Result indicating success or failure of verification
     fn secp256k1_verify_bip340(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message: &[u8],
         signature: &[u8],
     ) -> BoxPinFut<Result<(), BoxError>> {
-        let res = crypto::secp256k1_public_key(
-            &self.root_secret,
-            derivation_path.iter().map(|v| v.to_vec()).collect(),
-        );
+        let res = crypto::secp256k1_public_key(&self.root_secret, derivation_path);
         Box::pin(futures::future::ready(
             secp256k1_verify_bip340(res.0.as_slice(), message, signature).map_err(|e| e.into()),
         ))
@@ -336,27 +332,20 @@ impl Web3ClientFeatures for Client {
     /// Result containing the 64-byte signature or an error
     fn secp256k1_sign_message_ecdsa(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message: &[u8],
     ) -> BoxPinFut<Result<[u8; 64], BoxError>> {
-        let res = crypto::secp256k1_sign_message_ecdsa(
-            &self.root_secret,
-            derivation_path.iter().map(|v| v.to_vec()).collect(),
-            message,
-        );
+        let res = crypto::secp256k1_sign_message_ecdsa(&self.root_secret, derivation_path, message);
         Box::pin(futures::future::ready(Ok(res.into_array())))
     }
 
     fn secp256k1_sign_digest_ecdsa(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message_hash: &[u8],
     ) -> BoxPinFut<Result<[u8; 64], BoxError>> {
-        let res = crypto::secp256k1_sign_digest_ecdsa(
-            &self.root_secret,
-            derivation_path.iter().map(|v| v.to_vec()).collect(),
-            message_hash,
-        );
+        let res =
+            crypto::secp256k1_sign_digest_ecdsa(&self.root_secret, derivation_path, message_hash);
         Box::pin(futures::future::ready(Ok(res.into_array())))
     }
 
@@ -371,14 +360,11 @@ impl Web3ClientFeatures for Client {
     /// Result indicating success or failure of verification
     fn secp256k1_verify_ecdsa(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message: &[u8],
         signature: &[u8],
     ) -> BoxPinFut<Result<(), BoxError>> {
-        let res = crypto::secp256k1_public_key(
-            &self.root_secret,
-            derivation_path.iter().map(|v| v.to_vec()).collect(),
-        );
+        let res = crypto::secp256k1_public_key(&self.root_secret, derivation_path);
         Box::pin(futures::future::ready(
             secp256k1_verify_ecdsa(res.0.as_slice(), message, signature).map_err(|e| e.into()),
         ))
@@ -394,12 +380,9 @@ impl Web3ClientFeatures for Client {
     /// Result containing the 33-byte public key or an error
     fn secp256k1_public_key(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
     ) -> BoxPinFut<Result<[u8; 33], BoxError>> {
-        let res = crypto::secp256k1_public_key(
-            &self.root_secret,
-            derivation_path.iter().map(|v| v.to_vec()).collect(),
-        );
+        let res = crypto::secp256k1_public_key(&self.root_secret, derivation_path);
         Box::pin(futures::future::ready(Ok(res.0.into_array())))
     }
 
@@ -409,7 +392,7 @@ impl Web3ClientFeatures for Client {
         method: String,
         args: Vec<u8>,
     ) -> BoxPinFut<Result<Vec<u8>, BoxError>> {
-        let agent = self.agent.clone();
+        let agent = self.agent.load().clone();
         Box::pin(async move {
             let res = agent.query(&canister, method).with_arg(args).call().await?;
             Ok(res)
@@ -422,7 +405,7 @@ impl Web3ClientFeatures for Client {
         method: String,
         args: Vec<u8>,
     ) -> BoxPinFut<Result<Vec<u8>, BoxError>> {
-        let agent = self.agent.clone();
+        let agent = self.agent.load().clone();
         Box::pin(async move {
             let res = agent
                 .update(&canister, method)
@@ -474,12 +457,15 @@ impl Web3ClientFeatures for Client {
             )));
         }
 
-        let se = match SignedEnvelope::sign_digest(self.identity.as_ref(), message_digest.into()) {
+        let se = match SignedEnvelope::sign_digest(
+            self.identity.load().as_ref().as_ref(),
+            message_digest.into(),
+        ) {
             Ok(se) => se,
             Err(err) => return Box::pin(futures::future::ready(Err(err.into()))),
         };
         let mut headers = headers.unwrap_or_default();
-        if let Err(err) = se.to_headers(&mut headers) {
+        if let Err(err) = se.to_authorization(&mut headers) {
             return Box::pin(futures::future::ready(Err(err.into())));
         }
 
@@ -513,12 +499,15 @@ impl Web3ClientFeatures for Client {
         };
         let body = to_cbor_bytes(&req);
         let digest: [u8; 32] = sha3_256(&body);
-        let se = match SignedEnvelope::sign_digest(self.identity.as_ref(), digest.into()) {
+        let se = match SignedEnvelope::sign_digest(
+            self.identity.load().as_ref().as_ref(),
+            digest.into(),
+        ) {
             Ok(se) => se,
             Err(err) => return Box::pin(futures::future::ready(Err(err.into()))),
         };
         let mut headers = http::HeaderMap::new();
-        if let Err(err) = se.to_headers(&mut headers) {
+        if let Err(err) = se.to_authorization(&mut headers) {
             return Box::pin(futures::future::ready(Err(err.into())));
         }
 
@@ -579,9 +568,12 @@ impl HttpFeatures for Client {
             return Err("Invalid url, must start with https://".into());
         }
 
-        let se = SignedEnvelope::sign_digest(self.identity.as_ref(), message_digest.into())?;
+        let se = SignedEnvelope::sign_digest(
+            self.identity.load().as_ref().as_ref(),
+            message_digest.into(),
+        )?;
         let mut headers = headers.unwrap_or_default();
-        se.to_headers(&mut headers)?;
+        se.to_authorization(&mut headers)?;
 
         let mut req = self.outer_http.request(method, url);
         req = req.headers(headers);
@@ -617,9 +609,10 @@ impl HttpFeatures for Client {
         };
         let body = to_cbor_bytes(&req);
         let digest: [u8; 32] = sha3_256(&body);
-        let se = SignedEnvelope::sign_digest(self.identity.as_ref(), digest.into())?;
+        let se =
+            SignedEnvelope::sign_digest(self.identity.load().as_ref().as_ref(), digest.into())?;
         let mut headers = http::HeaderMap::new();
-        se.to_headers(&mut headers)?;
+        se.to_authorization(&mut headers)?;
         let res = cbor_rpc(&self.outer_http, endpoint, &method, Some(headers), body).await?;
         let res = from_reader(&res[..])?;
         Ok(res)
@@ -656,6 +649,7 @@ impl CanisterCaller for Client {
         let input = encode_args(args)?;
         let res = self
             .agent
+            .load()
             .query(canister, method)
             .with_arg(input)
             .call()
@@ -682,6 +676,7 @@ impl CanisterCaller for Client {
         let input = encode_args(args)?;
         let res = self
             .agent
+            .load()
             .update(canister, method)
             .with_arg(input)
             .call_and_wait()

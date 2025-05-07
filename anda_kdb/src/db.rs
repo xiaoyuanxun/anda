@@ -12,7 +12,7 @@ use std::{collections::BTreeMap, sync::Arc};
 pub use anda_db::storage::StorageConfig;
 
 pub struct AndaKDB {
-    db: AndaDB,
+    pub db: AndaDB,
     collections: BTreeMap<Path, Arc<Collection>>,
     embedder: Option<Arc<dyn EmbeddingFeaturesDyn>>,
 }

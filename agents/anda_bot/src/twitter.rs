@@ -392,7 +392,7 @@ impl TwitterDaemon {
                     3. Return {IGNORE_COMMAND} if your persona wouldn't respond to this tweet\n\n\
                     ## Tweet Content:\n{:?}\
                 ", self.agent.character.name, tweet_content),
-                Some(ctx.name()),
+                Some(ctx.engine_name().to_owned()),
             );
 
         let res = ctx.completion(req, None).await?;
@@ -430,7 +430,7 @@ impl TwitterDaemon {
                     3. Return {IGNORE_COMMAND} if your persona wouldn't respond to this tweet\n\n\
                     ## Tweet Content:\n{:?}\
                 ", self.agent.character.name, tweet_content),
-                Some(ctx.name()),
+                Some(ctx.engine_name().to_owned()),
             );
 
             let res = ctx.completion(req, None).await?;

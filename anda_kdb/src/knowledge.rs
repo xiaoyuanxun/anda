@@ -39,20 +39,16 @@ impl KnowledgeStore {
         let mut schema = Schema::builder();
         schema
             .add_field(
-                Fe::new("user".to_string(), Ft::Text)?
-                    .with_required()
-                    .with_description("user name".to_string()),
+                Fe::new("user".to_string(), Ft::Text)?.with_description("user name".to_string()),
             )?
             .add_field(
-                Fe::new("meta".to_string(), Ft::Json)?
+                Fe::new("meta".to_string(), Ft::Option(Box::new(Ft::Json)))?
                     .with_description("knowledge metadata".to_string()),
             )?
             .add_field(
-                Fe::new("created_at".to_string(), Ft::U64)?
-                    .with_required()
-                    .with_description(
-                        "unix timestamp in milliseconds that knowledge created at".to_string(),
-                    ),
+                Fe::new("created_at".to_string(), Ft::U64)?.with_description(
+                    "unix timestamp in milliseconds that knowledge created at".to_string(),
+                ),
             )?
             .with_segments("segments", true)?;
         let schema = schema.build()?;

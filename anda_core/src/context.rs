@@ -187,16 +187,16 @@ pub trait BaseContext:
 /// StateFeatures is one of the context feature sets available when calling Agent or Tool.
 pub trait StateFeatures: Sized {
     /// Gets the engine ID
-    fn id(&self) -> Principal;
+    fn engine_id(&self) -> &Principal;
 
     /// Gets the engine name。
-    fn name(&self) -> String;
+    fn engine_name(&self) -> &str;
 
     /// Gets the verified caller principal if available.
     /// A non anonymous principal indicates the request has been verified
     /// using ICP blockchain's signature verification algorithm.
     /// Details: https://github.com/ldclabs/ic-auth
-    fn caller(&self) -> Principal;
+    fn caller(&self) -> &Principal;
 
     /// Gets the matadata of the request。
     fn meta(&self) -> &RequestMeta;
@@ -242,20 +242,20 @@ pub trait KeysFeatures: Sized {
     /// Derives a 256-bit AES-GCM key from the given derivation path.
     fn a256gcm_key(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
     ) -> impl Future<Output = Result<[u8; 32], BoxError>> + Send;
 
     /// Signs a message using Ed25519 signature scheme from the given derivation path.
     fn ed25519_sign_message(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message: &[u8],
     ) -> impl Future<Output = Result<[u8; 64], BoxError>> + Send;
 
     /// Verifies an Ed25519 signature from the given derivation path.
     fn ed25519_verify(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message: &[u8],
         signature: &[u8],
     ) -> impl Future<Output = Result<(), BoxError>> + Send;
@@ -263,20 +263,20 @@ pub trait KeysFeatures: Sized {
     /// Gets the public key for Ed25519 from the given derivation path.
     fn ed25519_public_key(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
     ) -> impl Future<Output = Result<[u8; 32], BoxError>> + Send;
 
     /// Signs a message using Secp256k1 BIP340 Schnorr signature from the given derivation path.
     fn secp256k1_sign_message_bip340(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message: &[u8],
     ) -> impl Future<Output = Result<[u8; 64], BoxError>> + Send;
 
     /// Verifies a Secp256k1 BIP340 Schnorr signature from the given derivation path.
     fn secp256k1_verify_bip340(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message: &[u8],
         signature: &[u8],
     ) -> impl Future<Output = Result<(), BoxError>> + Send;
@@ -285,21 +285,21 @@ pub trait KeysFeatures: Sized {
     /// The message will be hashed with SHA-256 before signing.
     fn secp256k1_sign_message_ecdsa(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message: &[u8],
     ) -> impl Future<Output = Result<[u8; 64], BoxError>> + Send;
 
     /// Signs a message using Secp256k1 ECDSA signature from the given derivation path.
     fn secp256k1_sign_digest_ecdsa(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message_hash: &[u8],
     ) -> impl Future<Output = Result<[u8; 64], BoxError>> + Send;
 
     /// Verifies a Secp256k1 ECDSA signature from the given derivation path.
     fn secp256k1_verify_ecdsa(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message_hash: &[u8],
         signature: &[u8],
     ) -> impl Future<Output = Result<(), BoxError>> + Send;
@@ -307,7 +307,7 @@ pub trait KeysFeatures: Sized {
     /// Gets the compressed SEC1-encoded public key for Secp256k1 from the given derivation path.
     fn secp256k1_public_key(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
     ) -> impl Future<Output = Result<[u8; 33], BoxError>> + Send;
 }
 
@@ -611,9 +611,9 @@ pub trait CacheStoreFeatures: StoreFeatures + CacheFeatures + Send + Sync + 'sta
 }
 
 /// Derives a derivation path with the given path and derivation path.
-pub fn derivation_path_with<'a>(path: &'a Path, derivation_path: &'a [&'a [u8]]) -> Vec<&'a [u8]> {
+pub fn derivation_path_with(path: &Path, derivation_path: Vec<Vec<u8>>) -> Vec<Vec<u8>> {
     let mut dp = Vec::with_capacity(derivation_path.len() + 1);
-    dp.push(path.as_ref().as_bytes());
+    dp.push(path.as_ref().as_bytes().to_vec());
     dp.extend(derivation_path);
     dp
 }

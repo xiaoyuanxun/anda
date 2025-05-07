@@ -78,7 +78,7 @@ impl Tool<BaseCtx> for ThreadMetaTool {
             return Err("resources are not supported".into());
         }
         let caller = ctx.caller();
-        if caller == ANONYMOUS {
+        if caller == &ANONYMOUS {
             return Err("anonymous user is not allowed".into());
         }
 
@@ -86,7 +86,7 @@ impl Tool<BaseCtx> for ThreadMetaTool {
             ThreadMetaToolMethod::GetThreadMeta => {
                 let thread_id = Xid::from_str(&args.thread_id)?;
                 let thread = self.management.get_thread_meta(&thread_id).await?;
-                if thread.has_permission(&caller) {
+                if thread.has_permission(caller) {
                     Ok(ToolOutput::new(Some(thread)))
                 } else {
                     Err(format!(
@@ -101,7 +101,7 @@ impl Tool<BaseCtx> for ThreadMetaTool {
             ThreadMetaToolMethod::DeleteThreadMeta => {
                 let thread_id = Xid::from_str(&args.thread_id)?;
                 self.management
-                    .delete_thread_meta(&caller, &thread_id)
+                    .delete_thread_meta(caller, &thread_id)
                     .await?;
                 Ok(ToolOutput::new(None))
             }
@@ -111,7 +111,7 @@ impl Tool<BaseCtx> for ThreadMetaTool {
                 let user_id = args.user_id.as_ref().ok_or("user_id is required")?;
                 let user = Principal::from_text(user_id)?;
                 let mut thread = self.management.get_thread_meta(&thread_id).await?;
-                if thread.has_permission(&caller) {
+                if thread.has_permission(caller) {
                     thread.participants.insert(user);
                     Ok(ToolOutput::new(Some(thread)))
                 } else {
@@ -129,7 +129,7 @@ impl Tool<BaseCtx> for ThreadMetaTool {
                 let user_id = args.user_id.as_ref().ok_or("user_id is required")?;
                 let user = Principal::from_text(user_id)?;
                 let mut thread = self.management.get_thread_meta(&thread_id).await?;
-                if thread.has_permission(&caller) {
+                if thread.has_permission(caller) {
                     thread.participants.remove(&user);
                     Ok(ToolOutput::new(Some(thread)))
                 } else {
@@ -157,8 +157,10 @@ mod tests {
     async fn test_thread_meta_tool() {
         let engine = EngineBuilder::new();
         let ctx = engine.mock_ctx();
-        let management =
-            Arc::new(ManagementBuilder::new(Visibility::Protected, ctx.id()).build(&ctx.base));
+        let management = Arc::new(
+            ManagementBuilder::new(Visibility::Protected, ctx.engine_id().to_owned())
+                .build(&ctx.base),
+        );
 
         let tool = ThreadMetaTool::new(management);
         let definition = tool.definition();

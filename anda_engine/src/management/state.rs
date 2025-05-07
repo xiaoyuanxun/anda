@@ -225,7 +225,7 @@ impl Tool<BaseCtx> for UserStateTool {
         }
 
         let caller = ctx.caller();
-        if caller == ANONYMOUS {
+        if caller == &ANONYMOUS {
             return Err("anonymous user is not allowed".into());
         }
 
@@ -233,7 +233,7 @@ impl Tool<BaseCtx> for UserStateTool {
             UserStateToolArgs::GetUserState { user } => {
                 let user = Principal::from_text(&user)?;
 
-                if self.management.is_manager(&caller) || user == caller {
+                if self.management.is_manager(caller) || &user == caller {
                     let state = self.management.get_user_state(&user).await?;
                     Ok(ToolOutput::new(Some(state)))
                 } else {
@@ -251,7 +251,7 @@ impl Tool<BaseCtx> for UserStateTool {
                     return Err("expiry is too short".into());
                 }
 
-                if self.management.is_manager(&caller) {
+                if self.management.is_manager(caller) {
                     let mut w = self.management.load_user_state(&user).await?;
                     w.topup_credit(credit, expiry);
                     let res = self.management.save_user_state(w.state.clone()).await?;
@@ -272,7 +272,7 @@ impl Tool<BaseCtx> for UserStateTool {
                     return Err(format!("tier {tier} is too high").into());
                 }
 
-                if self.management.is_manager(&caller) {
+                if self.management.is_manager(caller) {
                     let mut w = self.management.load_user_state(&user).await?;
                     w.update_subscription(tier, expiry);
                     let res = self.management.save_user_state(w.state.clone()).await?;
@@ -286,7 +286,7 @@ impl Tool<BaseCtx> for UserStateTool {
             UserStateToolArgs::UpdateFeatures { user, features } => {
                 let user = Principal::from_text(&user)?;
 
-                if self.management.is_manager(&caller) {
+                if self.management.is_manager(caller) {
                     let mut w = self.management.load_user_state(&user).await?;
                     w.update_features(features);
                     let res = self.management.save_user_state(w.state.clone()).await?;
@@ -303,7 +303,7 @@ impl Tool<BaseCtx> for UserStateTool {
                     return Err(format!("invalid status {status}").into());
                 }
 
-                if self.management.is_manager(&caller) {
+                if self.management.is_manager(caller) {
                     let mut w = self.management.load_user_state(&user).await?;
                     w.update_status(status);
                     let res = self.management.save_user_state(w.state.clone()).await?;
@@ -317,7 +317,7 @@ impl Tool<BaseCtx> for UserStateTool {
             UserStateToolArgs::DeleteUserState { user } => {
                 let user = Principal::from_text(&user)?;
 
-                if self.management.is_manager(&caller) {
+                if self.management.is_manager(caller) {
                     self.management.delete_user_state(&user).await?;
                     Ok(ToolOutput::new(None))
                 } else {
@@ -340,8 +340,10 @@ mod tests {
     async fn test_user_state_tool() {
         let engine = EngineBuilder::new();
         let ctx = engine.mock_ctx();
-        let management =
-            Arc::new(ManagementBuilder::new(Visibility::Private, ctx.id()).build(&ctx.base));
+        let management = Arc::new(
+            ManagementBuilder::new(Visibility::Private, ctx.engine_id().to_owned())
+                .build(&ctx.base),
+        );
 
         let tool = UserStateTool::new(management);
         let definition = tool.definition();

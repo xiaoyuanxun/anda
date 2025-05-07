@@ -41,7 +41,9 @@ impl AppState {
             }
             Web3SDK::Web3(_cli) => {
                 // verify signature
-                let caller = if let Some(se) = SignedEnvelope::try_from(headers) {
+                let caller = if let Some(se) = SignedEnvelope::from_authorization(headers)
+                    .or_else(|| SignedEnvelope::from_headers(headers))
+                {
                     match se.verify(unix_ms(), Some(self.info.id), None) {
                         Ok(_) => se.sender(),
                         Err(_) => {

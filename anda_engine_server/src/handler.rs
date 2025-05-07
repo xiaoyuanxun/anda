@@ -30,7 +30,9 @@ pub async fn get_information(
     State(app): State<AppState>,
     headers: http::HeaderMap,
 ) -> impl IntoResponse {
-    let caller = if let Some(se) = SignedEnvelope::try_from(&headers) {
+    let caller = if let Some(se) = SignedEnvelope::from_authorization(&headers)
+        .or_else(|| SignedEnvelope::from_headers(&headers))
+    {
         match se.verify(unix_ms(), None, None) {
             Ok(_) => se.sender(),
             Err(_) => ANONYMOUS_PRINCIPAL,
@@ -121,7 +123,9 @@ pub async fn anda_engine(
         ContentWithSHA3::JSON(req, hash) => (req, hash),
     };
 
-    let caller = if let Some(se) = SignedEnvelope::try_from(&headers) {
+    let caller = if let Some(se) = SignedEnvelope::from_authorization(&headers)
+        .or_else(|| SignedEnvelope::from_headers(&headers))
+    {
         match se.verify(unix_ms(), Some(id), Some(hash.as_slice())) {
             Ok(_) => se.sender(),
             Err(_) => ANONYMOUS_PRINCIPAL,

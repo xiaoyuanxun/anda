@@ -92,8 +92,8 @@ impl Tool<BaseCtx> for TransferTool {
         let (ledger, tx) = self.ledgers.transfer(ctx, data).await?;
         Ok(ToolOutput::new(format!(
             "Successful transfer, receipient address: {}, detail: https://www.bscscan.com/tx/{}",
-            ledger.to_string(),
-            tx.to_string()
+            ledger,
+            tx
         )))
     }
 }

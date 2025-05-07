@@ -29,7 +29,7 @@ impl fmt::Debug for AndaEvmSigner {
             .field("derivation", &self.derivation)
             .field("chain_id", &self.chain_id)
             .field("address", &self.address)
-            .field("pubkey", &hex::encode(&self.pubkey))
+            .field("pubkey", &hex::encode(self.pubkey))
             .finish()
     }
 }
@@ -76,16 +76,9 @@ impl alloy::network::TxSigner<Signature> for AndaEvmSigner {
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl Signer for AndaEvmSigner {
     async fn sign_hash(&self, hash: &B256) -> Result<Signature> {
-        // Convert Vec<Vec<u8>> to &[&[u8]]
-        let derivation = self
-            .derivation
-            .iter()
-            .map(|x| x.as_ref())
-            .collect::<Vec<_>>();
-
         let sig_ic = self
             .client
-            .secp256k1_sign_digest_ecdsa(&derivation, hash.as_slice())
+            .secp256k1_sign_digest_ecdsa(self.derivation.clone(), hash.as_slice())
             .await
             .map_err(|e| Error::other(AndaSignerError::SignatureError(e.to_string())))?;
 
@@ -139,17 +132,17 @@ impl AndaEvmSigner {
         chain_id: Option<ChainId>,
     ) -> Result<Self, AndaSignerError> {
         // Fetch the public key from the TEE service
-        let pubkey_bytes = client
-            .secp256k1_public_key(&derivation.iter().map(|x| x.as_ref()).collect::<Vec<_>>())
+        let pubkey = client
+            .secp256k1_public_key(derivation.clone())
             .await
             .map_err(|e| AndaSignerError::WebClient(e.to_string()))?;
 
         // Convert the public key to an Ethereum address
-        let address = derive_address_from_pubkey(&pubkey_bytes)
-            .map_err(|e| AndaSignerError::AddressDerivation(e))?;
+        let address =
+            derive_address_from_pubkey(&pubkey).map_err(AndaSignerError::AddressDerivation)?;
         log::debug!(
             "Signer pubkey: {:?}, Signer EVM address: {:?}",
-            hex::encode(pubkey_bytes),
+            hex::encode(&pubkey),
             address
         );
 
@@ -157,9 +150,7 @@ impl AndaEvmSigner {
             derivation,
             chain_id,
             address,
-            pubkey: pubkey_bytes.try_into().map_err(|_| {
-                AndaSignerError::PubKeyConvertion("Public key length error".to_string())
-            })?,
+            pubkey,
             client,
         })
     }

@@ -92,7 +92,10 @@ impl Tool<BaseCtx> for TransferTool {
         data: Self::Args,
         _resources: Option<Vec<Resource>>,
     ) -> Result<ToolOutput<Self::Output>, BoxError> {
-        let (ledger, tx) = self.ledgers.transfer(&ctx, ctx.id(), data).await?;
+        let (ledger, tx) = self
+            .ledgers
+            .transfer(&ctx, ctx.engine_id().to_owned(), data)
+            .await?;
         Ok(ToolOutput::new(format!(
             "Successful, transaction ID: {}, detail: https://www.icexplorer.io/token/details/{}",
             tx.0.to_u64().unwrap_or(0),

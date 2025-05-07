@@ -637,16 +637,16 @@ impl BaseContext for AgentCtx {
 }
 
 impl StateFeatures for AgentCtx {
-    fn id(&self) -> Principal {
-        self.base.id
+    fn engine_id(&self) -> &Principal {
+        &self.base.id
     }
 
-    fn name(&self) -> String {
-        self.base.name.clone()
+    fn engine_name(&self) -> &str {
+        &self.base.name
     }
 
-    fn caller(&self) -> Principal {
-        self.base.caller
+    fn caller(&self) -> &Principal {
+        &self.base.caller
     }
 
     fn meta(&self) -> &RequestMeta {
@@ -664,14 +664,14 @@ impl StateFeatures for AgentCtx {
 
 impl KeysFeatures for AgentCtx {
     /// Derives a 256-bit AES-GCM key from the given derivation path.
-    async fn a256gcm_key(&self, derivation_path: &[&[u8]]) -> Result<[u8; 32], BoxError> {
+    async fn a256gcm_key(&self, derivation_path: Vec<Vec<u8>>) -> Result<[u8; 32], BoxError> {
         self.base.a256gcm_key(derivation_path).await
     }
 
     /// Signs a message using Ed25519 signature scheme from the given derivation path.
     async fn ed25519_sign_message(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message: &[u8],
     ) -> Result<[u8; 64], BoxError> {
         self.base
@@ -682,7 +682,7 @@ impl KeysFeatures for AgentCtx {
     /// Verifies an Ed25519 signature from the given derivation path.
     async fn ed25519_verify(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message: &[u8],
         signature: &[u8],
     ) -> Result<(), BoxError> {
@@ -692,14 +692,17 @@ impl KeysFeatures for AgentCtx {
     }
 
     /// Gets the public key for Ed25519 from the given derivation path.
-    async fn ed25519_public_key(&self, derivation_path: &[&[u8]]) -> Result<[u8; 32], BoxError> {
+    async fn ed25519_public_key(
+        &self,
+        derivation_path: Vec<Vec<u8>>,
+    ) -> Result<[u8; 32], BoxError> {
         self.base.ed25519_public_key(derivation_path).await
     }
 
     /// Signs a message using Secp256k1 BIP340 Schnorr signature from the given derivation path.
     async fn secp256k1_sign_message_bip340(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message: &[u8],
     ) -> Result<[u8; 64], BoxError> {
         self.base
@@ -710,7 +713,7 @@ impl KeysFeatures for AgentCtx {
     /// Verifies a Secp256k1 BIP340 Schnorr signature from the given derivation path.
     async fn secp256k1_verify_bip340(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message: &[u8],
         signature: &[u8],
     ) -> Result<(), BoxError> {
@@ -723,7 +726,7 @@ impl KeysFeatures for AgentCtx {
     /// The message will be hashed with SHA-256 before signing.
     async fn secp256k1_sign_message_ecdsa(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message: &[u8],
     ) -> Result<[u8; 64], BoxError> {
         self.base
@@ -734,7 +737,7 @@ impl KeysFeatures for AgentCtx {
     /// Signs a message hash using Secp256k1 ECDSA signature from the given derivation path.
     async fn secp256k1_sign_digest_ecdsa(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message_hash: &[u8],
     ) -> Result<[u8; 64], BoxError> {
         self.base
@@ -745,7 +748,7 @@ impl KeysFeatures for AgentCtx {
     /// Verifies a Secp256k1 ECDSA signature from the given derivation path.
     async fn secp256k1_verify_ecdsa(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message_hash: &[u8],
         signature: &[u8],
     ) -> Result<(), BoxError> {
@@ -755,7 +758,10 @@ impl KeysFeatures for AgentCtx {
     }
 
     /// Gets the compressed SEC1-encoded public key for Secp256k1 from the given derivation path.
-    async fn secp256k1_public_key(&self, derivation_path: &[&[u8]]) -> Result<[u8; 33], BoxError> {
+    async fn secp256k1_public_key(
+        &self,
+        derivation_path: Vec<Vec<u8>>,
+    ) -> Result<[u8; 33], BoxError> {
         self.base.secp256k1_public_key(derivation_path).await
     }
 }

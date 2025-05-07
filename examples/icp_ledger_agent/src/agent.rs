@@ -88,7 +88,7 @@ impl Agent<AgentCtx> for ICPLedgerAgent {
         _resources: Option<Vec<Resource>>,
     ) -> Result<AgentOutput, BoxError> {
         let caller = ctx.caller();
-        if caller == ANONYMOUS {
+        if caller == &ANONYMOUS {
             return Err("anonymous caller not allowed".into());
         }
 

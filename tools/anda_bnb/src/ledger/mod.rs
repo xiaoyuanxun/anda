@@ -227,6 +227,6 @@ impl BNBLedgers {
             "balance_of_bnb"
         );
 
-        return Ok((user_addr, balance));
+        Ok((user_addr, balance))
     }
 }

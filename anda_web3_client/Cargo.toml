@@ -12,6 +12,7 @@ license.workspace = true
 [dependencies]
 anda_core = { path = "../anda_core", version = "0.6" }
 anda_engine = { path = "../anda_engine", version = "0.6" }
+arc-swap = { workspace = true }
 futures = { workspace = true }
 const-hex = { workspace = true }
 http = { workspace = true }

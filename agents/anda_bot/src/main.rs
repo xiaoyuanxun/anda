@@ -1,5 +1,6 @@
 use agent_twitter_client::scraper::Scraper;
-use anda_core::{BoxError, Path, derivation_path_with};
+use anda_core::{BoxError, Path, derivation_path_with, validate_function_name};
+use anda_engine::context::Web3ClientFeatures;
 use anda_engine::{
     APP_USER_AGENT,
     context::{TEEClient, Web3SDK},
@@ -12,10 +13,12 @@ use anda_engine::{
     },
     management::SYSTEM_PATH,
     model::{Model, cohere, deepseek, openai},
-    store::{LocalFileSystem, ObjectStore, Store},
+    store::{LocalFileSystem, Store},
 };
+use anda_engine_server::shutdown_signal;
 use anda_icp::ledger::{BalanceOfTool, ICPLedgers};
 use anda_kdb::{AndaKDB, KnowledgeStore, StorageConfig};
+use anda_object_store::EncryptedStoreBuilder;
 use anda_web3_client::client::{Client as Web3Client, load_identity};
 use axum::{Router, routing};
 use candid::Principal;
@@ -38,7 +41,7 @@ use ic_tee_agent::setting::decrypt_payload;
 use std::collections::BTreeSet;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use structured_logger::{Builder, async_json::new_writer, get_env_level, unix_ms};
-use tokio::{net::TcpStream, signal, sync::RwLock};
+use tokio::{net::TcpStream, sync::RwLock};
 use tokio_util::sync::CancellationToken;
 
 mod config;
@@ -163,6 +166,13 @@ async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
     let character = Character::from_toml(&character)?;
     log::info!("{:?}", character);
 
+    validate_function_name(&character.username).map_err(|err| {
+        format!(
+            "invalid character username {:?}, error: {}",
+            character.username, err
+        )
+    })?;
+
     match cli.command {
         Some(Commands::StartTee {
             tee_host,
@@ -227,24 +237,22 @@ async fn bootstrap_tee(
     character: Character,
 ) -> Result<(), BoxError> {
     let global_cancel_token = CancellationToken::new();
-    let shutdown_future = shutdown_signal(global_cancel_token.clone());
+    let root_path = Path::from(SYSTEM_PATH);
 
     let engine_name = ENGINE_NAME.to_string();
     let default_agent = character.username.clone();
-    let knowledge_table: Path = default_agent.to_ascii_lowercase().into();
-    let cose_setting_key: Vec<u8> = default_agent.to_ascii_lowercase().into();
+    let default_agent_path = default_agent.to_ascii_lowercase();
 
-    let cose_canister = Principal::from_text(&cose_canister)?;
     log::info!("start to connect TEE service");
+    let cose_canister = Principal::from_text(&cose_canister)?;
     let tee = TEEClient::new(&tee_host, &basic_token, APP_USER_AGENT, cose_canister);
     let tee_info = tee.connect_tee(global_cancel_token.clone()).await?;
     log::info!("TEEAppInformation: {:?}", tee_info);
 
-    let root_path = Path::from(SYSTEM_PATH);
     let id_secret = tee
-        .a256gcm_key(&derivation_path_with(
+        .a256gcm_key(derivation_path_with(
             &root_path,
-            &[default_agent.as_bytes()],
+            vec![default_agent_path.as_bytes().to_vec()],
         ))
         .await?;
     let my_id = BasicIdentity::from_signing_key(SigningKey::from(id_secret));
@@ -269,7 +277,7 @@ async fn bootstrap_tee(
         ns: cose_namespace.clone(),
         user_owned: false,
         subject: Some(tee_info.id),
-        key: cose_setting_key.into(),
+        key: default_agent_path.as_bytes().to_vec().into(),
         version: 0,
     };
     let encrypted_cfg = match tee.setting_get(&encrypted_cfg_path).await {
@@ -303,15 +311,27 @@ async fn bootstrap_tee(
     log::info!("object_store state: {:?}", os_state);
 
     log::info!("start to init knowledge_store");
-    let knowledge_store =
-        connect_knowledge_store(object_store.clone(), knowledge_table, &model).await?;
+    let mut db = AndaKDB::new(
+        IC_OBJECT_STORE.to_string(),
+        object_store.clone(),
+        StorageConfig {
+            object_chunk_size: CHUNK_SIZE as usize,
+            ..Default::default()
+        },
+        Some(model.embedder.clone()),
+    )
+    .await?;
 
+    log::info!("knowledge_store start init");
+    let knowledge_store = KnowledgeStore::init(&mut db, default_agent_path, model.ndims()).await?;
     let knowledge_store = Arc::new(knowledge_store);
+    log::info!("knowledge_store: {:?}", knowledge_store.name());
+
     log::info!("start to build engine");
     let agent = character.build(
         Arc::new(Attention::default()),
         Arc::new(DocumentSegmenter::default()),
-        knowledge_store,
+        knowledge_store.clone(),
     );
 
     let mut engine = EngineBuilder::new()
@@ -362,27 +382,38 @@ async fn bootstrap_tee(
         manager: "".to_string(),
     };
 
-    match tokio::try_join!(
-        start_server(
-            format!("127.0.0.1:{}", port),
-            app_state,
-            global_cancel_token.clone()
-        ),
-        start_x(
-            encrypted_cfg.x,
-            engine,
-            agent,
-            global_cancel_token.clone(),
-            x_status
-        ),
-        shutdown_future
-    ) {
-        Ok(_) => Ok(()),
-        Err(err) => {
-            log::error!("server error: {:?}", err);
-            Err(err)
-        }
-    }
+    let server = tokio::spawn(start_server(
+        format!("127.0.0.1:{}", port),
+        app_state,
+        global_cancel_token.clone(),
+    ));
+    let x = tokio::spawn(start_x(
+        encrypted_cfg.x,
+        engine,
+        agent,
+        global_cancel_token.clone(),
+        x_status,
+    ));
+
+    let _ = tokio::join!(
+        async {
+            if let Err(err) = server.await {
+                global_cancel_token.cancel();
+                log::error!("http server shutdown with error: {err:?}");
+            }
+        },
+        async {
+            if let Err(err) = x.await {
+                global_cancel_token.cancel();
+                log::error!("x server shutdown with error: {err:?}");
+            }
+        },
+        db.db
+            .auto_flush(global_cancel_token.clone(), Duration::from_secs(10)),
+        shutdown_signal(global_cancel_token.clone())
+    );
+
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -397,11 +428,11 @@ async fn bootstrap_local(
     manager: String,
 ) -> Result<(), BoxError> {
     let global_cancel_token = CancellationToken::new();
-    let shutdown_future = shutdown_signal(global_cancel_token.clone());
+    let root_path = Path::from(SYSTEM_PATH);
 
     let engine_name = ENGINE_NAME.to_string();
     let default_agent = character.username.clone();
-    let knowledge_table: Path = default_agent.to_ascii_lowercase().into();
+    let default_agent_path = default_agent.to_ascii_lowercase();
 
     let identity = load_identity(id_secret)?;
     let web3 = Web3Client::builder()
@@ -422,19 +453,41 @@ async fn bootstrap_local(
 
     // ObjectStore
     log::info!("start to connect object_store");
+    let os_secret = web3
+        .a256gcm_key(derivation_path_with(
+            &root_path,
+            vec![IC_OBJECT_STORE.as_bytes().to_vec(), b"A256GCM".to_vec()],
+        ))
+        .await?;
+
     let object_store = LocalFileSystem::new_with_prefix(store_path)?;
+    let object_store = EncryptedStoreBuilder::with_secret(object_store, 10000, os_secret)
+        .with_conditional_put()
+        .build();
     let object_store = Arc::new(object_store);
 
     log::info!("start to init knowledge_store");
-    let knowledge_store =
-        connect_knowledge_store(object_store.clone(), knowledge_table, &model).await?;
+    let mut db = AndaKDB::new(
+        IC_OBJECT_STORE.to_string(),
+        object_store.clone(),
+        StorageConfig {
+            object_chunk_size: CHUNK_SIZE as usize,
+            ..Default::default()
+        },
+        Some(model.embedder.clone()),
+    )
+    .await?;
 
+    log::info!("knowledge_store start init");
+    let knowledge_store = KnowledgeStore::init(&mut db, default_agent_path, model.ndims()).await?;
     let knowledge_store = Arc::new(knowledge_store);
+    log::info!("knowledge_store: {:?}", knowledge_store.name());
+
     log::info!("start to build engine");
     let agent = character.build(
         Arc::new(Attention::default()),
         Arc::new(DocumentSegmenter::default()),
-        knowledge_store,
+        knowledge_store.clone(),
     );
 
     let mut engine = EngineBuilder::new()
@@ -485,21 +538,39 @@ async fn bootstrap_local(
         manager,
     };
 
-    match tokio::try_join!(
-        start_server(
-            format!("127.0.0.1:{}", port),
-            app_state,
-            global_cancel_token.clone()
-        ),
-        start_x(cfg.x, engine, agent, global_cancel_token.clone(), x_status,),
-        shutdown_future
-    ) {
-        Ok(_) => Ok(()),
-        Err(err) => {
-            log::error!("server error: {:?}", err);
-            Err(err)
-        }
-    }
+    let server = tokio::spawn(start_server(
+        format!("127.0.0.1:{}", port),
+        app_state,
+        global_cancel_token.clone(),
+    ));
+
+    let x = tokio::spawn(start_x(
+        cfg.x,
+        engine,
+        agent,
+        global_cancel_token.clone(),
+        x_status,
+    ));
+
+    let _ = tokio::join!(
+        async {
+            if let Err(err) = server.await {
+                global_cancel_token.cancel();
+                log::error!("http server shutdown with error: {err:?}");
+            }
+        },
+        async {
+            if let Err(err) = x.await {
+                global_cancel_token.cancel();
+                log::error!("x server shutdown with error: {err:?}");
+            }
+        },
+        db.db
+            .auto_flush(global_cancel_token.clone(), Duration::from_secs(10)),
+        shutdown_signal(global_cancel_token.clone())
+    );
+
+    Ok(())
 }
 
 async fn connect_object_store(
@@ -508,10 +579,10 @@ async fn connect_object_store(
     root_path: &Path,
     object_store_canister: Principal,
 ) -> Result<ObjectStoreClient, BoxError> {
-    let aes_secret = tee
-        .a256gcm_key(&derivation_path_with(
+    let os_secret = tee
+        .a256gcm_key(derivation_path_with(
             root_path,
-            &[IC_OBJECT_STORE.as_bytes(), b"A256GCM"],
+            vec![IC_OBJECT_STORE.as_bytes().to_vec(), b"A256GCM".to_vec()],
         ))
         .await?;
 
@@ -534,30 +605,8 @@ async fn connect_object_store(
             .await?;
         res?;
     }
-    let client = Client::new(ic_agent, object_store_canister, Some(aes_secret));
+    let client = Client::new(ic_agent, object_store_canister, Some(os_secret));
     Ok(ObjectStoreClient::new(Arc::new(client)))
-}
-
-async fn connect_knowledge_store(
-    object_store: Arc<dyn ObjectStore>,
-    namespace: Path,
-    model: &Model,
-) -> Result<KnowledgeStore, BoxError> {
-    let mut store = AndaKDB::new(
-        IC_OBJECT_STORE.to_string(),
-        object_store,
-        StorageConfig {
-            object_chunk_size: CHUNK_SIZE as usize,
-            ..Default::default()
-        },
-        Some(model.embedder.clone()),
-    )
-    .await?;
-
-    log::info!("knowledge_store start init");
-    let ks = KnowledgeStore::init(&mut store, namespace.to_string(), model.ndims()).await?;
-    log::info!("knowledge_store ks: {:?}", ks.name());
-    Ok(ks)
 }
 
 fn connect_model(cfg: &config::Llm) -> Result<Model, BoxError> {
@@ -647,36 +696,6 @@ async fn start_x(
 
     let x = twitter::TwitterDaemon::new(engine, agent, scraper, status, cfg.min_interval_secs);
     x.run(cancel_token).await
-}
-
-async fn shutdown_signal(cancel_token: CancellationToken) -> Result<(), BoxError> {
-    let ctrl_c = async {
-        signal::ctrl_c()
-            .await
-            .expect("failed to install Ctrl+C handler");
-    };
-
-    #[cfg(unix)]
-    let terminate = async {
-        signal::unix::signal(signal::unix::SignalKind::terminate())
-            .expect("failed to install signal handler")
-            .recv()
-            .await;
-    };
-
-    #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
-
-    tokio::select! {
-        _ = ctrl_c => {},
-        _ = terminate => {},
-    }
-
-    log::warn!("received termination signal, starting graceful shutdown");
-    cancel_token.cancel();
-    tokio::time::sleep(LOCAL_SERVER_SHUTDOWN_DURATION).await;
-
-    Ok(())
 }
 
 async fn create_reuse_port_listener(addr: SocketAddr) -> Result<tokio::net::TcpListener, BoxError> {

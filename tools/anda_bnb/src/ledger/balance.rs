@@ -83,7 +83,7 @@ impl Tool<BaseCtx> for BalanceOfTool {
         Ok(ToolOutput::new(format!(
             "Successful {} balance query, user address: {}, balance {}",
             token_symbol,
-            address.to_string(),
+            address,
             amount
         )))
 

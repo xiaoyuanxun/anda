@@ -28,19 +28,19 @@ impl Web3SDK {
 
 pub trait Web3ClientFeatures: Send + Sync + 'static {
     /// Derives a 256-bit AES-GCM key from the given derivation path
-    fn a256gcm_key(&self, derivation_path: &[&[u8]]) -> BoxPinFut<Result<[u8; 32], BoxError>>;
+    fn a256gcm_key(&self, derivation_path: Vec<Vec<u8>>) -> BoxPinFut<Result<[u8; 32], BoxError>>;
 
     /// Signs a message using Ed25519 signature scheme from the given derivation path
     fn ed25519_sign_message(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message: &[u8],
     ) -> BoxPinFut<Result<[u8; 64], BoxError>>;
 
     /// Verifies an Ed25519 signature from the given derivation path
     fn ed25519_verify(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message: &[u8],
         signature: &[u8],
     ) -> BoxPinFut<Result<(), BoxError>>;
@@ -48,20 +48,20 @@ pub trait Web3ClientFeatures: Send + Sync + 'static {
     /// Gets the public key for Ed25519 from the given derivation path
     fn ed25519_public_key(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
     ) -> BoxPinFut<Result<[u8; 32], BoxError>>;
 
     /// Signs a message using Secp256k1 BIP340 Schnorr signature from the given derivation path
     fn secp256k1_sign_message_bip340(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message: &[u8],
     ) -> BoxPinFut<Result<[u8; 64], BoxError>>;
 
     /// Verifies a Secp256k1 BIP340 Schnorr signature from the given derivation path
     fn secp256k1_verify_bip340(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message: &[u8],
         signature: &[u8],
     ) -> BoxPinFut<Result<(), BoxError>>;
@@ -70,21 +70,21 @@ pub trait Web3ClientFeatures: Send + Sync + 'static {
     /// The message will be hashed with SHA-256 before signing
     fn secp256k1_sign_message_ecdsa(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message: &[u8],
     ) -> BoxPinFut<Result<[u8; 64], BoxError>>;
 
     /// Signs a message hash using Secp256k1 ECDSA signature from the given derivation path
     fn secp256k1_sign_digest_ecdsa(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message_hash: &[u8],
     ) -> BoxPinFut<Result<[u8; 64], BoxError>>;
 
     /// Verifies a Secp256k1 ECDSA signature from the given derivation path
     fn secp256k1_verify_ecdsa(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message_hash: &[u8],
         signature: &[u8],
     ) -> BoxPinFut<Result<(), BoxError>>;
@@ -92,7 +92,7 @@ pub trait Web3ClientFeatures: Send + Sync + 'static {
     /// Gets the compressed SEC1-encoded public key for Secp256k1 from the given derivation path
     fn secp256k1_public_key(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
     ) -> BoxPinFut<Result<[u8; 33], BoxError>>;
 
     /// Performs a query call to a canister (read-only, no state changes)
@@ -170,13 +170,13 @@ pub trait Web3ClientFeatures: Send + Sync + 'static {
 struct NotImplemented;
 
 impl Web3ClientFeatures for NotImplemented {
-    fn a256gcm_key(&self, _derivation_path: &[&[u8]]) -> BoxPinFut<Result<[u8; 32], BoxError>> {
+    fn a256gcm_key(&self, _derivation_path: Vec<Vec<u8>>) -> BoxPinFut<Result<[u8; 32], BoxError>> {
         Box::pin(futures::future::ready(Err("not implemented".into())))
     }
 
     fn ed25519_sign_message(
         &self,
-        _derivation_path: &[&[u8]],
+        _derivation_path: Vec<Vec<u8>>,
         _message: &[u8],
     ) -> BoxPinFut<Result<[u8; 64], BoxError>> {
         Box::pin(futures::future::ready(Err("not implemented".into())))
@@ -184,7 +184,7 @@ impl Web3ClientFeatures for NotImplemented {
 
     fn ed25519_verify(
         &self,
-        _derivation_path: &[&[u8]],
+        _derivation_path: Vec<Vec<u8>>,
         _message: &[u8],
         _signature: &[u8],
     ) -> BoxPinFut<Result<(), BoxError>> {
@@ -193,14 +193,14 @@ impl Web3ClientFeatures for NotImplemented {
 
     fn ed25519_public_key(
         &self,
-        _derivation_path: &[&[u8]],
+        _derivation_path: Vec<Vec<u8>>,
     ) -> BoxPinFut<Result<[u8; 32], BoxError>> {
         Box::pin(futures::future::ready(Err("not implemented".into())))
     }
 
     fn secp256k1_sign_message_bip340(
         &self,
-        _derivation_path: &[&[u8]],
+        _derivation_path: Vec<Vec<u8>>,
         _message: &[u8],
     ) -> BoxPinFut<Result<[u8; 64], BoxError>> {
         Box::pin(futures::future::ready(Err("not implemented".into())))
@@ -208,7 +208,7 @@ impl Web3ClientFeatures for NotImplemented {
 
     fn secp256k1_verify_bip340(
         &self,
-        _derivation_path: &[&[u8]],
+        _derivation_path: Vec<Vec<u8>>,
         _message: &[u8],
         _signature: &[u8],
     ) -> BoxPinFut<Result<(), BoxError>> {
@@ -217,7 +217,7 @@ impl Web3ClientFeatures for NotImplemented {
 
     fn secp256k1_sign_message_ecdsa(
         &self,
-        _derivation_path: &[&[u8]],
+        _derivation_path: Vec<Vec<u8>>,
         _message: &[u8],
     ) -> BoxPinFut<Result<[u8; 64], BoxError>> {
         Box::pin(futures::future::ready(Err("not implemented".into())))
@@ -225,7 +225,7 @@ impl Web3ClientFeatures for NotImplemented {
 
     fn secp256k1_sign_digest_ecdsa(
         &self,
-        _derivation_path: &[&[u8]],
+        _derivation_path: Vec<Vec<u8>>,
         _message_hash: &[u8],
     ) -> BoxPinFut<Result<[u8; 64], BoxError>> {
         Box::pin(futures::future::ready(Err("not implemented".into())))
@@ -233,7 +233,7 @@ impl Web3ClientFeatures for NotImplemented {
 
     fn secp256k1_verify_ecdsa(
         &self,
-        _derivation_path: &[&[u8]],
+        _derivation_path: Vec<Vec<u8>>,
         _message_hash: &[u8],
         _signature: &[u8],
     ) -> BoxPinFut<Result<(), BoxError>> {
@@ -242,7 +242,7 @@ impl Web3ClientFeatures for NotImplemented {
 
     fn secp256k1_public_key(
         &self,
-        _derivation_path: &[&[u8]],
+        _derivation_path: Vec<Vec<u8>>,
     ) -> BoxPinFut<Result<[u8; 33], BoxError>> {
         Box::pin(futures::future::ready(Err("not implemented".into())))
     }

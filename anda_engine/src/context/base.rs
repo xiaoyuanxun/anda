@@ -219,16 +219,16 @@ impl BaseContext for BaseCtx {
 impl CacheStoreFeatures for BaseCtx {}
 
 impl StateFeatures for BaseCtx {
-    fn id(&self) -> Principal {
-        self.id
+    fn engine_id(&self) -> &Principal {
+        &self.id
     }
 
-    fn name(&self) -> String {
-        self.name.clone()
+    fn engine_name(&self) -> &str {
+        &self.name
     }
 
-    fn caller(&self) -> Principal {
-        self.caller
+    fn caller(&self) -> &Principal {
+        &self.caller
     }
 
     fn meta(&self) -> &RequestMeta {
@@ -246,14 +246,14 @@ impl StateFeatures for BaseCtx {
 
 impl KeysFeatures for BaseCtx {
     /// Derives a 256-bit AES-GCM key from the given derivation path.
-    async fn a256gcm_key(&self, derivation_path: &[&[u8]]) -> Result<[u8; 32], BoxError> {
+    async fn a256gcm_key(&self, derivation_path: Vec<Vec<u8>>) -> Result<[u8; 32], BoxError> {
         match self.web3.as_ref() {
             Web3SDK::Tee(cli) => {
-                cli.a256gcm_key(&derivation_path_with(&self.path, derivation_path))
+                cli.a256gcm_key(derivation_path_with(&self.path, derivation_path))
                     .await
             }
             Web3SDK::Web3(Web3Client { client: cli }) => {
-                cli.a256gcm_key(&derivation_path_with(&self.path, derivation_path))
+                cli.a256gcm_key(derivation_path_with(&self.path, derivation_path))
                     .await
             }
         }
@@ -262,23 +262,17 @@ impl KeysFeatures for BaseCtx {
     /// Signs a message using Ed25519 signature scheme from the given derivation path.
     async fn ed25519_sign_message(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message: &[u8],
     ) -> Result<[u8; 64], BoxError> {
         match self.web3.as_ref() {
             Web3SDK::Tee(cli) => {
-                cli.ed25519_sign_message(
-                    &derivation_path_with(&self.path, derivation_path),
-                    message,
-                )
-                .await
+                cli.ed25519_sign_message(derivation_path_with(&self.path, derivation_path), message)
+                    .await
             }
             Web3SDK::Web3(Web3Client { client: cli }) => {
-                cli.ed25519_sign_message(
-                    &derivation_path_with(&self.path, derivation_path),
-                    message,
-                )
-                .await
+                cli.ed25519_sign_message(derivation_path_with(&self.path, derivation_path), message)
+                    .await
             }
         }
     }
@@ -286,14 +280,14 @@ impl KeysFeatures for BaseCtx {
     /// Verifies an Ed25519 signature from the given derivation path.
     async fn ed25519_verify(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message: &[u8],
         signature: &[u8],
     ) -> Result<(), BoxError> {
         match self.web3.as_ref() {
             Web3SDK::Tee(cli) => {
                 cli.ed25519_verify(
-                    &derivation_path_with(&self.path, derivation_path),
+                    derivation_path_with(&self.path, derivation_path),
                     message,
                     signature,
                 )
@@ -301,7 +295,7 @@ impl KeysFeatures for BaseCtx {
             }
             Web3SDK::Web3(Web3Client { client: cli }) => {
                 cli.ed25519_verify(
-                    &derivation_path_with(&self.path, derivation_path),
+                    derivation_path_with(&self.path, derivation_path),
                     message,
                     signature,
                 )
@@ -311,14 +305,17 @@ impl KeysFeatures for BaseCtx {
     }
 
     /// Gets the public key for Ed25519 from the given derivation path.
-    async fn ed25519_public_key(&self, derivation_path: &[&[u8]]) -> Result<[u8; 32], BoxError> {
+    async fn ed25519_public_key(
+        &self,
+        derivation_path: Vec<Vec<u8>>,
+    ) -> Result<[u8; 32], BoxError> {
         match self.web3.as_ref() {
             Web3SDK::Tee(cli) => {
-                cli.ed25519_public_key(&derivation_path_with(&self.path, derivation_path))
+                cli.ed25519_public_key(derivation_path_with(&self.path, derivation_path))
                     .await
             }
             Web3SDK::Web3(Web3Client { client: cli }) => {
-                cli.ed25519_public_key(&derivation_path_with(&self.path, derivation_path))
+                cli.ed25519_public_key(derivation_path_with(&self.path, derivation_path))
                     .await
             }
         }
@@ -327,20 +324,20 @@ impl KeysFeatures for BaseCtx {
     /// Signs a message using Secp256k1 BIP340 Schnorr signature from the given derivation path.
     async fn secp256k1_sign_message_bip340(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message: &[u8],
     ) -> Result<[u8; 64], BoxError> {
         match self.web3.as_ref() {
             Web3SDK::Tee(cli) => {
                 cli.secp256k1_sign_message_bip340(
-                    &derivation_path_with(&self.path, derivation_path),
+                    derivation_path_with(&self.path, derivation_path),
                     message,
                 )
                 .await
             }
             Web3SDK::Web3(Web3Client { client: cli }) => {
                 cli.secp256k1_sign_message_bip340(
-                    &derivation_path_with(&self.path, derivation_path),
+                    derivation_path_with(&self.path, derivation_path),
                     message,
                 )
                 .await
@@ -351,14 +348,14 @@ impl KeysFeatures for BaseCtx {
     /// Verifies a Secp256k1 BIP340 Schnorr signature from the given derivation path.
     async fn secp256k1_verify_bip340(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message: &[u8],
         signature: &[u8],
     ) -> Result<(), BoxError> {
         match self.web3.as_ref() {
             Web3SDK::Tee(cli) => {
                 cli.secp256k1_verify_bip340(
-                    &derivation_path_with(&self.path, derivation_path),
+                    derivation_path_with(&self.path, derivation_path),
                     message,
                     signature,
                 )
@@ -366,7 +363,7 @@ impl KeysFeatures for BaseCtx {
             }
             Web3SDK::Web3(Web3Client { client: cli }) => {
                 cli.secp256k1_verify_bip340(
-                    &derivation_path_with(&self.path, derivation_path),
+                    derivation_path_with(&self.path, derivation_path),
                     message,
                     signature,
                 )
@@ -379,20 +376,20 @@ impl KeysFeatures for BaseCtx {
     /// The message will be hashed with SHA-256 before signing.
     async fn secp256k1_sign_message_ecdsa(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message: &[u8],
     ) -> Result<[u8; 64], BoxError> {
         match self.web3.as_ref() {
             Web3SDK::Tee(cli) => {
                 cli.secp256k1_sign_message_ecdsa(
-                    &derivation_path_with(&self.path, derivation_path),
+                    derivation_path_with(&self.path, derivation_path),
                     message,
                 )
                 .await
             }
             Web3SDK::Web3(Web3Client { client: cli }) => {
                 cli.secp256k1_sign_message_ecdsa(
-                    &derivation_path_with(&self.path, derivation_path),
+                    derivation_path_with(&self.path, derivation_path),
                     message,
                 )
                 .await
@@ -403,20 +400,20 @@ impl KeysFeatures for BaseCtx {
     /// Signs a message hash using Secp256k1 ECDSA signature from the given derivation path.
     async fn secp256k1_sign_digest_ecdsa(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message_hash: &[u8],
     ) -> Result<[u8; 64], BoxError> {
         match self.web3.as_ref() {
             Web3SDK::Tee(cli) => {
                 cli.secp256k1_sign_digest_ecdsa(
-                    &derivation_path_with(&self.path, derivation_path),
+                    derivation_path_with(&self.path, derivation_path),
                     message_hash,
                 )
                 .await
             }
             Web3SDK::Web3(Web3Client { client: cli }) => {
                 cli.secp256k1_sign_digest_ecdsa(
-                    &derivation_path_with(&self.path, derivation_path),
+                    derivation_path_with(&self.path, derivation_path),
                     message_hash,
                 )
                 .await
@@ -427,14 +424,14 @@ impl KeysFeatures for BaseCtx {
     /// Verifies a Secp256k1 ECDSA signature from the given derivation path.
     async fn secp256k1_verify_ecdsa(
         &self,
-        derivation_path: &[&[u8]],
+        derivation_path: Vec<Vec<u8>>,
         message_hash: &[u8],
         signature: &[u8],
     ) -> Result<(), BoxError> {
         match self.web3.as_ref() {
             Web3SDK::Tee(cli) => {
                 cli.secp256k1_verify_ecdsa(
-                    &derivation_path_with(&self.path, derivation_path),
+                    derivation_path_with(&self.path, derivation_path),
                     message_hash,
                     signature,
                 )
@@ -442,7 +439,7 @@ impl KeysFeatures for BaseCtx {
             }
             Web3SDK::Web3(Web3Client { client: cli }) => {
                 cli.secp256k1_verify_ecdsa(
-                    &derivation_path_with(&self.path, derivation_path),
+                    derivation_path_with(&self.path, derivation_path),
                     message_hash,
                     signature,
                 )
@@ -452,14 +449,17 @@ impl KeysFeatures for BaseCtx {
     }
 
     /// Gets the compressed SEC1-encoded public key for Secp256k1 from the given derivation path.
-    async fn secp256k1_public_key(&self, derivation_path: &[&[u8]]) -> Result<[u8; 33], BoxError> {
+    async fn secp256k1_public_key(
+        &self,
+        derivation_path: Vec<Vec<u8>>,
+    ) -> Result<[u8; 33], BoxError> {
         match self.web3.as_ref() {
             Web3SDK::Tee(cli) => {
-                cli.secp256k1_public_key(&derivation_path_with(&self.path, derivation_path))
+                cli.secp256k1_public_key(derivation_path_with(&self.path, derivation_path))
                     .await
             }
             Web3SDK::Web3(Web3Client { client: cli }) => {
-                cli.secp256k1_public_key(&derivation_path_with(&self.path, derivation_path))
+                cli.secp256k1_public_key(derivation_path_with(&self.path, derivation_path))
                     .await
             }
         }

@@ -9,7 +9,7 @@ use anda_engine_server::{ServerBuilder, shutdown_signal};
 use anda_icp::ledger::BalanceOfTool;
 use anda_web3_client::client::{Client as Web3Client, load_identity};
 use clap::Parser;
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, sync::Arc};
 use structured_logger::{Builder, async_json::new_writer, get_env_level};
 use tokio_util::sync::CancellationToken;
 
@@ -178,7 +178,7 @@ async fn main() -> Result<(), BoxError> {
         .with_app_version(APP_VERSION.to_string())
         .with_addr(format!("127.0.0.1:{}", cli.port))
         .with_engines(engines, None)
-        .serve(shutdown_signal(global_cancel_token, Duration::from_secs(3)))
+        .serve(shutdown_signal(global_cancel_token))
         .await?;
 
     Ok(())
