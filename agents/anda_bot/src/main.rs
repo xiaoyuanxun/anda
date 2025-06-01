@@ -3,8 +3,8 @@ use anda_core::{BoxError, Path, derivation_path_with, validate_function_name};
 use anda_engine::context::Web3ClientFeatures;
 use anda_engine::{
     APP_USER_AGENT,
-    context::{TEEClient, Web3SDK},
-    engine::{Engine, EngineBuilder},
+    context::{TEEClient, TEEClientBuilder, Web3SDK},
+    engine::{AgentInfo, Engine, EngineBuilder},
     extension::{
         attention::Attention,
         character::{Character, CharacterAgent},
@@ -38,7 +38,7 @@ use ic_object_store::{
     client::{Client, ObjectStoreClient},
 };
 use ic_tee_agent::setting::decrypt_payload;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use structured_logger::{Builder, async_json::new_writer, get_env_level, unix_ms};
 use tokio::{net::TcpStream, sync::RwLock};
@@ -166,10 +166,10 @@ async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
     let character = Character::from_toml(&character)?;
     log::info!("{:?}", character);
 
-    validate_function_name(&character.username).map_err(|err| {
+    validate_function_name(&character.handle).map_err(|err| {
         format!(
             "invalid character username {:?}, error: {}",
-            character.username, err
+            character.handle, err
         )
     })?;
 
@@ -240,12 +240,18 @@ async fn bootstrap_tee(
     let root_path = Path::from(SYSTEM_PATH);
 
     let engine_name = ENGINE_NAME.to_string();
-    let default_agent = character.username.clone();
+    let default_agent = character.handle.clone();
     let default_agent_path = default_agent.to_ascii_lowercase();
 
     log::info!("start to connect TEE service");
     let cose_canister = Principal::from_text(&cose_canister)?;
-    let tee = TEEClient::new(&tee_host, &basic_token, APP_USER_AGENT, cose_canister);
+    let tee = TEEClientBuilder::default()
+        .with_tee_host(&tee_host)
+        .with_basic_token(&basic_token)
+        .with_user_agent(APP_USER_AGENT)
+        .with_cose_canister(cose_canister)
+        .build();
+    let tee = Arc::new(tee);
     let tee_info = tee.connect_tee(global_cancel_token.clone()).await?;
     log::info!("TEEAppInformation: {:?}", tee_info);
 
@@ -335,8 +341,15 @@ async fn bootstrap_tee(
     );
 
     let mut engine = EngineBuilder::new()
-        .with_id(tee_info.id)
-        .with_name(engine_name.clone())?
+        .with_info(AgentInfo {
+            handle: "anda".to_string(),
+            handle_canister: Principal::from_text("nscli-qiaaa-aaaaj-qa4pa-cai").ok(),
+            name: "Anda ICP".to_string(),
+            description: "Anda Engine for managing agents and tools".to_string(),
+            endpoint: "https://localhost:8443/default".to_string(),
+            protocols: BTreeMap::new(),
+            payments: BTreeSet::new(),
+        })
         .with_cancellation_token(global_cancel_token.clone())
         .with_web3_client(Arc::new(Web3SDK::from_tee(tee.clone())))
         .with_model(model)
@@ -357,7 +370,7 @@ async fn bootstrap_tee(
             .flat_map(|t| Principal::from_text(t).map_err(|_| format!("invalid token: {}", t)))
             .collect();
 
-        let ledgers = ICPLedgers::load(&tee, token_ledgers, false).await?;
+        let ledgers = ICPLedgers::load(tee.as_ref(), token_ledgers, false).await?;
         let ledgers = Arc::new(ledgers);
         engine = engine.register_tool(BalanceOfTool::new(ledgers.clone()))?;
     }
@@ -368,7 +381,7 @@ async fn bootstrap_tee(
     let engine = Arc::new(engine.build(default_agent.clone()).await?);
     let x_status = Arc::new(RwLock::new(handler::ServiceStatus::Running));
     let app_state = handler::AppState {
-        web3: Arc::new(handler::Web3SDK::Tee(tee)),
+        web3: Arc::new(handler::Web3SDK::Tee(tee.clone())),
         x_status: x_status.clone(),
         info: Arc::new(handler::AppInformation {
             id: my_principal,
@@ -431,7 +444,7 @@ async fn bootstrap_local(
     let root_path = Path::from(SYSTEM_PATH);
 
     let engine_name = ENGINE_NAME.to_string();
-    let default_agent = character.username.clone();
+    let default_agent = character.handle.clone();
     let default_agent_path = default_agent.to_ascii_lowercase();
 
     let identity = load_identity(id_secret)?;
@@ -491,8 +504,15 @@ async fn bootstrap_local(
     );
 
     let mut engine = EngineBuilder::new()
-        .with_id(my_principal)
-        .with_name(engine_name.clone())?
+        .with_info(AgentInfo {
+            handle: "anda".to_string(),
+            handle_canister: Principal::from_text("nscli-qiaaa-aaaaj-qa4pa-cai").ok(),
+            name: "Anda ICP".to_string(),
+            description: "Anda Engine for managing agents and tools".to_string(),
+            endpoint: "https://localhost:8443/default".to_string(),
+            protocols: BTreeMap::new(),
+            payments: BTreeSet::new(),
+        })
         .with_cancellation_token(global_cancel_token.clone())
         .with_web3_client(Arc::new(Web3SDK::from_web3(Arc::new(web3.clone()))))
         .with_model(model)

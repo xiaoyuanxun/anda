@@ -79,7 +79,7 @@ impl TwitterDaemon {
             match self
                 .scraper
                 .search_tweets(
-                    &format!("@{}", self.agent.character.username.clone()),
+                    &format!("@{}", self.agent.character.handle.clone()),
                     20,
                     SearchMode::Latest,
                     None,
@@ -149,7 +149,7 @@ impl TwitterDaemon {
             ANONYMOUS,
             &self.agent.as_ref().name(),
             RequestMeta {
-                user: Some(self.engine.name()),
+                user: Some(self.engine.info().name.clone()),
                 ..Default::default()
             },
         )?;
@@ -162,7 +162,7 @@ impl TwitterDaemon {
                 Be direct and concise. No questions, hashtags, or emojis.\
                 "
                 .to_string(),
-                Some(self.engine.name()),
+                Some(self.engine.info().name.clone()),
             )
             .append_documents(knowledges.into());
         let res = ctx.completion(req, None).await?;
@@ -185,7 +185,7 @@ impl TwitterDaemon {
             ANONYMOUS,
             &self.agent.as_ref().name(),
             RequestMeta {
-                user: Some(self.engine.name()),
+                user: Some(self.engine.info().name.clone()),
                 ..Default::default()
             },
         )?;
@@ -222,7 +222,7 @@ impl TwitterDaemon {
                 continue;
             }
 
-            if tweet_user.to_lowercase() == self.agent.character.username.to_lowercase() {
+            if tweet_user.to_lowercase() == self.agent.character.handle.to_lowercase() {
                 // not replying to bot itself
                 continue;
             }
@@ -273,7 +273,7 @@ impl TwitterDaemon {
         if tweet_text.is_empty() || tweet_user.is_empty() {
             return Ok(());
         }
-        if tweet_user.to_lowercase() == self.agent.character.username.to_lowercase() {
+        if tweet_user.to_lowercase() == self.agent.character.handle.to_lowercase() {
             // not replying to bot itself
             return Ok(());
         }

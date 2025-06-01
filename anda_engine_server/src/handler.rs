@@ -1,5 +1,5 @@
 use anda_core::{AgentInput, ToolInput, Value};
-use anda_engine::engine::{Engine, Information};
+use anda_engine::engine::Engine;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -42,18 +42,7 @@ pub async fn get_information(
     };
 
     let info = AppInformation {
-        engines: app
-            .engines
-            .iter()
-            .map(|(_, e)| Information {
-                id: e.id(),
-                name: e.name(),
-                description: e.description(),
-                agents: vec![],
-                tools: vec![],
-                endpoint: "".to_string(),
-            })
-            .collect(),
+        engines: app.engines.iter().map(|(_, e)| e.info().clone()).collect(),
         default_engine: app.default_engine,
         start_time_ms: app.start_time_ms,
         caller,
@@ -65,7 +54,7 @@ pub async fn get_information(
     }
 }
 
-/// GET /.well-known/information/{id}
+/// GET /.well-known/agents/{id}
 pub async fn get_engine_information(
     State(app): State<AppState>,
     headers: http::HeaderMap,

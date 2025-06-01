@@ -7,29 +7,27 @@ use candid::Principal;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+pub use anda_cloud_cdk::AgentInfo;
+
 use crate::context::{AgentCtx, BaseCtx};
 
 /// Information about the engine, including agent and tool definitions.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct Information {
+pub struct EngineCard {
     /// The principal ID of the engine.
     pub id: Principal,
-    /// The name of the engine.
-    pub name: String,
-    /// Description of the engine.
-    pub description: String,
+    /// Information about the agent, including name, description, and supported protocols.
+    pub info: AgentInfo,
     /// Definitions for agents in the engine.
     pub agents: Vec<Function>,
     /// Definitions for tools in the engine.
     pub tools: Vec<Function>,
-    /// The endpoint of the engine. It can be empty if the engine is local.
-    pub endpoint: String,
 }
 
 /// Collection of remote engines.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RemoteEngines {
-    pub engines: BTreeMap<String, Information>,
+    pub engines: BTreeMap<String, EngineCard>,
 }
 
 /// Arguments for registering a remote engine.
@@ -41,8 +39,8 @@ pub struct RemoteEngineArgs {
     pub agents: Vec<String>,
     /// List of tools to include in the engine. If empty, all tools are included.
     pub tools: Vec<String>,
-    /// Optional name for the engine. If not provided, the engine name is used.
-    pub name: Option<String>,
+    /// Optional handle for the engine. If not provided, the engine handle is used.
+    pub handle: Option<String>,
 }
 
 impl Default for RemoteEngines {
@@ -64,44 +62,47 @@ impl RemoteEngines {
         ctx: impl HttpFeatures,
         args: RemoteEngineArgs,
     ) -> Result<(), BoxError> {
-        let mut info: Information = ctx
+        let mut engine: EngineCard = ctx
             .https_signed_rpc(&args.endpoint, "information", &(true,))
             .await?;
-        let name = args.name.unwrap_or_else(|| info.name.to_ascii_lowercase());
-        validate_function_name(&name)
-            .map_err(|err| format!("invalid engine name {:?}: {}", &name, err))?;
+        let handle = args
+            .handle
+            .unwrap_or_else(|| engine.info.handle.to_ascii_lowercase());
+        validate_function_name(&handle)
+            .map_err(|err| format!("invalid engine handle {:?}: {}", &handle, err))?;
 
         if !args.agents.is_empty() {
-            let agents: Vec<Function> = info
+            let agents: Vec<Function> = engine
                 .agents
                 .into_iter()
                 .filter(|d| args.agents.contains(&d.definition.name))
                 .collect();
             for agent in args.agents {
                 if !agents.iter().any(|d| d.definition.name == agent) {
-                    return Err(format!("agent {:?} not found in engine {:?}", agent, name).into());
+                    return Err(
+                        format!("agent {:?} not found in engine {:?}", agent, handle).into(),
+                    );
                 }
             }
 
-            info.agents = agents;
+            engine.agents = agents;
         }
 
         if !args.tools.is_empty() {
-            let tools: Vec<Function> = info
+            let tools: Vec<Function> = engine
                 .tools
                 .into_iter()
                 .filter(|d| args.tools.is_empty() || args.tools.contains(&d.definition.name))
                 .collect();
             for tool in args.tools {
                 if !tools.iter().any(|d| d.definition.name == tool) {
-                    return Err(format!("tool {:?} not found in engine {:?}", tool, name).into());
+                    return Err(format!("tool {:?} not found in engine {:?}", tool, handle).into());
                 }
             }
-            info.tools = tools;
+            engine.tools = tools;
         }
 
-        info.endpoint = args.endpoint;
-        self.engines.insert(name, info);
+        self.engines.insert(handle, engine);
         Ok(())
     }
 
@@ -110,7 +111,7 @@ impl RemoteEngines {
         if let Some(name) = prefixed_name.strip_prefix("RT_") {
             for (prefix, engine) in self.engines.iter() {
                 if let Some(tool_name) = name.strip_prefix(prefix) {
-                    return Some((engine.endpoint.clone(), tool_name.to_string()));
+                    return Some((engine.info.endpoint.clone(), tool_name.to_string()));
                 }
             }
         }
@@ -122,7 +123,7 @@ impl RemoteEngines {
         if let Some(name) = prefixed_name.strip_prefix("RA_") {
             for (prefix, engine) in self.engines.iter() {
                 if let Some(agent_name) = name.strip_prefix(prefix) {
-                    return Some((engine.endpoint.clone(), agent_name.to_string()));
+                    return Some((engine.info.endpoint.clone(), agent_name.to_string()));
                 }
             }
         }
@@ -132,7 +133,7 @@ impl RemoteEngines {
     /// Retrieves a remote engine ID by endpoint.
     pub fn get_id_by_endpoint(&self, endpoint: &str) -> Option<Principal> {
         for (_, engine) in self.engines.iter() {
-            if engine.endpoint == endpoint {
+            if engine.info.endpoint == endpoint {
                 return Some(engine.id);
             }
         }
@@ -143,7 +144,7 @@ impl RemoteEngines {
     pub fn get_endpoint_by_id(&self, id: &Principal) -> Option<String> {
         for (_, engine) in self.engines.iter() {
             if &engine.id == id {
-                return Some(engine.endpoint.clone());
+                return Some(engine.info.endpoint.clone());
             }
         }
         None
@@ -164,7 +165,7 @@ impl RemoteEngines {
     ) -> Vec<FunctionDefinition> {
         if let Some(endpoint) = endpoint {
             for (prefix, engine) in self.engines.iter() {
-                if endpoint == engine.endpoint {
+                if endpoint == engine.info.endpoint {
                     let prefix = format!("RT_{prefix}");
                     return engine
                         .tools
@@ -244,7 +245,7 @@ impl RemoteEngines {
     ) -> Vec<FunctionDefinition> {
         if let Some(endpoint) = endpoint {
             for (prefix, engine) in self.engines.iter() {
-                if endpoint == engine.endpoint {
+                if endpoint == engine.info.endpoint {
                     let prefix = format!("RA_{prefix}");
                     return engine
                         .agents

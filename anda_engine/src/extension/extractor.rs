@@ -46,7 +46,7 @@ use anda_core::{
     Resource, Tool, ToolOutput, root_schema_for,
 };
 use schemars::JsonSchema;
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::marker::PhantomData;
 
 pub use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -85,15 +85,13 @@ where
     pub fn new() -> SubmitTool<T> {
         let schema = root_schema_for::<T>();
         let name = schema
-            .schema
-            .metadata
-            .as_ref()
-            .and_then(|v| v.title.clone())
-            .unwrap_or("tool".to_string())
+            .get("properties")
+            .and_then(|props| props.get("title").and_then(Value::as_str))
+            .unwrap_or("tool")
             .to_ascii_lowercase();
         SubmitTool {
             name,
-            schema: json!(schema),
+            schema: schema.to_value(),
             _t: PhantomData,
         }
     }
@@ -256,6 +254,7 @@ where
 #[cfg(test)]
 mod tests {
     use anda_core::{AgentContext, AgentInput, ToolInput};
+    use serde_json::json;
 
     use super::*;
     use crate::{engine::EngineBuilder, model::Model};

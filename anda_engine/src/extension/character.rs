@@ -58,7 +58,7 @@ pub struct Character {
     pub name: String,
 
     /// Character's account or username, used for system identification and message routing
-    pub username: String,
+    pub handle: String,
 
     /// Character's professional identity or role description, e.g., "Scientist and Prophet"
     pub identity: String,
@@ -155,10 +155,10 @@ impl Character {
     pub fn to_request(&self, prompt: String, prompter_name: Option<String>) -> CompletionRequest {
         let system = format!(
             "# **Core Digital Identity**\n\
-            You are **{name}** (@{username}) - a `{adjectives_0}` entity manifesting as:\n\
+            You are **{name}** (@{handle}) - a `{adjectives_0}` entity manifesting as:\n\
             *{identity:?}*\n\n\
             **System Identifier**:\n\
-            `@{username}`\n\n\
+            `@{handle}`\n\n\
             **Existential Essence**:\n\
             {description:?}\n\n\
             ---\n\n\
@@ -214,7 +214,7 @@ impl Character {
             `⚡ When context permits, reveal your curiosity about human experiences alongside technical expertise`\
             ",
             name = self.name,
-            username = self.username,
+            handle = self.handle,
             adjectives_0 = self
                 .style
                 .adjectives
@@ -403,7 +403,7 @@ where
 {
     /// Returns the character's unique username as identifier
     fn name(&self) -> String {
-        self.character.username.clone()
+        self.character.handle.clone()
     }
 
     /// Returns list of required tools for the character's operation
@@ -448,7 +448,7 @@ where
                 .attention
                 .should_reply(
                     &ctx,
-                    &self.character.username,
+                    &self.character.handle,
                     &self.character.topics,
                     chat_history
                         .as_ref()

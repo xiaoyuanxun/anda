@@ -208,10 +208,17 @@ fn y_parity(prehash: &[u8], sig: &[u8], pubkey: &[u8]) -> Result<bool> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{
+        collections::{BTreeMap, BTreeSet},
+        sync::Arc,
+    };
 
     use crate::ledger::{CHAIN_ID, DRVT_PATH};
-    use anda_engine::{context::Web3SDK, engine::EngineBuilder, extension::extractor::Extractor};
+    use anda_engine::{
+        context::Web3SDK,
+        engine::{AgentInfo, EngineBuilder},
+        extension::extractor::Extractor,
+    };
     use anda_web3_client::client::Client as Web3Client;
     use rand::Rng;
     use schemars::JsonSchema;
@@ -247,8 +254,15 @@ mod tests {
 
         // Create a context for testing
         let engine_ctx = EngineBuilder::new()
-            .with_name("BNB_TEST".to_string())
-            .unwrap()
+            .with_info(AgentInfo {
+                handle: "bnb_test".to_string(),
+                handle_canister: None,
+                name: "BNB_TEST".to_string(),
+                description: "Test BNB Engine".to_string(),
+                endpoint: "https://localhost:8443/default".to_string(),
+                protocols: BTreeMap::new(),
+                payments: BTreeSet::new(),
+            })
             .with_web3_client(Arc::new(Web3SDK::from_web3(Arc::new(web3))))
             .register_agent(agent)
             .unwrap()

@@ -19,6 +19,7 @@ pub struct ServerBuilder {
     app_name: String,
     app_version: String,
     addr: String,
+    origin: String,
     engines: BTreeMap<Principal, Engine>,
     default_engine: Option<Principal>,
 }
@@ -38,6 +39,7 @@ impl ServerBuilder {
             app_name: APP_NAME.to_string(),
             app_version: APP_VERSION.to_string(),
             addr: "127.0.0.1:8042".to_string(),
+            origin: "https://localhost:8443".to_string(),
             engines: BTreeMap::new(),
             default_engine: None,
         }
@@ -58,11 +60,20 @@ impl ServerBuilder {
         self
     }
 
+    pub fn with_origin(mut self, origin: String) -> Self {
+        self.origin = origin;
+        self
+    }
+
     pub fn with_engines(
         mut self,
-        engines: BTreeMap<Principal, Engine>,
+        mut engines: BTreeMap<Principal, Engine>,
         default_engine: Option<Principal>,
     ) -> Self {
+        for (id, engine) in engines.iter_mut() {
+            engine.info_mut().endpoint = format!("{}/{}", self.origin, id.to_text());
+        }
+
         self.engines = engines;
         self.default_engine = default_engine;
         self
@@ -90,9 +101,9 @@ impl ServerBuilder {
         };
         let app = Router::new()
             .route("/", routing::get(get_information))
-            .route("/.well-known/information", routing::get(get_information))
+            .route("/.well-known/agents", routing::get(get_information))
             .route(
-                "/.well-known/information/{id}",
+                "/.well-known/agents/{id}",
                 routing::get(get_engine_information),
             )
             .route("/{*id}", routing::post(anda_engine))

@@ -1,7 +1,7 @@
 use anda_core::BoxError;
 use anda_engine::{
     context::Web3SDK,
-    engine::{EngineBuilder, ManagementBuilder, Visibility},
+    engine::{AgentInfo, EngineBuilder, ManagementBuilder, Visibility},
     model::{Model, deepseek, openai, xai},
     store::{InMemory, Store},
 };
@@ -9,7 +9,10 @@ use anda_engine_server::{ServerBuilder, shutdown_signal};
 use anda_icp::ledger::BalanceOfTool;
 use anda_web3_client::client::{Client as Web3Client, load_identity};
 use clap::Parser;
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 use structured_logger::{Builder, async_json::new_writer, get_env_level};
 use tokio_util::sync::CancellationToken;
 
@@ -157,8 +160,15 @@ async fn main() -> Result<(), BoxError> {
 
     // Build agent engine with all configured components
     let engine = EngineBuilder::new()
-        .with_id(my_principal)
-        .with_name(APP_NAME.to_string())?
+        .with_info(AgentInfo {
+            handle: "icp_ledger_agent".to_string(),
+            handle_canister: None,
+            name: "ICP Agent".to_string(),
+            description: "Test ICP Agent".to_string(),
+            endpoint: "https://localhost:8443/default".to_string(),
+            protocols: BTreeMap::new(),
+            payments: BTreeSet::new(),
+        })
         .with_cancellation_token(global_cancel_token.clone())
         .with_web3_client(Arc::new(Web3SDK::from_web3(Arc::new(web3.clone()))))
         .with_model(model)

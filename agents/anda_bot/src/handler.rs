@@ -23,7 +23,7 @@ pub struct AppState {
 }
 
 pub enum Web3SDK {
-    Tee(TEEClient),
+    Tee(Arc<TEEClient>),
     Web3(anda_web3_client::client::Client),
 }
 

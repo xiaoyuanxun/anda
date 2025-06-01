@@ -29,12 +29,14 @@
 //! let output = engine.agent_run(None, "Hello".to_string(), None, None, None).await?;
 //! ```
 
+use anda_cloud_cdk::{ChallengeEnvelope, ChallengeRequest, TEEInfo, TEEKind};
 use anda_core::{
     ANONYMOUS, Agent, AgentInput, AgentOutput, AgentSet, BoxError, Function, Path, RequestMeta,
     ThreadMeta, Tool, ToolInput, ToolOutput, ToolSet, Value, validate_function_name,
 };
 use async_trait::async_trait;
 use candid::Principal;
+use ic_tee_cdk::AttestationRequest;
 use object_store::memory::InMemory;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -51,7 +53,7 @@ use crate::{
 };
 
 pub use crate::{
-    context::{Information, RemoteEngineArgs, RemoteEngines},
+    context::{AgentInfo, EngineCard, RemoteEngineArgs, RemoteEngines},
     management::{ManagementBuilder, Visibility},
 };
 
@@ -61,8 +63,7 @@ pub use crate::{
 pub struct Engine {
     id: Principal,
     ctx: AgentCtx,
-    name: String,
-    description: String,
+    info: AgentInfo,
     default_agent: String,
     export_agents: BTreeSet<String>,
     export_tools: BTreeSet<String>,
@@ -201,14 +202,13 @@ impl Engine {
         self.id
     }
 
-    /// Returns the name of the engine.
-    pub fn name(&self) -> String {
-        self.name.clone()
+    /// Returns the information about the engine.
+    pub fn info(&self) -> &AgentInfo {
+        &self.info
     }
 
-    /// Returns the description of the engine.
-    pub fn description(&self) -> String {
-        self.description.clone()
+    pub fn info_mut(&mut self) -> &mut AgentInfo {
+        &mut self.info
     }
 
     /// Returns the name of the default agent.
@@ -369,13 +369,54 @@ impl Engine {
         self.ctx.tools.functions(names)
     }
 
+    pub async fn challenge(
+        &self,
+        request: ChallengeRequest,
+    ) -> Result<ChallengeEnvelope, BoxError> {
+        let now_ms = unix_ms();
+        request.verify(now_ms, request.registry)?;
+        let message_digest = request.digest();
+        let res = match self.ctx.base.web3.as_ref() {
+            Web3SDK::Tee(cli) => {
+                let authentication = cli.sign_envelope(message_digest).await?;
+                let tee = cli
+                    .sign_attestation(AttestationRequest {
+                        public_key: Some(authentication.pubkey.clone()),
+                        user_data: None,
+                        nonce: Some(request.code.to_vec().into()),
+                    })
+                    .await?;
+                let info = cli
+                    .tee_info()
+                    .ok_or_else(|| "TEE not available".to_string())?;
+                ChallengeEnvelope {
+                    request,
+                    authentication,
+                    tee: Some(TEEInfo {
+                        id: info.id,
+                        kind: TEEKind::try_from(tee.kind.as_str())?,
+                        url: info.url,
+                        attestation: Some(tee.attestation),
+                    }),
+                }
+            }
+            Web3SDK::Web3(Web3Client { client: cli }) => {
+                let authentication = cli.sign_envelope(message_digest).await?;
+                ChallengeEnvelope {
+                    request,
+                    authentication,
+                    tee: None,
+                }
+            }
+        };
+        Ok(res)
+    }
+
     /// Returns information about the engine, including agent and tool definitions.
-    pub fn information(&self) -> Information {
-        Information {
+    pub fn information(&self) -> EngineCard {
+        EngineCard {
             id: self.id,
-            name: self.name.clone(),
-            description: self.description.clone(),
-            endpoint: "".to_string(),
+            info: self.info.clone(),
             agents: self.agents(Some(
                 self.export_agents
                     .iter()
@@ -396,10 +437,9 @@ impl Engine {
 
 /// Builder pattern implementation for constructing an Engine.
 /// Allows for step-by-step configuration of the engine's components.
+#[non_exhaustive]
 pub struct EngineBuilder {
-    id: Principal,
-    name: String,
-    description: String,
+    info: AgentInfo,
     tools: ToolSet<BaseCtx>,
     agents: AgentSet<AgentCtx>,
     remote: BTreeMap<String, RemoteEngineArgs>,
@@ -424,9 +464,15 @@ impl EngineBuilder {
     pub fn new() -> Self {
         let mstore = Arc::new(InMemory::new());
         EngineBuilder {
-            id: Principal::anonymous(),
-            name: "Anda".to_string(),
-            description: "".to_string(),
+            info: AgentInfo {
+                handle: "anda".to_string(),
+                handle_canister: None,
+                name: "Anda Engine".to_string(),
+                description: "Anda Engine for managing agents and tools".to_string(),
+                endpoint: "https://localhost:8443/default".to_string(),
+                protocols: BTreeMap::new(),
+                payments: BTreeSet::new(),
+            },
             tools: ToolSet::new(),
             agents: AgentSet::new(),
             remote: BTreeMap::new(),
@@ -441,21 +487,9 @@ impl EngineBuilder {
         }
     }
 
-    /// Sets the engine ID, which comes from the TEE.
-    pub fn with_id(mut self, id: Principal) -> Self {
-        self.id = id;
-        self
-    }
-
-    /// Sets the engine name.
-    pub fn with_name(mut self, name: String) -> Result<Self, BoxError> {
-        validate_function_name(&name.to_ascii_lowercase())?;
-        self.name = name;
-        Ok(self)
-    }
-
-    pub fn with_description(mut self, description: String) -> Self {
-        self.description = description;
+    /// Sets the engine information.
+    pub fn with_info(mut self, info: AgentInfo) -> Self {
+        self.info = info;
         self
     }
 
@@ -554,8 +588,9 @@ impl EngineBuilder {
         if self.remote.contains_key(&engine.endpoint) {
             return Err(format!("remote engine {} already exists", engine.endpoint).into());
         }
-        if let Some(name) = &engine.name {
-            validate_function_name(name).map_err(|err| format!("invalid name: {}", err))?;
+        if let Some(handle) = &engine.handle {
+            validate_function_name(handle)
+                .map_err(|err| format!("invalid engine handle {}: {}", handle, err))?;
         }
 
         self.remote.insert(engine.endpoint.clone(), engine);
@@ -596,6 +631,8 @@ impl EngineBuilder {
 
         self.export_agents.insert(default_agent.clone());
 
+        self.info.validate()?;
+        let id = self.web3.as_ref().get_principal();
         let mut names: BTreeSet<Path> = self
             .tools
             .set
@@ -616,8 +653,8 @@ impl EngineBuilder {
         }
 
         let ctx = BaseCtx::new(
-            self.id,
-            self.name.clone(),
+            id,
+            self.info.name.clone(),
             self.cancellation_token,
             names,
             self.web3,
@@ -626,7 +663,7 @@ impl EngineBuilder {
         );
 
         if self.management.controller == Principal::anonymous() {
-            self.management.controller = self.id;
+            self.management.controller = id;
         }
 
         let management = self.management.build(&ctx);
@@ -650,20 +687,19 @@ impl EngineBuilder {
 
         let meta = RequestMeta::default();
         for (name, tool) in &tools.set {
-            let ct = ctx.child_base_with(self.id, name, meta.clone())?;
+            let ct = ctx.child_base_with(id, name, meta.clone())?;
             tool.init(ct).await?;
         }
 
         for (name, agent) in &agents.set {
-            let ct = ctx.child_with(self.id, name, meta.clone())?;
+            let ct = ctx.child_with(id, name, meta.clone())?;
             agent.init(ct).await?;
         }
 
         Ok(Engine {
-            id: self.id,
+            id,
             ctx,
-            name: self.name,
-            description: self.description,
+            info: self.info,
             default_agent,
             export_agents: self.export_agents,
             export_tools: self.export_tools,

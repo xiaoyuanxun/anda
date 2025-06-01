@@ -11,6 +11,7 @@ license.workspace = true
 
 [dependencies]
 anda_core = { path = "../anda_core", version = "0.6" }
+anda_cloud_cdk = { workspace = true }
 async-trait = { workspace = true }
 candid = { workspace = true }
 bytes = { workspace = true }
@@ -22,8 +23,10 @@ serde_json = { workspace = true }
 http = { workspace = true }
 object_store = { workspace = true }
 ic_auth_types = { workspace = true, features = ["xid"] }
+ic_auth_verifier = { workspace = true, features = ["full"] }
 ic_cose = { workspace = true }
 ic_cose_types = { workspace = true }
+ic_tee_cdk = { workspace = true }
 ic_tee_gateway_sdk = { workspace = true }
 tokio-util = { workspace = true }
 structured-logger = { workspace = true }

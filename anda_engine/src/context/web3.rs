@@ -4,29 +4,44 @@ use candid::{
     utils::{ArgumentEncoder, encode_args},
 };
 use ciborium::from_reader;
+use ic_auth_verifier::envelope::SignedEnvelope;
 use ic_cose_types::to_cbor_bytes;
 use serde::{Serialize, de::DeserializeOwned};
 use std::sync::Arc;
 
-pub use ic_tee_gateway_sdk::client::Client as TEEClient;
+pub use ic_tee_gateway_sdk::client::{Client as TEEClient, ClientBuilder as TEEClientBuilder};
 
 /// Represents a Web3 client for interacting with the Internet Computer and other services.
 pub enum Web3SDK {
-    Tee(TEEClient),
+    Tee(Arc<TEEClient>),
     Web3(Web3Client),
 }
 
 impl Web3SDK {
-    pub fn from_tee(client: TEEClient) -> Self {
+    pub fn from_tee(client: Arc<TEEClient>) -> Self {
         Self::Tee(client)
     }
 
     pub fn from_web3(client: Arc<dyn Web3ClientFeatures>) -> Self {
         Self::Web3(Web3Client { client })
     }
+
+    pub fn get_principal(&self) -> Principal {
+        match self {
+            Web3SDK::Tee(cli) => cli.get_principal(),
+            Web3SDK::Web3(Web3Client { client }) => client.get_principal(),
+        }
+    }
 }
 
 pub trait Web3ClientFeatures: Send + Sync + 'static {
+    fn get_principal(&self) -> Principal;
+
+    fn sign_envelope(
+        &self,
+        message_digest: [u8; 32],
+    ) -> BoxPinFut<Result<SignedEnvelope, BoxError>>;
+
     /// Derives a 256-bit AES-GCM key from the given derivation path
     fn a256gcm_key(&self, derivation_path: Vec<Vec<u8>>) -> BoxPinFut<Result<[u8; 32], BoxError>>;
 
@@ -170,6 +185,17 @@ pub trait Web3ClientFeatures: Send + Sync + 'static {
 struct NotImplemented;
 
 impl Web3ClientFeatures for NotImplemented {
+    fn get_principal(&self) -> Principal {
+        Principal::anonymous()
+    }
+
+    fn sign_envelope(
+        &self,
+        _message_digest: [u8; 32],
+    ) -> BoxPinFut<Result<SignedEnvelope, BoxError>> {
+        Box::pin(futures::future::ready(Err("not implemented".into())))
+    }
+
     fn a256gcm_key(&self, _derivation_path: Vec<Vec<u8>>) -> BoxPinFut<Result<[u8; 32], BoxError>> {
         Box::pin(futures::future::ready(Err("not implemented".into())))
     }
