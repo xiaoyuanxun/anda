@@ -142,7 +142,7 @@ impl AndaEvmSigner {
             derive_address_from_pubkey(&pubkey).map_err(AndaSignerError::AddressDerivation)?;
         log::debug!(
             "Signer pubkey: {:?}, Signer EVM address: {:?}",
-            hex::encode(&pubkey),
+            hex::encode(pubkey),
             address
         );
 

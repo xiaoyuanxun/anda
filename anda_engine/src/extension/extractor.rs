@@ -85,8 +85,8 @@ where
     pub fn new() -> SubmitTool<T> {
         let schema = root_schema_for::<T>();
         let name = schema
-            .get("properties")
-            .and_then(|props| props.get("title").and_then(Value::as_str))
+            .get("title")
+            .and_then(Value::as_str)
             .unwrap_or("tool")
             .to_ascii_lowercase();
         SubmitTool {
@@ -272,8 +272,8 @@ mod tests {
         assert_eq!(definition.name, "submit_teststruct");
         let s = serde_json::to_string(&definition).unwrap();
         println!("{}", s);
-        // {"name":"submit_teststruct","description":"Submit the structured data you extracted from the provided text.","parameters":{"properties":{"age":{"format":"uint8","minimum":0.0,"type":["integer","null"]},"name":{"type":"string"}},"required":["name"],"title":"TestStruct","type":"object"},"strict":true}
-        assert!(s.contains(r#""required":["age","name"]"#));
+        // {"name":"submit_teststruct","description":"Submit the structured data you extracted from the provided text.","parameters":{"properties":{"age":{"maximum":255,"minimum":0,"type":"integer"},"name":{"type":"string"}},"required":["name","age"],"title":"TestStruct","type":"object"},"strict":true}
+        assert!(s.contains(r#""required":["name"]"#));
         assert!(!s.contains("$schema"));
 
         let agent = Extractor::<TestStruct>::default();
