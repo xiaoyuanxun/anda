@@ -4,7 +4,9 @@ use anda_db::{
     error::DBError,
     index::HnswConfig,
     query::{Filter, Query, RangeQuery, Search},
-    schema::{Document, Fe, Ft, Fv, Json, Schema, Segment},
+    schema::{
+        AndaDBSchema, FieldEntry, FieldType, Fv, Json, Schema, SchemaError, Vector, vector_from_f32,
+    },
 };
 use anda_db_tfs::jieba_tokenizer;
 use anda_engine::{model::EmbeddingFeaturesDyn, unix_ms};
@@ -14,13 +16,17 @@ use std::{sync::Arc, vec};
 
 use crate::db::*;
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, AndaDBSchema)]
 pub struct LocalKnowledge {
-    pub id: u64,
+    pub _id: u64,
     pub user: String,
     pub meta: Json,
-    pub segments: Vec<Segment>,
-    pub created_at: u64, // timestamp in milliseconds
+    // knowledge content
+    pub text: String,
+    // knowledge embedding for vector search
+    pub embedding: Vector,
+    // timestamp in milliseconds
+    pub created_at: u64,
 }
 
 #[derive(Clone)]
@@ -36,22 +42,7 @@ impl KnowledgeStore {
     }
 
     pub async fn init(db: &mut AndaKDB, name: String, dimension: usize) -> Result<Self, DBError> {
-        let mut schema = Schema::builder();
-        schema
-            .add_field(
-                Fe::new("user".to_string(), Ft::Text)?.with_description("user name".to_string()),
-            )?
-            .add_field(
-                Fe::new("meta".to_string(), Ft::Option(Box::new(Ft::Json)))?
-                    .with_description("knowledge metadata".to_string()),
-            )?
-            .add_field(
-                Fe::new("created_at".to_string(), Ft::U64)?.with_description(
-                    "unix timestamp in milliseconds that knowledge created at".to_string(),
-                ),
-            )?
-            .with_segments("segments", true)?;
-        let schema = schema.build()?;
+        let schema = LocalKnowledge::schema()?;
 
         let config = CollectionConfig {
             name: name.to_string(),
@@ -61,16 +52,15 @@ impl KnowledgeStore {
         let collection = db
             .open_or_create_collection(schema, config, async |collection| {
                 collection.set_tokenizer(jieba_tokenizer());
+                collection.create_btree_index_nx(&["user"]).await?;
+                collection.create_btree_index_nx(&["created_at"]).await?;
+                // create BM25 & HNSW indexes if not exists
                 collection
-                    .create_btree_index_nx("btree_user", "user")
+                    .create_bm25_index_nx(&["user", "meta", "text"])
                     .await?;
                 collection
-                    .create_btree_index_nx("btree_created_at", "created_at")
-                    .await?;
-                collection
-                    .create_search_index_nx(
-                        "search_segments",
-                        "segments",
+                    .create_hnsw_index_nx(
+                        "embedding",
                         HnswConfig {
                             dimension,
                             ..Default::default()
@@ -112,7 +102,6 @@ impl VectorSearchFeatures for KnowledgeStore {
             .search_as(Query {
                 limit: Some(n),
                 search: Some(Search {
-                    field: "segments".to_string(),
                     text: Some(query.to_string()),
                     vector,
                     ..Default::default()
@@ -121,21 +110,7 @@ impl VectorSearchFeatures for KnowledgeStore {
             })
             .await?;
 
-        Ok(result
-            .into_iter()
-            .map(|doc| {
-                doc.segments
-                    .into_iter()
-                    .map(|s| s.text)
-                    .fold("".to_string(), |acc, s| {
-                        if acc.is_empty() {
-                            s
-                        } else {
-                            format!("{}\n\n{}", acc, s)
-                        }
-                    })
-            })
-            .collect())
+        Ok(result.into_iter().map(|doc| doc.text).collect())
     }
 
     async fn top_n_ids(&self, query: &str, n: usize) -> Result<Vec<String>, BoxError> {
@@ -149,7 +124,6 @@ impl VectorSearchFeatures for KnowledgeStore {
             .search_ids(Query {
                 limit: Some(n),
                 search: Some(Search {
-                    field: "segments".to_string(),
                     text: Some(query.to_string()),
                     vector,
                     ..Default::default()
@@ -182,7 +156,6 @@ impl KnowledgeFeatures for KnowledgeStore {
                     Filter::Field(("user".to_string(), RangeQuery::Eq(Fv::Text(u.to_string()))))
                 }),
                 search: Some(Search {
-                    field: "segments".to_string(),
                     text: Some(query.to_string()),
                     vector,
                     ..Default::default()
@@ -193,19 +166,9 @@ impl KnowledgeFeatures for KnowledgeStore {
         Ok(result
             .into_iter()
             .map(|doc| Knowledge {
-                id: doc.id.to_string(),
+                id: doc._id.to_string(),
                 user: doc.user,
-                text: doc
-                    .segments
-                    .into_iter()
-                    .map(|s| s.text)
-                    .fold("".to_string(), |acc, s| {
-                        if acc.is_empty() {
-                            s
-                        } else {
-                            format!("{}\n\n{}", acc, s)
-                        }
-                    }),
+                text: doc.text,
                 meta: serde_json::from_value(doc.meta).unwrap_or_default(),
             })
             .collect())
@@ -247,19 +210,9 @@ impl KnowledgeFeatures for KnowledgeStore {
         Ok(result
             .into_iter()
             .map(|doc| Knowledge {
-                id: doc.id.to_string(),
+                id: doc._id.to_string(),
                 user: doc.user,
-                text: doc
-                    .segments
-                    .into_iter()
-                    .map(|s| s.text)
-                    .fold("".to_string(), |acc, s| {
-                        if acc.is_empty() {
-                            s
-                        } else {
-                            format!("{}\n\n{}", acc, s)
-                        }
-                    }),
+                text: doc.text,
                 meta: serde_json::from_value(doc.meta).unwrap_or_default(),
             })
             .collect())
@@ -272,22 +225,18 @@ impl KnowledgeFeatures for KnowledgeStore {
         let now = unix_ms();
         let docs = docs
             .into_iter()
-            .map(|doc| {
-                let mut segments = vec![Segment::new(doc.text, None).with_vec_f32(doc.vec)];
-                self.collection.obtain_segment_ids(&mut segments);
-                LocalKnowledge {
-                    id: 0,
-                    user: doc.user,
-                    meta: json!(doc.meta),
-                    segments,
-                    created_at: now,
-                }
+            .map(|doc| LocalKnowledge {
+                _id: 0,
+                user: doc.user,
+                meta: json!(doc.meta),
+                text: doc.text,
+                embedding: vector_from_f32(doc.vec),
+                created_at: now,
             })
             .collect::<Vec<_>>();
 
-        for k in docs {
-            let doc = Document::try_from(self.collection.schema(), &k)?;
-            let _ = self.collection.add(doc).await?;
+        for doc in docs {
+            let _ = self.collection.add_from(&doc).await?;
         }
 
         Ok(())

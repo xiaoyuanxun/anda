@@ -25,6 +25,7 @@ http = { workspace = true }
 ic_cose = { workspace = true }
 ic_cose_types = { workspace = true }
 ic_object_store = { workspace = true }
+ic-oss-types = { workspace = true }
 ic-agent = { workspace = true }
 ic_tee_agent = { workspace = true }
 tokio-util = { workspace = true }
@@ -32,8 +33,7 @@ structured-logger = { workspace = true }
 toml = { workspace = true }
 tokio = { workspace = true }
 log = { workspace = true }
-ed25519-consensus = { workspace = true }
-const-hex = { workspace = true }
+hex = { workspace = true }
 ic_auth_verifier = { workspace = true, features = ["full"] }
 config = "0.15"
 anda_object_store = "0.1"

@@ -22,6 +22,6 @@ tokio-util = { workspace = true }
 structured-logger = { workspace = true }
 tokio = { workspace = true }
 log = { workspace = true }
-const-hex = { workspace = true }
+hex = { workspace = true }
 
 [dev-dependencies]

@@ -109,7 +109,7 @@ async fn main() -> Result<(), BoxError> {
 
     // Parse and validate cryptographic secrets
     let identity = load_identity(&cli.id_secret)?;
-    let root_secret = const_hex::decode(&cli.root_secret)?;
+    let root_secret = hex::decode(&cli.root_secret)?;
     let root_secret: [u8; 48] = root_secret
         .try_into()
         .map_err(|_| format!("invalid root_secret: {:?}", cli.root_secret))?;

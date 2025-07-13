@@ -40,7 +40,8 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::{future::Future, sync::Arc, time::Duration};
 
 pub use candid::Principal;
-pub use ic_cose_types::{CanisterCaller, types::object_store::UpdateVersion};
+pub use ic_cose_types::CanisterCaller;
+pub use ic_oss_types::object_store::UpdateVersion;
 pub use object_store::{ObjectMeta, PutMode, PutResult, UpdateVersion as OsVersion, path::Path};
 pub use serde_json::Value;
 pub use tokio_util::sync::CancellationToken;

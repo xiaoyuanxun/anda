@@ -28,6 +28,7 @@ impl AndaKDB {
             name,
             description: "Anda AI Agent knowledge store".to_string(),
             storage,
+            lock: None,
         };
 
         // connect to the database (create if it doesn't exist)

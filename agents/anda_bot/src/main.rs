@@ -23,20 +23,17 @@ use anda_web3_client::client::{Client as Web3Client, load_identity};
 use axum::{Router, routing};
 use candid::Principal;
 use clap::{Parser, Subcommand};
-use ed25519_consensus::SigningKey;
 use ic_agent::{
     Agent,
     identity::{BasicIdentity, Identity},
 };
 use ic_cose::client::CoseSDK;
-use ic_cose_types::{
-    CanisterCaller,
-    types::{object_store::CHUNK_SIZE, setting::SettingPath},
-};
+use ic_cose_types::{CanisterCaller, types::setting::SettingPath};
 use ic_object_store::{
     agent::build_agent,
     client::{Client, ObjectStoreClient},
 };
+use ic_oss_types::object_store::CHUNK_SIZE;
 use ic_tee_agent::setting::decrypt_payload;
 use std::collections::{BTreeMap, BTreeSet};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
@@ -202,7 +199,7 @@ async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
         }) => {
             let cfg = config::Conf::from_file(&config)?;
             log::debug!("{:?}", cfg);
-            let root_secret = const_hex::decode(root_secret)?;
+            let root_secret = hex::decode(root_secret)?;
             let root_secret: [u8; 48] =
                 root_secret.try_into().map_err(|_| "invalid root_secret")?;
 
@@ -261,7 +258,7 @@ async fn bootstrap_tee(
             vec![default_agent_path.as_bytes().to_vec()],
         ))
         .await?;
-    let my_id = BasicIdentity::from_signing_key(SigningKey::from(id_secret));
+    let my_id = BasicIdentity::from_raw_key(&id_secret);
     let my_principal = my_id.sender()?;
     log::info!("sign_in, principal: {:?}", my_principal.to_text());
 

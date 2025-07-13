@@ -5,7 +5,10 @@ use axum::{
     response::IntoResponse,
 };
 use candid::Principal;
-use ic_auth_verifier::envelope::{ANONYMOUS_PRINCIPAL, SignedEnvelope, extract_user, unix_ms};
+use ic_auth_verifier::{
+    envelope::{ANONYMOUS_PRINCIPAL, SignedEnvelope, extract_user},
+    unix_timestamp,
+};
 use ic_cose::client::CoseSDK;
 use ic_cose_types::to_cbor_bytes;
 use ic_tee_agent::{RPCRequest, RPCResponse, http::Content};
@@ -44,7 +47,11 @@ impl AppState {
                 let caller = if let Some(se) = SignedEnvelope::from_authorization(headers)
                     .or_else(|| SignedEnvelope::from_headers(headers))
                 {
-                    match se.verify(unix_ms(), Some(self.info.id), None) {
+                    match se.verify(
+                        unix_timestamp().as_millis() as u64,
+                        Some(self.info.id),
+                        None,
+                    ) {
                         Ok(_) => se.sender(),
                         Err(_) => {
                             return false;

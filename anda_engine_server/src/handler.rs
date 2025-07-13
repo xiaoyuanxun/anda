@@ -7,7 +7,10 @@ use axum::{
 };
 use candid::Principal;
 use ciborium::from_reader;
-use ic_auth_verifier::envelope::{ANONYMOUS_PRINCIPAL, SignedEnvelope, unix_ms};
+use ic_auth_verifier::{
+    envelope::{ANONYMOUS_PRINCIPAL, SignedEnvelope},
+    unix_timestamp,
+};
 use ic_cose_types::to_cbor_bytes;
 use ic_tee_agent::{
     RPCRequest, RPCResponse,
@@ -33,7 +36,7 @@ pub async fn get_information(
     let caller = if let Some(se) = SignedEnvelope::from_authorization(&headers)
         .or_else(|| SignedEnvelope::from_headers(&headers))
     {
-        match se.verify(unix_ms(), None, None) {
+        match se.verify(unix_timestamp().as_millis() as u64, None, None) {
             Ok(_) => se.sender(),
             Err(_) => ANONYMOUS_PRINCIPAL,
         }
@@ -115,7 +118,11 @@ pub async fn anda_engine(
     let caller = if let Some(se) = SignedEnvelope::from_authorization(&headers)
         .or_else(|| SignedEnvelope::from_headers(&headers))
     {
-        match se.verify(unix_ms(), Some(id), Some(hash.as_slice())) {
+        match se.verify(
+            unix_timestamp().as_millis() as u64,
+            Some(id),
+            Some(hash.as_slice()),
+        ) {
             Ok(_) => se.sender(),
             Err(_) => ANONYMOUS_PRINCIPAL,
         }

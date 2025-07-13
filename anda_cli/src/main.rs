@@ -87,7 +87,7 @@ async fn main() -> Result<(), BoxError> {
             rng.fill_bytes(&mut bytes);
             match format.as_str() {
                 "hex" => {
-                    println!("{}", const_hex::encode(&bytes));
+                    println!("{}", hex::encode(&bytes));
                 }
                 "base64" => {
                     println!("{}", BASE64_URL_SAFE.encode(&bytes));
