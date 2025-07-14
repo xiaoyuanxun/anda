@@ -19,6 +19,7 @@ use std::sync::Arc;
 
 pub mod cohere;
 pub mod deepseek;
+pub mod gemini;
 pub mod kimi;
 pub mod openai;
 pub mod xai;
