@@ -10,11 +10,11 @@ categories.workspace = true
 license.workspace = true
 
 [dependencies]
-anda_core = { path = "../../anda_core", version = "0.6" }
-anda_engine = { path = "../../anda_engine", version = "0.6" }
-anda_icp = { path = "../../tools/anda_icp", version = "0.6" }
-anda_web3_client = { path = "../../anda_web3_client", version = "0.6" }
-anda_engine_server = { path = "../../anda_engine_server", version = "0.6" }
+anda_core = { path = "../../anda_core", version = "0.7" }
+anda_engine = { path = "../../anda_engine", version = "0.7" }
+anda_icp = { path = "../../tools/anda_icp", version = "0.7" }
+anda_web3_client = { path = "../../anda_web3_client", version = "0.7" }
+anda_engine_server = { path = "../../anda_engine_server", version = "0.7" }
 candid = { workspace = true }
 clap = { workspace = true }
 dotenv = { workspace = true }

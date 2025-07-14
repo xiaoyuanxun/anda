@@ -365,7 +365,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     #[ignore]
-    async fn test_deepseek() {
+    async fn test_kimi() {
         dotenv::dotenv().ok();
 
         let api_key = std::env::var("KIMI_API_KEY").expect("KIMI_API_KEY is not set");
@@ -380,7 +380,7 @@ mod tests {
         let res = CompletionFeatures::completion(&model, req, None)
             .await
             .unwrap();
-        println!("{}", res.content);
+        println!("{:#?}", res);
         println!("Took: {:?}", now.elapsed());
     }
 }
