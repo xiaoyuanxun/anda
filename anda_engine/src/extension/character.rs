@@ -277,7 +277,7 @@ impl Character {
             system: Some(system),
             prompt,
             prompter_name,
-            temperature: Some(1.5),
+            temperature: Some(1.0),
             ..Default::default()
         }
     }
