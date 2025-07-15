@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, convert::Infallible, str::FromStr};
 
-use super::{AgentOutput, FunctionDefinition, Knowledge, Resource, Value};
-use crate::BoxError;
+use crate::{AgentOutput, BoxError, FunctionDefinition, Json, Resource};
 
 /// Provides LLM completion capabilities for agents.
 pub trait CompletionFeatures: Sized {
@@ -24,7 +23,7 @@ pub struct CompletionRequest {
     pub system_name: Option<String>,
 
     /// The chat history (raw message) to be sent to the completion model provider.
-    pub chat_history: Vec<Value>,
+    pub chat_history: Vec<Json>,
 
     /// The documents to embed into the prompt.
     pub documents: Documents,
@@ -57,7 +56,7 @@ pub struct CompletionRequest {
     /// The format can be one of the following:
     /// `{ "type": "json_object" }`
     /// `{ "type": "json_schema", "json_schema": {...} }`
-    pub response_format: Option<Value>,
+    pub response_format: Option<Json>,
 
     /// The stop sequence to be sent to the completion model provider.
     pub stop: Option<Vec<String>>,
@@ -109,7 +108,7 @@ pub struct Message {
     pub role: String,
 
     /// The content of the message, can be text or JSON array.
-    pub content: Value,
+    pub content: Json,
 
     /// An optional name for the participant. Provides the model information to differentiate between participants of the same role.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -133,25 +132,6 @@ pub struct Document {
     pub metadata: BTreeMap<String, String>,
 }
 
-impl From<Knowledge> for Document {
-    fn from(doc: Knowledge) -> Self {
-        let mut metadata = BTreeMap::new();
-        metadata.insert("user".to_string(), doc.user);
-
-        for (k, v) in doc.meta {
-            if let Ok(v) = serde_json::to_string(&v) {
-                metadata.insert(k, v);
-            }
-        }
-
-        Document {
-            id: doc.id,
-            text: doc.text,
-            metadata,
-        }
-    }
-}
-
 /// Collection of knowledge documents.
 #[derive(Clone, Debug, Default)]
 pub struct Documents(pub Vec<Document>);
@@ -173,12 +153,6 @@ impl From<Vec<String>> for Documents {
 impl From<Vec<Document>> for Documents {
     fn from(docs: Vec<Document>) -> Self {
         Self(docs)
-    }
-}
-
-impl From<Vec<Knowledge>> for Documents {
-    fn from(docs: Vec<Knowledge>) -> Self {
-        Self(docs.into_iter().map(Document::from).collect())
     }
 }
 

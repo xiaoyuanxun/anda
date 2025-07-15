@@ -39,11 +39,11 @@ use ic_cose_types::to_cbor_bytes;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::{future::Future, sync::Arc, time::Duration};
 
+pub use anda_db_schema::Json;
 pub use candid::Principal;
 pub use ic_cose_types::CanisterCaller;
 pub use ic_oss_types::object_store::UpdateVersion;
 pub use object_store::{ObjectMeta, PutMode, PutResult, UpdateVersion as OsVersion, path::Path};
-pub use serde_json::Value;
 pub use tokio_util::sync::CancellationToken;
 
 use crate::BoxError;
@@ -129,8 +129,8 @@ pub trait AgentContext: BaseContext + CompletionFeatures + EmbeddingFeatures {
     /// [`ToolOutput`] containing the final result.
     fn tool_call(
         &self,
-        args: ToolInput<Value>,
-    ) -> impl Future<Output = Result<ToolOutput<Value>, BoxError>> + Send;
+        args: ToolInput<Json>,
+    ) -> impl Future<Output = Result<ToolOutput<Json>, BoxError>> + Send;
 
     /// Runs a local agent.
     ///
@@ -181,8 +181,8 @@ pub trait BaseContext:
     fn remote_tool_call(
         &self,
         endpoint: &str,
-        args: ToolInput<Value>,
-    ) -> impl Future<Output = Result<ToolOutput<Value>, BoxError>> + Send;
+        args: ToolInput<Json>,
+    ) -> impl Future<Output = Result<ToolOutput<Json>, BoxError>> + Send;
 }
 
 /// StateFeatures is one of the context feature sets available when calling Agent or Tool.

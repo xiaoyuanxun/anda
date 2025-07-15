@@ -29,8 +29,8 @@
 
 use anda_core::{
     Agent, AgentContext, AgentOutput, BoxError, CacheExpiry, CacheFeatures, CompletionFeatures,
-    CompletionRequest, Documents, Embedding, EmbeddingFeatures, Knowledge, KnowledgeFeatures,
-    KnowledgeInput, Message, Resource, StateFeatures, VectorSearchFeatures, evaluate_tokens,
+    CompletionRequest, Embedding, EmbeddingFeatures, Message, Resource, StateFeatures,
+    evaluate_tokens,
 };
 use ic_cose_types::to_cbor_bytes;
 use serde::{Deserialize, Serialize};
@@ -286,22 +286,20 @@ impl Character {
     /// # Arguments
     /// * `attention` - Attention mechanism for content evaluation
     /// * `segmenter` - Document segmentation component
-    /// * `knowledge` - Knowledge base implementation
     /// # Returns
     /// Configured CharacterAgent instance
-    pub fn build<K: KnowledgeFeatures + VectorSearchFeatures>(
+    pub fn build(
         self,
         attention: Arc<Attention>,
         segmenter: Arc<DocumentSegmenter>,
-        knowledge: Arc<K>,
-    ) -> CharacterAgent<K> {
-        CharacterAgent::new(Arc::new(self), attention, segmenter, knowledge)
+    ) -> CharacterAgent {
+        CharacterAgent::new(Arc::new(self), attention, segmenter)
     }
 }
 
 /// Agent implementation for character-based interactions
 #[derive(Debug, Clone)]
-pub struct CharacterAgent<K: KnowledgeFeatures + VectorSearchFeatures> {
+pub struct CharacterAgent {
     /// Character definition and attributes
     pub character: Arc<Character>,
 
@@ -310,50 +308,26 @@ pub struct CharacterAgent<K: KnowledgeFeatures + VectorSearchFeatures> {
 
     /// Document segmentation component
     pub segmenter: Arc<DocumentSegmenter>,
-
-    /// Knowledge base implementation
-    pub knowledge: Arc<K>,
 }
 
-impl<K: KnowledgeFeatures + VectorSearchFeatures> CharacterAgent<K> {
+impl CharacterAgent {
     /// Creates a new CharacterAgent instance
     /// # Arguments
     /// * `character` - Character definition
     /// * `attention` - Attention mechanism
     /// * `segmenter` - Document segmenter
-    /// * `knowledge` - Knowledge base implementation
     /// # Returns
     /// New CharacterAgent instance
     pub fn new(
         character: Arc<Character>,
         attention: Arc<Attention>,
         segmenter: Arc<DocumentSegmenter>,
-        knowledge: Arc<K>,
     ) -> Self {
         Self {
             character,
             attention,
             segmenter,
-            knowledge,
         }
-    }
-
-    /// Retrieves latest knowledge entries from the knowledge base
-    /// # Arguments
-    /// * `last_seconds` - Time window for recent knowledge
-    /// * `n` - Maximum number of entries to retrieve
-    /// * `user` - Optional user filter
-    /// # Returns
-    /// Result with vector of Knowledge entries or error
-    pub async fn latest_knowledge(
-        &self,
-        last_seconds: u32,
-        n: usize,
-        user: Option<String>,
-    ) -> Result<Vec<Knowledge>, BoxError> {
-        self.knowledge
-            .knowledge_latest_n(last_seconds, n, user)
-            .await
     }
 
     /// Determines whether to like a post based on content evaluation
@@ -397,10 +371,7 @@ impl<K: KnowledgeFeatures + VectorSearchFeatures> CharacterAgent<K> {
     }
 }
 
-impl<K> Agent<AgentCtx> for CharacterAgent<K>
-where
-    K: KnowledgeFeatures + VectorSearchFeatures + Clone + Send + Sync + 'static,
-{
+impl Agent<AgentCtx> for CharacterAgent {
     /// Returns the character's unique username as identifier
     fn name(&self) -> String {
         self.character.handle.clone()
@@ -476,20 +447,11 @@ where
             content_quality = self.attention.evaluate_content(&ctx, &prompt).await;
         }
 
-        let knowledges: Documents = if content_quality == ContentQuality::Ignore {
-            let knowledges = self.knowledge.top_n(&prompt, 5).await.unwrap_or_default();
-            knowledges.into()
-        } else {
-            // do not append knowledges if content quality is high
-            Documents::default()
-        };
-
         if content_quality > ContentQuality::Ignore {
             let content = prompt.clone();
             let ctx = ctx.clone();
             let user = meta.user.clone().unwrap_or("anonymous".to_string());
             let segmenter = self.segmenter.clone();
-            let knowledge = self.knowledge.clone();
 
             // save high quality content to knowledge store in background
             tokio::spawn(async move {
@@ -502,21 +464,6 @@ where
                             log::error!("Failed to embed segments: {}", err);
                         }
                     }
-                }
-
-                let docs: Vec<KnowledgeInput> = vecs
-                    .into_iter()
-                    .map(|embedding| KnowledgeInput {
-                        user: user.clone(),
-                        text: embedding.text,
-                        vec: embedding.vec,
-                        ..Default::default()
-                    })
-                    .collect();
-                let total = docs.len();
-                match knowledge.knowledge_add(docs).await {
-                    Ok(_) => log::info!("added {} knowledges", total),
-                    Err(err) => log::error!("failed to add {} knowledges: {}", total, err),
                 }
 
                 Ok::<(), BoxError>(())
@@ -536,7 +483,6 @@ where
         let mut req = self
             .character
             .to_request(prompt, meta.user.clone())
-            .append_documents(knowledges)
             .append_tools(tools);
 
         if let Some((user, chat)) = &mut chat_history {

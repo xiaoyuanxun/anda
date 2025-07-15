@@ -31,8 +31,8 @@
 
 use anda_cloud_cdk::{ChallengeEnvelope, ChallengeRequest, TEEInfo, TEEKind};
 use anda_core::{
-    ANONYMOUS, Agent, AgentInput, AgentOutput, AgentSet, BoxError, Function, Path, RequestMeta,
-    ThreadMeta, Tool, ToolInput, ToolOutput, ToolSet, Value, validate_function_name,
+    Agent, AgentInput, AgentOutput, AgentSet, BoxError, Function, Json, Path, RequestMeta, Tool,
+    ToolInput, ToolOutput, ToolSet, validate_function_name,
 };
 use async_trait::async_trait;
 use candid::Principal;
@@ -47,15 +47,12 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     context::{AgentCtx, BaseCtx, Web3Client, Web3SDK},
-    management::{Management, SYSTEM_PATH, ThreadMetaTool, UserStateTool, UserStateWrapper},
+    management::{BaseManagement, Management, SYSTEM_PATH, Thread, UserState, Visibility},
     model::Model,
     store::Store,
 };
 
-pub use crate::{
-    context::{AgentInfo, EngineCard, RemoteEngineArgs, RemoteEngines},
-    management::{ManagementBuilder, Visibility},
-};
+pub use crate::context::{AgentInfo, EngineCard, RemoteEngineArgs, RemoteEngines};
 
 /// Engine is the core component that manages agents, tools, and execution context.
 /// It provides methods to interact with agents, call tools, and manage execution.
@@ -68,7 +65,7 @@ pub struct Engine {
     export_agents: BTreeSet<String>,
     export_tools: BTreeSet<String>,
     hooks: Arc<Hooks>,
-    management: Arc<Management>,
+    management: Arc<dyn Management>,
 }
 
 /// Hook trait for customizing engine behavior.
@@ -80,8 +77,8 @@ pub trait Hook: Send + Sync {
         &self,
         _ctx: &AgentCtx,
         _agent: &str,
-        _thread: &ThreadMeta,
-        _state: &mut UserStateWrapper,
+        _state: Option<&UserState>,
+        _thread: Option<&Thread>,
     ) -> Result<(), BoxError> {
         Ok(())
     }
@@ -101,7 +98,7 @@ pub trait Hook: Send + Sync {
         &self,
         _ctx: &BaseCtx,
         _tool: &str,
-        _state: &mut UserStateWrapper,
+        _state: Option<&UserState>,
     ) -> Result<(), BoxError> {
         Ok(())
     }
@@ -111,8 +108,8 @@ pub trait Hook: Send + Sync {
         &self,
         _ctx: &BaseCtx,
         _tool: &str,
-        output: ToolOutput<Value>,
-    ) -> Result<ToolOutput<Value>, BoxError> {
+        output: ToolOutput<Json>,
+    ) -> Result<ToolOutput<Json>, BoxError> {
         Ok(output)
     }
 }
@@ -145,11 +142,11 @@ impl Hook for Hooks {
         &self,
         ctx: &AgentCtx,
         agent: &str,
-        thread: &ThreadMeta,
-        state: &mut UserStateWrapper,
+        state: Option<&UserState>,
+        thread: Option<&Thread>,
     ) -> Result<(), BoxError> {
         for hook in &self.hooks {
-            hook.on_agent_start(ctx, agent, thread, state).await?;
+            hook.on_agent_start(ctx, agent, state, thread).await?;
         }
         Ok(())
     }
@@ -170,7 +167,7 @@ impl Hook for Hooks {
         &self,
         ctx: &BaseCtx,
         tool: &str,
-        state: &mut UserStateWrapper,
+        state: Option<&UserState>,
     ) -> Result<(), BoxError> {
         for hook in &self.hooks {
             hook.on_tool_start(ctx, tool, state).await?;
@@ -182,8 +179,8 @@ impl Hook for Hooks {
         &self,
         ctx: &BaseCtx,
         tool: &str,
-        mut output: ToolOutput<Value>,
-    ) -> Result<ToolOutput<Value>, BoxError> {
+        mut output: ToolOutput<Json>,
+    ) -> Result<ToolOutput<Json>, BoxError> {
         for hook in &self.hooks {
             output = hook.on_tool_end(ctx, tool, output).await?;
         }
@@ -250,7 +247,7 @@ impl Engine {
         caller: Principal,
         mut input: AgentInput,
     ) -> Result<AgentOutput, BoxError> {
-        let mut meta = input.meta.unwrap_or_default();
+        let meta = input.meta.unwrap_or_default();
         if meta.engine.is_some() && meta.engine != Some(self.id) {
             return Err(format!(
                 "invalid engine ID, expected {}, got {}",
@@ -271,39 +268,49 @@ impl Engine {
             .get(&input.name)
             .ok_or_else(|| format!("agent {} not found", input.name))?;
 
-        let visibility = self.management.try_get_visibility(&caller)?;
-        let mut sw = if visibility == Visibility::Public {
-            // use anonymous user state for public
-            self.management.load_user_state(&ANONYMOUS).await?
+        let visibility = self.management.check_visibility(&caller)?;
+        let user_state = if visibility == Visibility::Public || self.management.is_manager(&caller)
+        {
+            None
         } else {
-            let sw = self.management.load_user_state(&caller).await?;
-            if !sw.has_permission(&caller, unix_ms()) {
+            let us = self.management.get_user(&caller).await?;
+            if !us.has_permission(&caller, unix_ms()) {
                 return Err("caller does not have permission".into());
             }
-            sw
+            Some(us)
         };
 
-        let thread = self
-            .management
-            .load_thread_meta(&caller, &meta.thread)
-            .await?;
+        let thread = if let Some((agent, id)) = &meta.thread {
+            let th = if agent == &self.id {
+                self.management.get_thread(id).await?
+            } else {
+                return Err("TODO: get thread from remote agent".into());
+            };
 
-        meta.thread = Some(thread.id.clone());
-        let ctx = self.ctx_with(caller, &input.name, meta.clone())?;
+            if !th.has_permission(&caller) {
+                return Err("caller does not have permission to access the thread".into());
+            }
+            Some(th)
+        } else {
+            None
+        };
+
+        let ctx = self.ctx_with(caller, &input.name, meta)?;
         self.hooks
-            .on_agent_start(&ctx, &input.name, &thread, &mut sw)
+            .on_agent_start(&ctx, &input.name, user_state.as_ref(), thread.as_ref())
             .await?;
 
-        sw.increment_agent_requests(unix_ms());
-        self.management.save_user_state(sw.state).await?;
-        // should save the thread meta before running the agent
-        self.management.save_thread_meta(thread).await?;
+        if let Some(user_state) = &user_state {
+            // Increment agent requests for the user
+            user_state.increment_agent_requests(unix_ms());
+            // Save the user state after incrementing requests
+            self.management.update_user(user_state).await?;
+        }
 
         let output = agent
             .run(ctx.clone(), input.prompt, input.resources)
             .await?;
         let mut output = self.hooks.on_agent_end(&ctx, &input.name, output).await?;
-        output.thread = meta.thread;
         output.full_history = None; // clear full history
         Ok(output)
     }
@@ -313,8 +320,8 @@ impl Engine {
     pub async fn tool_call(
         &self,
         caller: Principal,
-        input: ToolInput<Value>,
-    ) -> Result<ToolOutput<Value>, BoxError> {
+        input: ToolInput<Json>,
+    ) -> Result<ToolOutput<Json>, BoxError> {
         let args = serde_json::to_string(&input.args)?;
         let meta = input.meta.unwrap_or_default();
         if meta.engine.is_some() && meta.engine != Some(self.id) {
@@ -335,23 +342,29 @@ impl Engine {
             .get(&input.name)
             .ok_or_else(|| format!("tool {} not found", &input.name))?;
 
-        let visibility = self.management.try_get_visibility(&caller)?;
-        let mut sw = if visibility == Visibility::Public {
-            // use anonymous user state for public
-            self.management.load_user_state(&ANONYMOUS).await?
+        let visibility = self.management.check_visibility(&caller)?;
+        let user_state = if visibility == Visibility::Public || self.management.is_manager(&caller)
+        {
+            None
         } else {
-            let sw = self.management.load_user_state(&caller).await?;
-            if !sw.has_permission(&caller, unix_ms()) {
+            let us = self.management.get_user(&caller).await?;
+            if !us.has_permission(&caller, unix_ms()) {
                 return Err("caller does not have permission".into());
             }
-            sw
+            Some(us)
         };
 
         let ctx = self.ctx.child_base_with(caller, &input.name, meta)?;
-        self.hooks.on_tool_start(&ctx, &input.name, &mut sw).await?;
+        self.hooks
+            .on_tool_start(&ctx, &input.name, user_state.as_ref())
+            .await?;
 
-        sw.increment_tool_requests(unix_ms());
-        self.management.save_user_state(sw.state).await?;
+        if let Some(user_state) = &user_state {
+            // Increment tool requests for the user
+            user_state.increment_tool_requests(unix_ms());
+            // Save the user state after incrementing requests
+            self.management.update_user(user_state).await?;
+        }
 
         let output = tool.call(ctx.clone(), args, input.resources).await?;
         self.hooks.on_tool_end(&ctx, &input.name, output).await
@@ -450,7 +463,7 @@ pub struct EngineBuilder {
     cancellation_token: CancellationToken,
     export_agents: BTreeSet<String>,
     export_tools: BTreeSet<String>,
-    management: ManagementBuilder,
+    management: Option<Arc<dyn Management>>,
 }
 
 impl Default for EngineBuilder {
@@ -483,7 +496,7 @@ impl EngineBuilder {
             cancellation_token: CancellationToken::new(),
             export_agents: BTreeSet::new(),
             export_tools: BTreeSet::new(),
-            management: ManagementBuilder::new(Visibility::Private, Principal::anonymous()),
+            management: None,
         }
     }
 
@@ -518,8 +531,8 @@ impl EngineBuilder {
     }
 
     /// Sets the management builder for the engine.
-    pub fn with_management(mut self, management: ManagementBuilder) -> Self {
-        self.management = management;
+    pub fn with_management(mut self, management: Arc<dyn Management>) -> Self {
+        self.management = Some(management);
         self
     }
 
@@ -662,28 +675,9 @@ impl EngineBuilder {
             Arc::new(remote),
         );
 
-        if self.management.controller == Principal::anonymous() {
-            self.management.controller = id;
-        }
-
-        let management = self.management.build(&ctx);
-        let management = Arc::new(management);
-        let user_state_tool = UserStateTool::new(management.clone());
-        let thread_meta_tool = ThreadMetaTool::new(management.clone());
-        self.tools.add(user_state_tool)?;
-        self.tools.add(thread_meta_tool)?;
-        self.export_tools.insert(UserStateTool::NAME.to_string());
-        self.export_tools.insert(ThreadMetaTool::NAME.to_string());
-
         let tools = Arc::new(self.tools);
         let agents = Arc::new(self.agents);
-        let ctx = AgentCtx::new(
-            ctx,
-            self.model,
-            tools.clone(),
-            agents.clone(),
-            management.clone(),
-        );
+        let ctx = AgentCtx::new(ctx, self.model, tools.clone(), agents.clone());
 
         let meta = RequestMeta::default();
         for (name, tool) in &tools.set {
@@ -704,7 +698,13 @@ impl EngineBuilder {
             export_agents: self.export_agents,
             export_tools: self.export_tools,
             hooks: self.hooks,
-            management,
+            management: self.management.unwrap_or_else(|| {
+                Arc::new(BaseManagement {
+                    controller: id,
+                    managers: BTreeSet::new(),
+                    visibility: Visibility::Private, // default visibility
+                })
+            }),
         })
     }
 
@@ -728,14 +728,7 @@ impl EngineBuilder {
             self.store,
             Arc::new(RemoteEngines::new()),
         );
-        let management = self.management.build(&ctx);
-        let management = Arc::new(management);
-        AgentCtx::new(
-            ctx,
-            self.model,
-            Arc::new(self.tools),
-            Arc::new(self.agents),
-            management,
-        )
+
+        AgentCtx::new(ctx, self.model, Arc::new(self.tools), Arc::new(self.agents))
     }
 }

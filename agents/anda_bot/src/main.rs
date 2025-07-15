@@ -1,14 +1,11 @@
-use agent_twitter_client::scraper::Scraper;
 use anda_core::{BoxError, Path, derivation_path_with, validate_function_name};
 use anda_engine::context::Web3ClientFeatures;
 use anda_engine::{
     APP_USER_AGENT,
     context::{TEEClient, TEEClientBuilder, Web3SDK},
-    engine::{AgentInfo, Engine, EngineBuilder},
+    engine::{AgentInfo, EngineBuilder},
     extension::{
-        attention::Attention,
-        character::{Character, CharacterAgent},
-        google::GoogleSearchTool,
+        attention::Attention, character::Character, google::GoogleSearchTool,
         segmenter::DocumentSegmenter,
     },
     management::SYSTEM_PATH,
@@ -17,7 +14,6 @@ use anda_engine::{
 };
 use anda_engine_server::shutdown_signal;
 use anda_icp::ledger::{BalanceOfTool, ICPLedgers};
-use anda_kdb::{AndaKDB, KnowledgeStore, StorageConfig};
 use anda_object_store::EncryptedStoreBuilder;
 use anda_web3_client::client::{Client as Web3Client, load_identity};
 use axum::{Router, routing};
@@ -33,17 +29,15 @@ use ic_object_store::{
     agent::build_agent,
     client::{Client, ObjectStoreClient},
 };
-use ic_oss_types::object_store::CHUNK_SIZE;
 use ic_tee_agent::setting::decrypt_payload;
 use std::collections::{BTreeMap, BTreeSet};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use structured_logger::{Builder, async_json::new_writer, get_env_level, unix_ms};
-use tokio::{net::TcpStream, sync::RwLock};
+use tokio::net::TcpStream;
 use tokio_util::sync::CancellationToken;
 
 mod config;
 mod handler;
-mod twitter;
 
 const APP_NAME: &str = env!("CARGO_PKG_NAME");
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -313,28 +307,10 @@ async fn bootstrap_tee(
     let os_state = object_store.get_state().await?;
     log::info!("object_store state: {:?}", os_state);
 
-    log::info!("start to init knowledge_store");
-    let mut db = AndaKDB::new(
-        IC_OBJECT_STORE.to_string(),
-        object_store.clone(),
-        StorageConfig {
-            object_chunk_size: CHUNK_SIZE as usize,
-            ..Default::default()
-        },
-        Some(model.embedder.clone()),
-    )
-    .await?;
-
-    log::info!("knowledge_store start init");
-    let knowledge_store = KnowledgeStore::init(&mut db, default_agent_path, model.ndims()).await?;
-    let knowledge_store = Arc::new(knowledge_store);
-    log::info!("knowledge_store: {:?}", knowledge_store.name());
-
     log::info!("start to build engine");
     let agent = character.build(
         Arc::new(Attention::default()),
         Arc::new(DocumentSegmenter::default()),
-        knowledge_store.clone(),
     );
 
     let mut engine = EngineBuilder::new()
@@ -376,10 +352,7 @@ async fn bootstrap_tee(
 
     let agent = Arc::new(agent);
     let engine = Arc::new(engine.build(default_agent.clone()).await?);
-    let x_status = Arc::new(RwLock::new(handler::ServiceStatus::Running));
     let app_state = handler::AppState {
-        web3: Arc::new(handler::Web3SDK::Tee(tee.clone())),
-        x_status: x_status.clone(),
         info: Arc::new(handler::AppInformation {
             id: my_principal,
             name: engine_name,
@@ -388,21 +361,12 @@ async fn bootstrap_tee(
             object_store_canister: Some(object_store_canister),
             caller: Principal::anonymous(),
         }),
-        cose_namespace,
-        manager: "".to_string(),
     };
 
     let server = tokio::spawn(start_server(
         format!("127.0.0.1:{}", port),
         app_state,
         global_cancel_token.clone(),
-    ));
-    let x = tokio::spawn(start_x(
-        encrypted_cfg.x,
-        engine,
-        agent,
-        global_cancel_token.clone(),
-        x_status,
     ));
 
     let _ = tokio::join!(
@@ -412,14 +376,6 @@ async fn bootstrap_tee(
                 log::error!("http server shutdown with error: {err:?}");
             }
         },
-        async {
-            if let Err(err) = x.await {
-                global_cancel_token.cancel();
-                log::error!("x server shutdown with error: {err:?}");
-            }
-        },
-        db.db
-            .auto_flush(global_cancel_token.clone(), Duration::from_secs(10)),
         shutdown_signal(global_cancel_token.clone())
     );
 
@@ -476,28 +432,10 @@ async fn bootstrap_local(
         .build();
     let object_store = Arc::new(object_store);
 
-    log::info!("start to init knowledge_store");
-    let mut db = AndaKDB::new(
-        IC_OBJECT_STORE.to_string(),
-        object_store.clone(),
-        StorageConfig {
-            object_chunk_size: CHUNK_SIZE as usize,
-            ..Default::default()
-        },
-        Some(model.embedder.clone()),
-    )
-    .await?;
-
-    log::info!("knowledge_store start init");
-    let knowledge_store = KnowledgeStore::init(&mut db, default_agent_path, model.ndims()).await?;
-    let knowledge_store = Arc::new(knowledge_store);
-    log::info!("knowledge_store: {:?}", knowledge_store.name());
-
     log::info!("start to build engine");
     let agent = character.build(
         Arc::new(Attention::default()),
         Arc::new(DocumentSegmenter::default()),
-        knowledge_store.clone(),
     );
 
     let mut engine = EngineBuilder::new()
@@ -539,10 +477,7 @@ async fn bootstrap_local(
 
     let agent = Arc::new(agent);
     let engine = Arc::new(engine.build(default_agent.clone()).await?);
-    let x_status = Arc::new(RwLock::new(handler::ServiceStatus::Running));
     let app_state = handler::AppState {
-        web3: Arc::new(handler::Web3SDK::Web3(web3)),
-        x_status: x_status.clone(),
         info: Arc::new(handler::AppInformation {
             id: my_principal,
             name: engine_name,
@@ -551,22 +486,12 @@ async fn bootstrap_local(
             object_store_canister: None,
             caller: Principal::anonymous(),
         }),
-        cose_namespace: "".to_string(),
-        manager,
     };
 
     let server = tokio::spawn(start_server(
         format!("127.0.0.1:{}", port),
         app_state,
         global_cancel_token.clone(),
-    ));
-
-    let x = tokio::spawn(start_x(
-        cfg.x,
-        engine,
-        agent,
-        global_cancel_token.clone(),
-        x_status,
     ));
 
     let _ = tokio::join!(
@@ -576,14 +501,6 @@ async fn bootstrap_local(
                 log::error!("http server shutdown with error: {err:?}");
             }
         },
-        async {
-            if let Err(err) = x.await {
-                global_cancel_token.cancel();
-                log::error!("x server shutdown with error: {err:?}");
-            }
-        },
-        db.db
-            .auto_flush(global_cancel_token.clone(), Duration::from_secs(10)),
         shutdown_signal(global_cancel_token.clone())
     );
 
@@ -672,7 +589,6 @@ async fn start_server(
 ) -> Result<(), BoxError> {
     let app = Router::new()
         .route("/.well-known/app", routing::get(handler::get_information))
-        .route("/proposal", routing::post(handler::add_proposal))
         .with_state(app_state);
 
     let addr: SocketAddr = addr.parse()?;
@@ -686,33 +602,6 @@ async fn start_server(
         })
         .await?;
     Ok(())
-}
-
-async fn start_x(
-    cfg: config::X,
-    engine: Arc<Engine>,
-    agent: Arc<CharacterAgent<KnowledgeStore>>,
-    cancel_token: CancellationToken,
-    status: Arc<RwLock<handler::ServiceStatus>>,
-) -> Result<(), BoxError> {
-    let mut scraper = Scraper::new().await?;
-
-    let cookie_str = cfg.cookie_string.unwrap_or_default();
-    if !cookie_str.is_empty() {
-        scraper.set_from_cookie_string(&cookie_str).await?;
-    } else {
-        scraper
-            .login(
-                cfg.username.clone(),
-                cfg.password.clone(),
-                cfg.email,
-                cfg.two_factor_auth,
-            )
-            .await?;
-    }
-
-    let x = twitter::TwitterDaemon::new(engine, agent, scraper, status, cfg.min_interval_secs);
-    x.run(cancel_token).await
 }
 
 async fn create_reuse_port_listener(addr: SocketAddr) -> Result<tokio::net::TcpListener, BoxError> {

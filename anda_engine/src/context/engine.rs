@@ -1,6 +1,6 @@
 use anda_core::{
     Agent, AgentContext, AgentInput, AgentOutput, BaseContext, BoxError, Function,
-    FunctionDefinition, HttpFeatures, Resource, Tool, ToolInput, ToolOutput, Value,
+    FunctionDefinition, HttpFeatures, Json, Resource, Tool, ToolInput, ToolOutput,
     select_resources, validate_function_name,
 };
 use candid::Principal;
@@ -341,8 +341,8 @@ impl RemoteTool {
 }
 
 impl Tool<BaseCtx> for RemoteTool {
-    type Args = Value;
-    type Output = Value;
+    type Args = Json;
+    type Output = Json;
 
     fn name(&self) -> String {
         self.name.clone()

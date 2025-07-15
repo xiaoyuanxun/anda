@@ -31,7 +31,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use std::{collections::BTreeMap, future::Future, marker::PhantomData, sync::Arc};
 
 use crate::{
-    BoxError, BoxPinFut, Function, Resource, ToolOutput, Value, context::BaseContext,
+    BoxError, BoxPinFut, Function, Json, Resource, ToolOutput, context::BaseContext,
     model::FunctionDefinition, select_resources, validate_function_name,
 };
 
@@ -107,7 +107,7 @@ where
         ctx: C,
         args: String,
         resources: Option<Vec<Resource>>,
-    ) -> impl Future<Output = Result<ToolOutput<Value>, BoxError>> + Send {
+    ) -> impl Future<Output = Result<ToolOutput<Json>, BoxError>> + Send {
         async move {
             let args: Self::Args = serde_json::from_str(&args)
                 .map_err(|err| format!("tool {}, invalid args: {}", self.name(), err))?;
@@ -150,7 +150,7 @@ where
         ctx: C,
         args: String,
         resources: Option<Vec<Resource>>,
-    ) -> BoxPinFut<Result<ToolOutput<Value>, BoxError>>;
+    ) -> BoxPinFut<Result<ToolOutput<Json>, BoxError>>;
 }
 
 /// Wrapper to convert static Tool implementation to dynamic dispatch.
@@ -186,7 +186,7 @@ where
         ctx: C,
         args: String,
         resources: Option<Vec<Resource>>,
-    ) -> BoxPinFut<Result<ToolOutput<Value>, BoxError>> {
+    ) -> BoxPinFut<Result<ToolOutput<Json>, BoxError>> {
         let tool = self.0.clone();
         Box::pin(async move { tool.call_raw(ctx, args, resources).await })
     }

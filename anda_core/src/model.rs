@@ -16,15 +16,15 @@ pub use ic_auth_types::{ByteArrayB64, ByteBufB64, Xid};
 
 mod completion;
 mod embedding;
-mod knowledge;
+// mod knowledge;
 mod resource;
-mod thread;
+// mod thread;
 
 pub use completion::*;
 pub use embedding::*;
-pub use knowledge::*;
+// pub use knowledge::*;
 pub use resource::*;
-pub use thread::*;
+// pub use thread::*;
 
 pub const ANONYMOUS: Principal = Principal::anonymous();
 
@@ -66,10 +66,6 @@ pub struct AgentOutput {
 
     /// The usage statistics for the agent execution.
     pub usage: Usage,
-
-    /// The unique identifier for the thread.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub thread: Option<Xid>,
 
     /// Indicates failure reason if present, None means successful execution.
     /// Should be None when finish_reason is "stop" or "tool_calls".
@@ -151,9 +147,9 @@ pub struct RequestMeta {
     /// The target engine principal for the request.
     pub engine: Option<Principal>,
 
-    /// The target thread for the request. If not provided, a new thread will be created.
+    /// The target threaded conversation for the request.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub thread: Option<Xid>,
+    pub thread: Option<(Principal, Xid)>,
 
     /// Gets the username from request context.
     /// Note: This is not verified and should not be used as a trusted identifier.

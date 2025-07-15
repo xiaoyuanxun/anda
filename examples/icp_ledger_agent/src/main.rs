@@ -1,7 +1,8 @@
 use anda_core::BoxError;
 use anda_engine::{
     context::Web3SDK,
-    engine::{AgentInfo, EngineBuilder, ManagementBuilder, Visibility},
+    engine::{AgentInfo, EngineBuilder},
+    management::{BaseManagement, Visibility},
     model::{Model, deepseek, openai, xai},
     store::{InMemory, Store},
 };
@@ -173,7 +174,11 @@ async fn main() -> Result<(), BoxError> {
         .with_web3_client(Arc::new(Web3SDK::from_web3(Arc::new(web3.clone()))))
         .with_model(model)
         .with_store(Store::new(object_store))
-        .with_management(ManagementBuilder::new(Visibility::Public, my_principal))
+        .with_management(Arc::new(BaseManagement {
+            controller: my_principal,
+            managers: BTreeSet::new(),
+            visibility: Visibility::Public,
+        }))
         .register_tools(agent.tools()?)?
         .register_agent(agent)?
         .export_tools(vec![BalanceOfTool::NAME.to_string()]);

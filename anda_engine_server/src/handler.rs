@@ -1,4 +1,4 @@
-use anda_core::{AgentInput, ToolInput, Value};
+use anda_core::{AgentInput, Json, ToolInput};
 use anda_engine::engine::Engine;
 use axum::{
     extract::{Path, State},
@@ -165,7 +165,7 @@ async fn engine_run(
             Ok(to_cbor_bytes(&res).into())
         }
         "tool_call" => {
-            let args: (ToolInput<Value>,) = from_reader(req.params.as_slice())
+            let args: (ToolInput<Json>,) = from_reader(req.params.as_slice())
                 .map_err(|err| format!("failed to decode params: {err:?}"))?;
             let res = engine
                 .tool_call(caller, args.0)

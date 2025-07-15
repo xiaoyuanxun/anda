@@ -13,6 +13,9 @@ license.workspace = true
 anda_core = { path = "../anda_core", version = "0.7" }
 anda_cloud_cdk = { workspace = true }
 async-trait = { workspace = true }
+anda_db_schema = { workspace = true }
+anda_db = { workspace = true }
+anda_db_tfs = { workspace = true }
 candid = { workspace = true }
 bytes = { workspace = true }
 ciborium = { workspace = true }
@@ -28,6 +31,7 @@ ic_cose = { workspace = true }
 ic_cose_types = { workspace = true }
 ic_tee_cdk = { workspace = true }
 ic_tee_gateway_sdk = { workspace = true }
+parking_lot = { workspace = true }
 tokio-util = { workspace = true }
 structured-logger = { workspace = true }
 schemars = { workspace = true }

@@ -25,8 +25,8 @@
 
 use anda_core::{
     ANONYMOUS, BaseContext, BoxError, CacheExpiry, CacheFeatures, CacheStoreFeatures,
-    CancellationToken, CanisterCaller, HttpFeatures, KeysFeatures, ObjectMeta, Path, PutMode,
-    PutResult, RequestMeta, StateFeatures, StoreFeatures, ToolInput, ToolOutput, Value,
+    CancellationToken, CanisterCaller, HttpFeatures, Json, KeysFeatures, ObjectMeta, Path, PutMode,
+    PutResult, RequestMeta, StateFeatures, StoreFeatures, ToolInput, ToolOutput,
     derivation_path_with,
 };
 use bytes::Bytes;
@@ -186,7 +186,7 @@ impl BaseCtx {
     pub(crate) fn self_meta(&self, target: Principal) -> RequestMeta {
         RequestMeta {
             engine: Some(target),
-            thread: self.meta.thread.clone(),
+            thread: None,
             user: Some(self.name.clone()),
         }
     }
@@ -204,8 +204,8 @@ impl BaseContext for BaseCtx {
     async fn remote_tool_call(
         &self,
         endpoint: &str,
-        mut args: ToolInput<Value>,
-    ) -> Result<ToolOutput<Value>, BoxError> {
+        mut args: ToolInput<Json>,
+    ) -> Result<ToolOutput<Json>, BoxError> {
         let target = self
             .remote
             .get_id_by_endpoint(endpoint)
