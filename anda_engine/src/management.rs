@@ -1,6 +1,7 @@
-use anda_core::{ANONYMOUS, BoxError, Xid};
+use anda_core::{BoxError, Xid};
 use async_trait::async_trait;
 use candid::Principal;
+use ic_auth_verifier::ANONYMOUS_PRINCIPAL;
 use std::collections::BTreeSet;
 
 mod db;
@@ -71,7 +72,7 @@ impl Management for BaseManagement {
     }
 
     fn check_visibility(&self, caller: &Principal) -> Result<Visibility, BoxError> {
-        if self.visibility != Visibility::Public && caller == &ANONYMOUS {
+        if self.visibility != Visibility::Public && caller == &ANONYMOUS_PRINCIPAL {
             return Err("anonymous caller not allowed".into());
         }
 

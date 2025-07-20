@@ -26,8 +26,6 @@ pub use embedding::*;
 pub use resource::*;
 // pub use thread::*;
 
-pub const ANONYMOUS: Principal = Principal::anonymous();
-
 /// Represents a request to an agent for processing.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct AgentInput {
@@ -221,7 +219,7 @@ pub struct FunctionDefinition {
     pub parameters: Value,
 
     /// Whether to enable strict schema adherence when generating the function call. If set to true, the model will follow the exact schema defined in the parameters field. Only a subset of JSON Schema is supported when strict is true.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strict: Option<bool>,
 }
 

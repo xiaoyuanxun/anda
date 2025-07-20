@@ -20,10 +20,7 @@ pub struct AndaManagement {
 }
 
 impl AndaManagement {
-    pub async fn connect<F>(base: BaseManagement, db: Arc<AndaDB>) -> Result<Self, BoxError>
-    where
-        F: AsyncFnOnce(&AndaManagement) -> Result<(), BoxError>,
-    {
+    pub async fn connect(base: BaseManagement, db: Arc<AndaDB>) -> Result<Self, BoxError> {
         let schema = User::schema()?;
         let users = db
             .open_or_create_collection(

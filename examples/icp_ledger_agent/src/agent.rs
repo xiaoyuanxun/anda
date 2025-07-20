@@ -1,8 +1,11 @@
 use anda_core::{
-    ANONYMOUS, Agent, AgentContext, AgentOutput, BoxError, CanisterCaller, CompletionFeatures,
+    Agent, AgentContext, AgentOutput, BoxError, CanisterCaller, CompletionFeatures,
     CompletionRequest, Resource, StateFeatures, ToolSet,
 };
-use anda_engine::context::{AgentCtx, BaseCtx};
+use anda_engine::{
+    ANONYMOUS,
+    context::{AgentCtx, BaseCtx},
+};
 use anda_icp::ledger::{BalanceOfTool, ICPLedgers, TransferTool};
 use candid::Principal;
 use std::{collections::BTreeSet, sync::Arc};

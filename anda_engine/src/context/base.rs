@@ -24,10 +24,9 @@
 //! - Time tracking for operation duration.
 
 use anda_core::{
-    ANONYMOUS, BaseContext, BoxError, CacheExpiry, CacheFeatures, CacheStoreFeatures,
-    CancellationToken, CanisterCaller, HttpFeatures, Json, KeysFeatures, ObjectMeta, Path, PutMode,
-    PutResult, RequestMeta, StateFeatures, StoreFeatures, ToolInput, ToolOutput,
-    derivation_path_with,
+    BaseContext, BoxError, CacheExpiry, CacheFeatures, CacheStoreFeatures, CancellationToken,
+    CanisterCaller, HttpFeatures, Json, KeysFeatures, ObjectMeta, Path, PutMode, PutResult,
+    RequestMeta, StateFeatures, StoreFeatures, ToolInput, ToolOutput, derivation_path_with,
 };
 use bytes::Bytes;
 use candid::{CandidType, Principal, utils::ArgumentEncoder};
@@ -94,7 +93,7 @@ impl BaseCtx {
         Self {
             id,
             name: name.clone(),
-            caller: ANONYMOUS,
+            caller: Principal::anonymous(),
             path: Path::default(),
             cancellation_token,
             start_at: Instant::now(),

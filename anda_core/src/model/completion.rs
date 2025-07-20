@@ -1,3 +1,4 @@
+use anda_db_schema::{FieldType, FieldTyped};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, convert::Infallible, str::FromStr};
 
@@ -102,7 +103,7 @@ impl CompletionRequest {
 }
 
 /// Represents a message send to LLM for completion.
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, FieldTyped)]
 pub struct Message {
     /// Message role: "system", "user", "assistant", "tool".
     pub role: String,

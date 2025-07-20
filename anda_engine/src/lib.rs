@@ -1,9 +1,11 @@
+use candid::Principal;
 use rand::Rng;
 
 pub mod context;
 pub mod engine;
 pub mod extension;
 pub mod management;
+pub mod memory;
 pub mod model;
 pub mod store;
 
@@ -12,6 +14,9 @@ pub use structured_logger::unix_ms;
 
 /// Generates N random bytes
 pub use ic_cose::rand_bytes;
+
+/// This is used to represent unauthenticated or anonymous users in the system.
+pub const ANONYMOUS: Principal = Principal::anonymous();
 
 pub static APP_USER_AGENT: &str = concat!(
     "Mozilla/5.0 anda.bot ",

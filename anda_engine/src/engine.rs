@@ -720,7 +720,7 @@ impl EngineBuilder {
             .collect();
         names.insert(Path::from(SYSTEM_PATH));
         let ctx = BaseCtx::new(
-            anda_core::ANONYMOUS,
+            Principal::anonymous(),
             "Mocker".to_string(),
             self.cancellation_token,
             names,
