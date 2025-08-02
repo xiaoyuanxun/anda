@@ -450,7 +450,6 @@ impl Agent<AgentCtx> for CharacterAgent {
         if content_quality > ContentQuality::Ignore {
             let content = prompt.clone();
             let ctx = ctx.clone();
-            let user = meta.user.clone().unwrap_or("anonymous".to_string());
             let segmenter = self.segmenter.clone();
 
             // save high quality content to knowledge store in background
