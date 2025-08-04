@@ -421,7 +421,7 @@ impl CompletionFeatures for AgentCtx {
         let mut usage = Usage::default();
         let mut resources = resources.unwrap_or_default();
         loop {
-            let mut resources_out: Vec<Resource> = Vec::new();
+            let mut artifacts: Vec<Resource> = Vec::new();
             let mut output = self.model.completion(req.clone()).await?;
             usage.accumulate(&output.usage);
             // automatically executes tools calls
@@ -462,9 +462,9 @@ impl CompletionFeatures for AgentCtx {
                                     tool_call_id: Some(tool.id.clone()),
                                 }));
 
-                                if let Some(resource) = res.resources {
-                                    resources_out.extend(resource);
-                                    res.resources = None;
+                                if let Some(mut vals) = res.artifacts {
+                                    artifacts.append(&mut vals);
+                                    res.artifacts = None;
                                 }
 
                                 tool.result = Some(serde_json::to_value(&res)?);
@@ -503,9 +503,9 @@ impl CompletionFeatures for AgentCtx {
                                     tool_call_id: Some(tool.id.clone()),
                                 }));
 
-                                if let Some(resource) = res.resources {
-                                    resources_out.extend(resource);
-                                    res.resources = None;
+                                if let Some(mut vals) = res.artifacts {
+                                    artifacts.append(&mut vals);
+                                    res.artifacts = None;
                                 }
 
                                 tool.result = Some(serde_json::to_value(&res)?);
@@ -529,10 +529,10 @@ impl CompletionFeatures for AgentCtx {
                 } else {
                     Some(tool_calls_result)
                 };
-                output.resources = if resources_out.is_empty() {
+                output.artifacts = if artifacts.is_empty() {
                     None
                 } else {
-                    Some(resources_out)
+                    Some(artifacts)
                 };
 
                 output.usage = usage;
@@ -544,8 +544,8 @@ impl CompletionFeatures for AgentCtx {
             req.prompt = "".to_string();
             req.chat_history = output.full_history.unwrap_or_default();
             req.chat_history.append(&mut tool_calls_continue);
-            if !resources_out.is_empty() {
-                resources = resources_out;
+            if !artifacts.is_empty() {
+                resources = artifacts;
             }
         }
     }

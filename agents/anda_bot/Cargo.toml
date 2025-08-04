@@ -15,16 +15,17 @@ anda_engine = { path = "../../anda_engine", version = "0.7" }
 anda_web3_client = { path = "../../anda_web3_client", version = "0.7" }
 anda_icp = { path = "../../tools/anda_icp", version = "0.7" }
 anda_engine_server = { path = "../../anda_engine_server", version = "0.7" }
+anda_object_store = { workspace = true }
 axum = { workspace = true }
+config = { workspace = true }
 candid = { workspace = true }
 clap = { workspace = true }
 dotenv = { workspace = true }
 serde = { workspace = true }
-http = { workspace = true }
+ic_auth_verifier = { workspace = true, features = ["full"] }
 ic_cose = { workspace = true }
 ic_cose_types = { workspace = true }
 ic_object_store = { workspace = true }
-ic-oss-types = { workspace = true }
 ic-agent = { workspace = true }
 ic_tee_agent = { workspace = true }
 tokio-util = { workspace = true }
@@ -33,9 +34,6 @@ toml = { workspace = true }
 tokio = { workspace = true }
 log = { workspace = true }
 hex = { workspace = true }
-ic_auth_verifier = { workspace = true, features = ["full"] }
-config = "0.15"
-anda_object_store = "0.1"
 
 [dev-dependencies]
 

@@ -122,7 +122,7 @@ where
 
             Ok(ToolOutput {
                 output,
-                resources: result.resources,
+                artifacts: result.artifacts,
                 usage: result.usage,
             })
         }

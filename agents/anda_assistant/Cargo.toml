@@ -1,0 +1,21 @@
+[package]
+name = "anda_assistant"
+description = "Anda -- an AI Assistant powered by the Knowledge Interaction Protocol (KIP)."
+repository = "https://github.com/ldclabs/anda/tree/main/agents/anda_assistant"
+publish = false
+version = "0.1.0"
+edition.workspace = true
+keywords.workspace = true
+categories.workspace = true
+license.workspace = true
+
+[dependencies]
+anda_core = { path = "../../anda_core", version = "0.7" }
+anda_engine = { path = "../../anda_engine", version = "0.7" }
+anda_cognitive_nexus = { workspace = true }
+anda_db = { workspace = true }
+anda_kip = { workspace = true }
+chrono = { workspace = true }
+log = { workspace = true }
+
+[dev-dependencies]
