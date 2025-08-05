@@ -255,6 +255,7 @@ impl CompletionFeaturesDyn for CompletionModel {
 
         Box::pin(async move {
             // Add system to chat history (if available)
+            let has_system = req.system.is_some();
             let mut full_history = if let Some(system) = &req.system {
                 vec![json!(Message {
                     role: "system".into(),
@@ -287,7 +288,7 @@ impl CompletionFeaturesDyn for CompletionModel {
 
             let mut body = json!({
                 "model": model,
-                "messages": full_history.clone(),
+                "messages": &full_history,
             });
 
             let body = body.as_object_mut().unwrap();
@@ -346,6 +347,9 @@ impl CompletionFeaturesDyn for CompletionModel {
                             if let Ok(val) = serde_json::to_string(&res) {
                                 log::debug!(response = val; "DeepSeek completions response");
                             }
+                        }
+                        if has_system {
+                            full_history.remove(0); // Remove system message from history
                         }
                         res.try_into(full_history)
                     }

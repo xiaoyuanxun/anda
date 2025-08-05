@@ -21,6 +21,7 @@ use std::sync::Arc;
 /// using the provided tools.
 #[derive(Clone)]
 pub struct Assistant {
+    max_input_tokens: usize,
     memory: Arc<MemoryManagement>,
     tools: Vec<String>,
 }
@@ -55,10 +56,17 @@ impl Assistant {
         .await?;
         let memory = Arc::new(MemoryManagement::connect(Arc::new(nexus), db).await?);
         let tool_name = memory.name();
+
         Ok(Self {
+            max_input_tokens: 65535,
             memory,
             tools: vec![tool_name],
         })
+    }
+
+    pub fn with_max_input_tokens(&mut self, max_input_tokens: usize) -> &mut Self {
+        self.max_input_tokens = max_input_tokens;
+        self
     }
 
     pub fn tools(&self) -> Result<ToolSet<BaseCtx>, BoxError> {
@@ -108,7 +116,26 @@ impl Agent<AgentCtx> for Assistant {
         let start_time = unix_ms();
         let utc: DateTime<Utc> = DateTime::from_timestamp_millis(start_time as i64).unwrap();
         let primer = self.memory.describe_primer().await?;
+        let chats = self
+            .memory
+            .list_chats_by_user(caller, None, Some(42))
+            .await?;
+        let mut chat_history = chats
+            .into_iter()
+            .map(|chat| chat.messages)
+            .collect::<Vec<_>>();
+        let max_history_bytes = (self.max_input_tokens / 2) * 3; // Rough estimate of bytes per token
+        let mut writer: Vec<u8> = Vec::with_capacity(128);
+        let _ = serde_json::to_writer(&mut writer, &chat_history);
+        let mut history_bytes = writer.len();
+        while history_bytes > max_history_bytes && !chat_history.is_empty() {
+            writer.clear();
+            let _ = serde_json::to_writer(&mut writer, &chat_history.remove(0));
+            history_bytes = history_bytes.saturating_sub(writer.len());
+        }
 
+        let chat_history: Vec<Json> = chat_history.into_iter().flatten().collect();
+        let chat_history_len = chat_history.len();
         let req = CompletionRequest {
             system: Some(format!(
                 "{}\n{}\n---\nCurrent Time: {}",
@@ -118,19 +145,26 @@ impl Agent<AgentCtx> for Assistant {
             )),
             prompt,
             prompter_name: Some(format!("{}", caller)),
+            chat_history,
             tools: ctx.tool_definitions(Some(
                 &self.tools.iter().map(|v| v.as_str()).collect::<Vec<_>>(),
             )),
             tool_choice_required: false,
             ..Default::default()
         };
+
         let res = ctx.completion(req, None).await?;
         let end_time = unix_ms();
         let messages = res
             .full_history
             .as_ref()
-            .and_then(|v| v.split_first())
-            .map(|(_, msgs)| msgs)
+            .map(|msgs| {
+                if msgs.len() > chat_history_len {
+                    &msgs[chat_history_len..]
+                } else {
+                    msgs
+                }
+            })
             .unwrap_or(EMPTY_MESSAGES);
         let chat = ChatRef {
             _id: 0, // This will be set by the database

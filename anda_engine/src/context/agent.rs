@@ -539,7 +539,6 @@ impl CompletionFeatures for AgentCtx {
                 return Ok(output);
             }
 
-            req.system = None;
             req.documents.clear();
             req.prompt = "".to_string();
             req.chat_history = output.full_history.unwrap_or_default();

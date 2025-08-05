@@ -2,7 +2,7 @@
 name = "anda_assistant"
 description = "Anda -- an AI Assistant powered by the Knowledge Interaction Protocol (KIP)."
 repository = "https://github.com/ldclabs/anda/tree/main/agents/anda_assistant"
-publish = false
+publish = true
 version = "0.1.0"
 edition.workspace = true
 keywords.workspace = true
@@ -16,6 +16,7 @@ anda_cognitive_nexus = { workspace = true }
 anda_db = { workspace = true }
 anda_kip = { workspace = true }
 chrono = { workspace = true }
+serde_json = { workspace = true }
 log = { workspace = true }
 
 [dev-dependencies]
