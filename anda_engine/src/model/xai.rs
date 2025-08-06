@@ -132,18 +132,22 @@ impl CompletionResponse {
         full_history.push(json!(choice.message));
         let mut output = AgentOutput {
             content: choice.message.content.unwrap_or_default(),
-            tool_calls: choice.message.tool_calls.map(|tools| {
-                tools
-                    .into_iter()
-                    .map(|tc| ToolCall {
-                        id: tc.id,
-                        name: tc.function.name,
-                        args: tc.function.arguments,
-                        result: None,
-                    })
-                    .collect()
-            }),
-            full_history: Some(full_history),
+            tool_calls: choice
+                .message
+                .tool_calls
+                .map(|tools| {
+                    tools
+                        .into_iter()
+                        .map(|tc| ToolCall {
+                            id: tc.id,
+                            name: tc.function.name,
+                            args: tc.function.arguments,
+                            result: None,
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            full_history,
             ..Default::default()
         };
 
@@ -236,11 +240,11 @@ impl CompletionFeaturesDyn for CompletionModel {
 
         Box::pin(async move {
             // Add system to chat history (if available)
-            let has_system = req.system.is_some();
-            let mut full_history = if let Some(system) = &req.system {
+            let has_system = !req.system.is_empty();
+            let mut full_history = if has_system {
                 vec![json!(Message {
                     role: "system".into(),
-                    content: system.to_owned().into(),
+                    content: req.system.clone().into(),
                     name: req.system_name.clone(),
                     ..Default::default()
                 })]

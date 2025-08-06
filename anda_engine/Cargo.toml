@@ -21,9 +21,12 @@ anda_db_tfs = { workspace = true }
 candid = { workspace = true }
 bytes = { workspace = true }
 ciborium = { workspace = true }
+encoding_rs = { workspace = true }
 futures = { workspace = true }
 futures-util = { workspace = true }
+mime = { workspace = true }
 serde = { workspace = true }
+serde_bytes = { workspace = true }
 serde_json = { workspace = true }
 http = { workspace = true }
 object_store = { workspace = true }

@@ -122,7 +122,7 @@ impl Attention {
         }
 
         let req = CompletionRequest {
-            system: Some(format!(
+            system: format!(
                 "\
                 You are an expert evaluator for article content quality, specializing in assessing knowledge value. Your task is to analyze the provided article, classify its quality into three levels, and determine the appropriate storage and reward action.\n\n\
                 ## Evaluation criteria:\n\
@@ -133,7 +133,7 @@ impl Attention {
                 - {HIGH_REWARD_COMMAND}: The article has exceptional knowledge value, with deep insights, originality, and significant relevance.\n\
                 - {MEDIUM_REWARD_COMMAND}: The article has good knowledge value, meeting most criteria but with some areas for improvement.\n\
                 - {IGNORE_COMMAND}: The article does not meet the criteria for high or medium knowledge value and requires no action."
-            )),
+            ),
             prompt: format!(
                 "\
                 ## Evaluation Task:\n\
@@ -150,7 +150,7 @@ impl Attention {
             ..Default::default()
         };
 
-        match ctx.completion(req, None).await {
+        match ctx.completion(req, Vec::new()).await {
             Ok(AgentOutput { content, .. }) => {
                 if content.contains(HIGH_REWARD_COMMAND) {
                     ContentQuality::Exceptional
@@ -210,7 +210,7 @@ impl Attention {
         );
 
         let req = CompletionRequest {
-            system: Some(format!(
+            system: format!(
                 "\
                 You are an intelligent assistant monitoring a multi-user discussion. \
                 Your task is to determine whether to respond to messages based on their \
@@ -234,7 +234,7 @@ impl Attention {
                 - Meta-comments about your presence (\"Why is the bot here?\")\n\
                 - Incomplete/ambiguous messages\n\
                 "
-            )),
+            ),
             prompt: format!(
                 "\
                 **Conversation Topic:** `{}`\n\
@@ -267,7 +267,7 @@ impl Attention {
             ..Default::default()
         };
 
-        match ctx.completion(req, None).await {
+        match ctx.completion(req, Vec::new()).await {
             Ok(AgentOutput { content, .. }) => {
                 if content.contains(RESPOND_COMMAND) {
                     AttentionCommand::Respond
@@ -301,13 +301,13 @@ impl Attention {
         }
 
         let req = CompletionRequest {
-            system: Some("\
+            system: "\
             You are tasked with deciding whether to like a post. Your decision should be based on the following criteria:\n\
             - Positivity: Does the post convey a positive or uplifting tone?\n\
             - Interest: Is the tweet engaging, thought-provoking, or entertaining, and does it align with the user's specified interests?\n\
             - Relevance: Is the tweet aligned with your assigned context or the user's preferences?\n\n\
             If the post meets at least two of these criteria, respond with 'true'. Otherwise, respond with 'false'.
-            ".to_string()),
+            ".to_string(),
             prompt: format!("\
                 ## Post Content:\n{:?}\n\n\
                 ## User Interests:\n{:?}\n\n\
@@ -320,7 +320,7 @@ impl Attention {
             ..Default::default()
         };
 
-        match ctx.completion(req, None).await {
+        match ctx.completion(req, Vec::new()).await {
             Ok(AgentOutput { content, .. }) => content.to_ascii_lowercase().contains("true"),
             Err(_) => false,
         }
@@ -341,13 +341,13 @@ impl Attention {
         }
 
         let req = CompletionRequest {
-            system: Some("\
+            system: "\
             You are tasked with deciding whether to retweet a post. Your decision should be based on the following criteria:\n\
             - High Value: Does the post provide significant knowledge, insights, or meaningful contributions?\n\
             - Interest: Is the post highly engaging, thought-provoking, or likely to resonate with a broader audience?\n\
             - Alignment: Does the post reflect your values, beliefs, or the message you want to amplify?\n\n\
             Retweet only if the post strongly satisfies at least one of these criteria.\
-            ".to_string()),
+            ".to_string(),
             prompt: format!("\
                 ## Post Content:\n{:?}\n\n\
                 ## Decision Task:\n\
@@ -358,7 +358,7 @@ impl Attention {
             ..Default::default()
         };
 
-        match ctx.completion(req, None).await {
+        match ctx.completion(req, Vec::new()).await {
             Ok(AgentOutput { content, .. }) => content.to_ascii_lowercase().contains("true"),
             Err(_) => false,
         }
@@ -379,7 +379,7 @@ impl Attention {
         }
 
         let req = CompletionRequest {
-            system: Some("\
+            system: "\
                 You are a **high-precision content evaluation engine** tasked with determining \
                 whether a tweet warrants being quoted. Implement rigorous analysis through \
                 three sequential phases:\n\n\
@@ -411,7 +411,6 @@ impl Attention {
                 - 🚫 Otherwise return 'false'\n\
                 "
                 .to_string(),
-            ),
             prompt: format!("\
                 - **Tweet Content:**\n{:?}\n\n\
                 **Execution Protocol:**\n\
@@ -424,7 +423,7 @@ impl Attention {
             ..Default::default()
         };
 
-        match ctx.completion(req, None).await {
+        match ctx.completion(req, Vec::new()).await {
             Ok(AgentOutput { content, .. }) => content.to_ascii_lowercase().contains("true"),
             Err(_) => false,
         }

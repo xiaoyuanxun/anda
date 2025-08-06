@@ -274,7 +274,7 @@ impl Character {
         );
 
         CompletionRequest {
-            system: Some(system),
+            system,
             prompt,
             prompter_name,
             temperature: Some(1.0),
@@ -364,7 +364,7 @@ impl CharacterAgent {
             ctx.meta().user.clone(),
         );
 
-        match ctx.completion(req, None).await {
+        match ctx.completion(req, Vec::new()).await {
             Ok(AgentOutput { content, .. }) => content.to_ascii_lowercase().contains("true"),
             Err(_) => false,
         }
@@ -397,7 +397,7 @@ impl Agent<AgentCtx> for CharacterAgent {
         &self,
         ctx: AgentCtx,
         prompt: String,
-        _resources: Option<Vec<Resource>>,
+        _resources: Vec<Resource>,
     ) -> Result<AgentOutput, BoxError> {
         // read chat history from store
         let meta = ctx.meta();
@@ -494,7 +494,7 @@ impl Agent<AgentCtx> for CharacterAgent {
             });
 
             // tools will be auto called in completion
-            let res = ctx.completion(req, None).await?;
+            let res = ctx.completion(req, Vec::new()).await?;
             if res.failed_reason.is_none() {
                 if !res.content.is_empty() {
                     chat.push(Message {
@@ -527,7 +527,7 @@ impl Agent<AgentCtx> for CharacterAgent {
 
             Ok(res)
         } else {
-            ctx.completion(req, None).await
+            ctx.completion(req, Vec::new()).await
         }
     }
 }
@@ -543,6 +543,6 @@ mod tests {
         let character = std::fs::read_to_string(character_path).expect("Character file not found");
         let character = Character::from_toml(&character).expect("Character should parse");
         let req = character.to_request("Who are you?".to_string(), None);
-        println!("{}\n", req.system.as_ref().unwrap());
+        println!("{}\n", req.system);
     }
 }

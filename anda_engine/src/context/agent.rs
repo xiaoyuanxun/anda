@@ -188,13 +188,14 @@ impl AgentContext for AgentCtx {
         &self,
         name: &str,
         resources: &mut Vec<Resource>,
-    ) -> Option<Vec<Resource>> {
+    ) -> Vec<Resource> {
         if !name.starts_with("RT_") {
             return self.tools.select_resources(name, resources);
         }
 
-        if let Some(res) = self.base.remote.select_tool_resources(name, resources) {
-            return Some(res);
+        let res = self.base.remote.select_tool_resources(name, resources);
+        if !res.is_empty() {
+            return res;
         }
 
         if let Ok((engines, _)) = self
@@ -204,7 +205,7 @@ impl AgentContext for AgentCtx {
             return engines.select_tool_resources(name, resources);
         }
 
-        None
+        Vec::new()
     }
 
     /// Retrieves definitions for available agents.
@@ -269,7 +270,7 @@ impl AgentContext for AgentCtx {
         &self,
         name: &str,
         resources: &mut Vec<Resource>,
-    ) -> Option<Vec<Resource>> {
+    ) -> Vec<Resource> {
         if !name.starts_with("RA_") {
             let name = name.strip_prefix("LA_").unwrap_or(name);
             return self
@@ -277,8 +278,9 @@ impl AgentContext for AgentCtx {
                 .select_resources(&name.to_ascii_lowercase(), resources);
         }
 
-        if let Some(res) = self.base.remote.select_agent_resources(name, resources) {
-            return Some(res);
+        let res = self.base.remote.select_agent_resources(name, resources);
+        if !res.is_empty() {
+            return res;
         }
 
         if let Ok((engines, _)) = self
@@ -288,7 +290,7 @@ impl AgentContext for AgentCtx {
             return engines.select_agent_resources(name, resources);
         }
 
-        None
+        Vec::new()
     }
 
     /// Executes a tool call with the given arguments
@@ -415,125 +417,104 @@ impl CompletionFeatures for AgentCtx {
     async fn completion(
         &self,
         mut req: CompletionRequest,
-        resources: Option<Vec<Resource>>,
+        mut resources: Vec<Resource>,
     ) -> Result<AgentOutput, BoxError> {
         let mut tool_calls_result: Vec<ToolCall> = Vec::new();
         let mut usage = Usage::default();
-        let mut resources = resources.unwrap_or_default();
+        let mut artifacts: Vec<Resource> = Vec::new();
+
         loop {
-            let mut artifacts: Vec<Resource> = Vec::new();
             let mut output = self.model.completion(req.clone()).await?;
             usage.accumulate(&output.usage);
             // automatically executes tools calls
             let mut tool_calls_continue: Vec<Json> = Vec::new();
-            if let Some(tool_calls) = &mut output.tool_calls {
-                for tool in tool_calls.iter_mut() {
-                    if !req.tools.iter().any(|t| t.name == tool.name) {
-                        // tool already called, skip
-                        continue;
-                    }
-
-                    // remove called tool from req.tools
-                    req.tools.retain(|t| t.name != tool.name);
-                    if self.tools.contains(&tool.name) || tool.name.starts_with("RT_") {
-                        match self
-                            .tool_call(ToolInput {
-                                name: tool.name.clone(),
-                                args: serde_json::from_str(&tool.args)?,
-                                resources: self
-                                    .select_tool_resources(&tool.name, &mut resources)
-                                    .await,
-                                meta: Some(self.meta().clone()),
-                            })
-                            .await
-                        {
-                            Ok(mut res) => {
-                                usage.accumulate(&res.usage);
-                                let content: Json = if res.output.is_string() {
-                                    res.output.clone()
-                                } else {
-                                    serde_json::to_string(&res.output)?.into()
-                                };
-
-                                tool_calls_continue.push(json!(Message {
-                                    role: "tool".to_string(),
-                                    content,
-                                    name: None,
-                                    tool_call_id: Some(tool.id.clone()),
-                                }));
-
-                                if let Some(mut vals) = res.artifacts {
-                                    artifacts.append(&mut vals);
-                                    res.artifacts = None;
-                                }
-
-                                tool.result = Some(serde_json::to_value(&res)?);
-                            }
-                            Err(err) => {
-                                output.failed_reason = Some(err.to_string());
-                                output.usage = usage;
-                                return Ok(output);
-                            }
-                        }
-                    } else if self.agents.contains(&tool.name)
-                        || tool.name.starts_with("LA_")
-                        || tool.name.starts_with("RA_")
-                    {
-                        let args: AgentArgs = serde_json::from_str(&tool.args)?;
-                        match self
-                            .agent_run(AgentInput {
-                                name: tool.name.clone(),
-                                prompt: args.prompt,
-                                resources: self.agents.select_resources(&tool.name, &mut resources),
-                                meta: Some(self.meta().clone()),
-                            })
-                            .await
-                        {
-                            Ok(mut res) => {
-                                usage.accumulate(&res.usage);
-                                if res.failed_reason.is_some() {
-                                    output.failed_reason = res.failed_reason;
-                                    return Ok(output);
-                                }
-
-                                tool_calls_continue.push(json!(Message {
-                                    role: "tool".to_string(),
-                                    content: res.content.clone().into(),
-                                    name: None,
-                                    tool_call_id: Some(tool.id.clone()),
-                                }));
-
-                                if let Some(mut vals) = res.artifacts {
-                                    artifacts.append(&mut vals);
-                                    res.artifacts = None;
-                                }
-
-                                tool.result = Some(serde_json::to_value(&res)?);
-                            }
-                            Err(err) => {
-                                output.failed_reason = Some(err.to_string());
-                                output.usage = usage;
-                                return Ok(output);
-                            }
-                        }
-                    }
-                    // ignore unknown tool
+            for tool in output.tool_calls.iter_mut() {
+                if !req.tools.iter().any(|t| t.name == tool.name) {
+                    // tool already called, skip
+                    continue;
                 }
 
-                tool_calls_result.append(tool_calls);
+                // remove called tool from req.tools
+                req.tools.retain(|t| t.name != tool.name);
+                if self.tools.contains(&tool.name) || tool.name.starts_with("RT_") {
+                    match self
+                        .tool_call(ToolInput {
+                            name: tool.name.clone(),
+                            args: serde_json::from_str(&tool.args)?,
+                            resources: self.select_tool_resources(&tool.name, &mut resources).await,
+                            meta: Some(self.meta().clone()),
+                        })
+                        .await
+                    {
+                        Ok(mut res) => {
+                            usage.accumulate(&res.usage);
+                            let content: Json = if res.output.is_string() {
+                                res.output.clone()
+                            } else {
+                                serde_json::to_string(&res.output)?.into()
+                            };
+
+                            tool_calls_continue.push(json!(Message {
+                                role: "tool".to_string(),
+                                content,
+                                name: None,
+                                tool_call_id: Some(tool.id.clone()),
+                            }));
+
+                            artifacts.append(&mut res.artifacts);
+                            tool.result = Some(serde_json::to_value(&res)?);
+                        }
+                        Err(err) => {
+                            output.failed_reason = Some(err.to_string());
+                            output.usage = usage;
+                            return Ok(output);
+                        }
+                    }
+                } else if self.agents.contains(&tool.name)
+                    || tool.name.starts_with("LA_")
+                    || tool.name.starts_with("RA_")
+                {
+                    let args: AgentArgs = serde_json::from_str(&tool.args)?;
+                    match self
+                        .agent_run(AgentInput {
+                            name: tool.name.clone(),
+                            prompt: args.prompt,
+                            resources: self.agents.select_resources(&tool.name, &mut resources),
+                            meta: Some(self.meta().clone()),
+                        })
+                        .await
+                    {
+                        Ok(mut res) => {
+                            usage.accumulate(&res.usage);
+                            if res.failed_reason.is_some() {
+                                output.failed_reason = res.failed_reason;
+                                return Ok(output);
+                            }
+
+                            tool_calls_continue.push(json!(Message {
+                                role: "tool".to_string(),
+                                content: res.content.clone().into(),
+                                name: None,
+                                tool_call_id: Some(tool.id.clone()),
+                            }));
+
+                            artifacts.append(&mut res.artifacts);
+                            tool.result = Some(serde_json::to_value(&res)?);
+                        }
+                        Err(err) => {
+                            output.failed_reason = Some(err.to_string());
+                            output.usage = usage;
+                            return Ok(output);
+                        }
+                    }
+                }
+                // ignore unknown tool
             }
 
+            tool_calls_result.append(&mut output.tool_calls);
             if tool_calls_continue.is_empty() {
-                output.tool_calls = if tool_calls_result.is_empty() {
-                    None
-                } else {
-                    Some(tool_calls_result)
-                };
-                output.artifacts = if artifacts.is_empty() {
-                    None
-                } else {
-                    Some(artifacts)
-                };
+                output.tool_calls = tool_calls_result;
+                output.artifacts = artifacts;
 
                 output.usage = usage;
                 return Ok(output);
@@ -541,11 +522,8 @@ impl CompletionFeatures for AgentCtx {
 
             req.documents.clear();
             req.prompt = "".to_string();
-            req.chat_history = output.full_history.unwrap_or_default();
+            req.chat_history = output.full_history;
             req.chat_history.append(&mut tool_calls_continue);
-            if !artifacts.is_empty() {
-                resources = artifacts;
-            }
         }
     }
 }

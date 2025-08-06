@@ -332,7 +332,7 @@ mod tests {
         let client = Client::new(&api_key);
         let model = client.embedding_model(EMBED_MULTILINGUAL_V3);
         let req = character.to_request("Who are you?".into(), Some("AndaICP".into()));
-        let res = model.embed(vec![req.system.unwrap()]).await.unwrap();
+        let res = model.embed(vec![req.system]).await.unwrap();
         println!("{:?}", res);
     }
 }

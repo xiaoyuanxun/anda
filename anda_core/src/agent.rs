@@ -101,6 +101,12 @@ where
         Vec::new()
     }
 
+    /// Selects resources based on the agent's supported tags.
+    fn select_resources(&self, resources: &mut Vec<Resource>) -> Vec<Resource> {
+        let supported_tags = self.supported_resource_tags();
+        select_resources(resources, &supported_tags)
+    }
+
     /// Initializes the tool with the given context.
     /// It will be called once when building the Anda engine.
     fn init(&self, _ctx: C) -> impl Future<Output = Result<(), BoxError>> + Send {
@@ -126,7 +132,7 @@ where
         &self,
         ctx: C,
         prompt: String,
-        resources: Option<Vec<Resource>>,
+        resources: Vec<Resource>,
     ) -> impl Future<Output = Result<AgentOutput, BoxError>> + Send;
 }
 
@@ -152,7 +158,7 @@ where
         &self,
         ctx: C,
         prompt: String,
-        resources: Option<Vec<Resource>>,
+        resources: Vec<Resource>,
     ) -> BoxPinFut<Result<AgentOutput, BoxError>>;
 }
 
@@ -192,7 +198,7 @@ where
         &self,
         ctx: C,
         prompt: String,
-        resources: Option<Vec<Resource>>,
+        resources: Vec<Resource>,
     ) -> BoxPinFut<Result<AgentOutput, BoxError>> {
         let agent = self.0.clone();
         Box::pin(async move { agent.run(ctx, prompt, resources).await })
@@ -286,19 +292,14 @@ where
     }
 
     /// Extracts resources from the provided list based on the agent's supported tags.
-    pub fn select_resources(
-        &self,
-        name: &str,
-        resources: &mut Vec<Resource>,
-    ) -> Option<Vec<Resource>> {
-        self.set.get(name).and_then(|agent| {
-            let supported_tags = agent.supported_resource_tags();
-            let tags: &[&str] = &supported_tags
-                .iter()
-                .map(|s| s.as_str())
-                .collect::<Vec<&str>>();
-            select_resources(resources, tags)
-        })
+    pub fn select_resources(&self, name: &str, resources: &mut Vec<Resource>) -> Vec<Resource> {
+        self.set
+            .get(name)
+            .map(|agent| {
+                let supported_tags = agent.supported_resource_tags();
+                select_resources(resources, &supported_tags)
+            })
+            .unwrap_or_default()
     }
 
     /// Registers a new agent in the set.

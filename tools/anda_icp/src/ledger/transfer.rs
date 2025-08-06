@@ -90,7 +90,7 @@ impl Tool<BaseCtx> for TransferTool {
         &self,
         ctx: BaseCtx,
         data: Self::Args,
-        _resources: Option<Vec<Resource>>,
+        _resources: Vec<Resource>,
     ) -> Result<ToolOutput<Self::Output>, BoxError> {
         let (ledger, tx) = self
             .ledgers

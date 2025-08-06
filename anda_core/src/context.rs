@@ -83,7 +83,7 @@ pub trait AgentContext: BaseContext + CompletionFeatures + EmbeddingFeatures {
         &self,
         name: &str,
         resources: &mut Vec<Resource>,
-    ) -> impl Future<Output = Option<Vec<Resource>>> + Send;
+    ) -> impl Future<Output = Vec<Resource>> + Send;
 
     /// Retrieves definitions for available agents.
     ///
@@ -118,7 +118,7 @@ pub trait AgentContext: BaseContext + CompletionFeatures + EmbeddingFeatures {
         &self,
         name: &str,
         resources: &mut Vec<Resource>,
-    ) -> impl Future<Output = Option<Vec<Resource>>> + Send;
+    ) -> impl Future<Output = Vec<Resource>> + Send;
 
     /// Executes a local tool call.
     ///

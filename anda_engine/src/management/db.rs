@@ -104,6 +104,7 @@ impl Management for AndaManagement {
             name: "user".to_string(),
             path: user.to_text(),
             source: "not found in Btree index".into(),
+            _id: 0,
         })?;
 
         let user: User = self.users.get_as(id).await?;
@@ -125,6 +126,7 @@ impl Management for AndaManagement {
             name: "thread".to_string(),
             path: id.to_string(),
             source: "not found in Btree index".into(),
+            _id: 0,
         })?;
 
         let thread: Thread = self.threads.get_as(id).await?;

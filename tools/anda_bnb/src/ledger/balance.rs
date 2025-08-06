@@ -3,13 +3,13 @@
 //! This module provides functionality for querying account balances on the BNB Chain network.
 //! It implements the [`Tool`] trait to enable AI agents to interact with BNB Chain ledgers.
 
+use super::BNBLedgers;
 use anda_core::{BoxError, FunctionDefinition, Resource, Tool, ToolOutput, gen_schema_for};
 use anda_engine::context::BaseCtx;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::sync::Arc;
-use super::BNBLedgers;
 
 /// Arguments for the balance of an account for a token
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
@@ -76,16 +76,13 @@ impl Tool<BaseCtx> for BalanceOfTool {
         &self,
         ctx: BaseCtx,
         data: Self::Args,
-        _resources: Option<Vec<Resource>>,
+        _resources: Vec<Resource>,
     ) -> Result<ToolOutput<Self::Output>, BoxError> {
         let token_symbol = data.symbol.clone();
         let (address, amount) = self.ledgers.balance_of(ctx, data).await?;
         Ok(ToolOutput::new(format!(
             "Successful {} balance query, user address: {}, balance {}",
-            token_symbol,
-            address,
-            amount
+            token_symbol, address, amount
         )))
-
     }
 }

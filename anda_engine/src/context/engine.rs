@@ -212,22 +212,17 @@ impl RemoteEngines {
         &self,
         name: &str,
         resources: &mut Vec<Resource>,
-    ) -> Option<Vec<Resource>> {
+    ) -> Vec<Resource> {
         if name.strip_prefix("RT_").is_some() {
             for (_, engine) in self.engines.iter() {
                 for tool in engine.tools.iter() {
                     if tool.definition.name == name {
-                        let tags: &[&str] = &tool
-                            .supported_resource_tags
-                            .iter()
-                            .map(|s| s.as_str())
-                            .collect::<Vec<&str>>();
-                        return select_resources(resources, tags);
+                        return select_resources(resources, &tool.supported_resource_tags);
                     }
                 }
             }
         }
-        None
+        Vec::new()
     }
 
     /// Retrieves definitions for available agents in the remote engines.
@@ -291,20 +286,15 @@ impl RemoteEngines {
         &self,
         name: &str,
         resources: &mut Vec<Resource>,
-    ) -> Option<Vec<Resource>> {
+    ) -> Vec<Resource> {
         for (_, engine) in self.engines.iter() {
             for agent in engine.agents.iter() {
                 if agent.definition.name == name {
-                    let tags: &[&str] = &agent
-                        .supported_resource_tags
-                        .iter()
-                        .map(|s| s.as_str())
-                        .collect::<Vec<&str>>();
-                    return select_resources(resources, tags);
+                    return select_resources(resources, &agent.supported_resource_tags);
                 }
             }
         }
-        None
+        Vec::new()
     }
 }
 
@@ -366,7 +356,7 @@ impl Tool<BaseCtx> for RemoteTool {
         &self,
         ctx: BaseCtx,
         args: Self::Args,
-        resources: Option<Vec<Resource>>,
+        resources: Vec<Resource>,
     ) -> Result<ToolOutput<Self::Output>, BoxError> {
         ctx.remote_tool_call(
             &self.endpoint,
@@ -436,7 +426,7 @@ impl Agent<AgentCtx> for RemoteAgent {
         &self,
         ctx: AgentCtx,
         prompt: String,
-        resources: Option<Vec<Resource>>,
+        resources: Vec<Resource>,
     ) -> Result<AgentOutput, BoxError> {
         ctx.remote_agent_run(
             &self.endpoint,

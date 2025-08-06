@@ -1,5 +1,6 @@
 use anda_db_schema::{FieldType, FieldTyped};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::{collections::BTreeMap, convert::Infallible, str::FromStr};
 
 use crate::{AgentOutput, BoxError, FunctionDefinition, Json, Resource};
@@ -10,7 +11,7 @@ pub trait CompletionFeatures: Sized {
     fn completion(
         &self,
         req: CompletionRequest,
-        resources: Option<Vec<Resource>>,
+        resources: Vec<Resource>,
     ) -> impl Future<Output = Result<AgentOutput, BoxError>> + Send;
 }
 
@@ -18,7 +19,7 @@ pub trait CompletionFeatures: Sized {
 #[derive(Debug, Clone, Default)]
 pub struct CompletionRequest {
     /// The system message to be sent to the completion model provider, as the "system" role.
-    pub system: Option<String>,
+    pub system: String,
 
     /// The name of system role.
     pub system_name: Option<String>,
@@ -67,9 +68,8 @@ impl CompletionRequest {
     /// Adds a document to the request.
     pub fn context(mut self, id: String, text: String) -> Self {
         self.documents.0.push(Document {
-            id,
-            text,
-            ..Default::default()
+            content: text.into(),
+            metadata: BTreeMap::from([("id".to_string(), id.into())]),
         });
         self
     }
@@ -97,7 +97,7 @@ impl CompletionRequest {
         } else if self.prompt.is_empty() {
             Some(format!("{}", self.documents))
         } else {
-            Some(format!("{}\n---\n{}", self.documents, self.prompt))
+            Some(format!("{}\n---\n{}", self.prompt, self.documents))
         }
     }
 }
@@ -120,17 +120,29 @@ pub struct Message {
     pub tool_call_id: Option<String>,
 }
 
-/// Knowledge document with text and additional props.
-#[derive(Clone, Debug, Default)]
+/// A document with metadata and content.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Document {
-    /// The unique identifier for the document in local.
-    pub id: String,
+    /// The metadata of the document.
+    pub metadata: BTreeMap<String, Json>,
 
-    /// The text content of the document.
-    pub text: String,
+    /// The content of the document.
+    pub content: Json,
+}
 
-    /// Additional properties for the document.
-    pub metadata: BTreeMap<String, String>,
+impl From<&Resource> for Document {
+    fn from(res: &Resource) -> Self {
+        let mut metadata = BTreeMap::from([("_type".to_string(), "Resource".into())]);
+        if let Json::Object(mut val) = json!(res) {
+            val.remove("blob");
+            metadata.extend(val);
+        };
+
+        Self {
+            content: Json::Null,
+            metadata,
+        }
+    }
 }
 
 /// Collection of knowledge documents.
@@ -142,9 +154,11 @@ impl From<Vec<String>> for Documents {
         let mut docs = Vec::new();
         for (i, text) in texts.into_iter().enumerate() {
             docs.push(Document {
-                id: format!("doc_{}", i),
-                text,
-                metadata: BTreeMap::new(),
+                content: text.into(),
+                metadata: BTreeMap::from([
+                    ("_id".to_string(), i.into()),
+                    ("_type".to_string(), "Text".into()),
+                ]),
             });
         }
         Self(docs)
@@ -179,15 +193,7 @@ impl AsRef<Vec<Document>> for Documents {
 
 impl std::fmt::Display for Document {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "<doc id={:?}>", self.id)?;
-        if !self.metadata.is_empty() {
-            write!(f, "<meta ")?;
-            for (k, v) in &self.metadata {
-                write!(f, "{}={:?} ", k, v)?;
-            }
-            writeln!(f, "/>")?;
-        }
-        write!(f, "{:?}\n</doc>\n", self.text)
+        writeln!(f, "{}", json!(self))
     }
 }
 
@@ -256,7 +262,7 @@ impl FromStr for ContentPart {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::{json, to_string};
+    use serde_json::to_string;
 
     #[test]
     fn test_prompt() {
@@ -264,17 +270,16 @@ mod tests {
             prompt: "This is a test prompt.".to_string(),
             documents: vec![
                 Document {
-                    id: "1".to_string(),
-                    text: "Test document 1.".to_string(),
-                    metadata: BTreeMap::new(),
+                    metadata: BTreeMap::from([("_id".to_string(), 1.into())]),
+                    content: "Test document 1.".into(),
                 },
                 Document {
-                    id: "2".to_string(),
-                    text: "Test document 2.".to_string(),
                     metadata: BTreeMap::from([
-                        ("key".to_string(), "value".to_string()),
-                        ("a".to_string(), "b".to_string()),
+                        ("_id".to_string(), 2.into()),
+                        ("key".to_string(), "value".into()),
+                        ("a".to_string(), "b".into()),
                     ]),
+                    content: "Test document 2.".into(),
                 },
             ]
             .into(),
@@ -284,7 +289,7 @@ mod tests {
         println!("{}", prompt);
         assert_eq!(
             prompt,
-            "<attachments>\n<doc id=\"1\">\n\"Test document 1.\"\n</doc>\n<doc id=\"2\">\n<meta a=\"b\" key=\"value\" />\n\"Test document 2.\"\n</doc>\n</attachments>\n---\nThis is a test prompt."
+            "This is a test prompt.\n---\n<attachments>\n{\"content\":\"Test document 1.\",\"metadata\":{\"_id\":1}}\n{\"content\":\"Test document 2.\",\"metadata\":{\"_id\":2,\"a\":\"b\",\"key\":\"value\"}}\n</attachments>"
         );
 
         let msg = json!(Message {
@@ -295,7 +300,7 @@ mod tests {
         });
         assert_eq!(
             to_string(&msg).unwrap(),
-            r#"{"content":"<attachments>\n<doc id=\"1\">\n\"Test document 1.\"\n</doc>\n<doc id=\"2\">\n<meta a=\"b\" key=\"value\" />\n\"Test document 2.\"\n</doc>\n</attachments>\n---\nThis is a test prompt.","role":"user"}"#
+            r#"{"content":"This is a test prompt.\n---\n<attachments>\n{\"content\":\"Test document 1.\",\"metadata\":{\"_id\":1}}\n{\"content\":\"Test document 2.\",\"metadata\":{\"_id\":2,\"a\":\"b\",\"key\":\"value\"}}\n</attachments>","role":"user"}"#
         );
     }
 

@@ -78,6 +78,13 @@ where
         Vec::new()
     }
 
+    /// Selects resources based on the tool's supported tags.
+    /// This method filters the provided resources based on the tags that the tool supports.
+    fn select_resources(&self, resources: &mut Vec<Resource>) -> Vec<Resource> {
+        let supported_tags = self.supported_resource_tags();
+        select_resources(resources, &supported_tags)
+    }
+
     /// Initializes the tool with the given context.
     /// It will be called once when building the Anda engine.
     fn init(&self, _ctx: C) -> impl Future<Output = Result<(), BoxError>> + Send {
@@ -97,7 +104,7 @@ where
         &self,
         ctx: C,
         args: Self::Args,
-        resources: Option<Vec<Resource>>,
+        resources: Vec<Resource>,
     ) -> impl Future<Output = Result<ToolOutput<Self::Output>, BoxError>> + Send;
 
     /// Executes the tool with given context and arguments using raw JSON string
@@ -106,7 +113,7 @@ where
         &self,
         ctx: C,
         args: String,
-        resources: Option<Vec<Resource>>,
+        resources: Vec<Resource>,
     ) -> impl Future<Output = Result<ToolOutput<Json>, BoxError>> + Send {
         async move {
             let args: Self::Args = serde_json::from_str(&args)
@@ -149,7 +156,7 @@ where
         &self,
         ctx: C,
         args: String,
-        resources: Option<Vec<Resource>>,
+        resources: Vec<Resource>,
     ) -> BoxPinFut<Result<ToolOutput<Json>, BoxError>>;
 }
 
@@ -185,7 +192,7 @@ where
         &self,
         ctx: C,
         args: String,
-        resources: Option<Vec<Resource>>,
+        resources: Vec<Resource>,
     ) -> BoxPinFut<Result<ToolOutput<Json>, BoxError>> {
         let tool = self.0.clone();
         Box::pin(async move { tool.call_raw(ctx, args, resources).await })
@@ -275,19 +282,14 @@ where
     }
 
     /// Extracts resources from the provided list based on the tool's supported tags.
-    pub fn select_resources(
-        &self,
-        name: &str,
-        resources: &mut Vec<Resource>,
-    ) -> Option<Vec<Resource>> {
-        self.set.get(name).and_then(|tool| {
-            let supported_tags = tool.supported_resource_tags();
-            let tags: &[&str] = &supported_tags
-                .iter()
-                .map(|s| s.as_str())
-                .collect::<Vec<&str>>();
-            select_resources(resources, tags)
-        })
+    pub fn select_resources(&self, name: &str, resources: &mut Vec<Resource>) -> Vec<Resource> {
+        self.set
+            .get(name)
+            .map(|tool| {
+                let supported_tags = tool.supported_resource_tags();
+                select_resources(resources, &supported_tags)
+            })
+            .unwrap_or_default()
     }
 
     /// Adds a new tool to the set

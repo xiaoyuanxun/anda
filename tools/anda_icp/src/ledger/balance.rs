@@ -77,7 +77,7 @@ impl Tool<BaseCtx> for BalanceOfTool {
         &self,
         ctx: BaseCtx,
         data: Self::Args,
-        _resources: Option<Vec<Resource>>,
+        _resources: Vec<Resource>,
     ) -> Result<ToolOutput<Self::Output>, BoxError> {
         let (_, amount) = self.ledgers.balance_of(&ctx, data).await?;
         Ok(ToolOutput::new(amount))

@@ -6,15 +6,13 @@
 //! - Integration with BNB Chain standards
 //! - Atomic transfers with proper error handling
 
-use anda_core::{
-    BoxError, FunctionDefinition, Resource, Tool, ToolOutput, gen_schema_for,
-};
+use super::BNBLedgers;
+use anda_core::{BoxError, FunctionDefinition, Resource, Tool, ToolOutput, gen_schema_for};
 use anda_engine::context::BaseCtx;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
-use super::BNBLedgers;
 
 /// Arguments for transferring tokens to an account
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
@@ -87,13 +85,12 @@ impl Tool<BaseCtx> for TransferTool {
         &self,
         ctx: BaseCtx,
         data: Self::Args,
-        _resources: Option<Vec<Resource>>,
+        _resources: Vec<Resource>,
     ) -> Result<ToolOutput<Self::Output>, BoxError> {
         let (ledger, tx) = self.ledgers.transfer(ctx, data).await?;
         Ok(ToolOutput::new(format!(
             "Successful transfer, receipient address: {}, detail: https://www.bscscan.com/tx/{}",
-            ledger,
-            tx
+            ledger, tx
         )))
     }
 }

@@ -136,7 +136,7 @@ where
         &self,
         _ctx: BaseCtx,
         args: Self::Args,
-        _resources: Option<Vec<Resource>>,
+        _resources: Vec<Resource>,
     ) -> Result<ToolOutput<Self::Output>, BoxError> {
         Ok(ToolOutput::new(args))
     }
@@ -208,7 +208,7 @@ impl<T: JsonSchema + DeserializeOwned + Serialize + Send + Sync> Extractor<T> {
         prompt: String,
     ) -> Result<(T, AgentOutput), BoxError> {
         let req = CompletionRequest {
-            system: Some(self.system.clone()),
+            system: self.system.clone(),
             prompt,
             tools: vec![self.tool.definition()],
             tool_choice_required: true,
@@ -216,12 +216,10 @@ impl<T: JsonSchema + DeserializeOwned + Serialize + Send + Sync> Extractor<T> {
             ..Default::default()
         };
 
-        let mut res = ctx.completion(req, None).await?;
-        if let Some(tool_calls) = &mut res.tool_calls {
-            if let Some(tool) = tool_calls.iter_mut().next() {
-                let result = self.tool.submit(tool.args.clone())?;
-                return Ok((result, res));
-            }
+        let mut res = ctx.completion(req, Vec::new()).await?;
+        if let Some(tool) = res.tool_calls.iter_mut().next() {
+            let result = self.tool.submit(tool.args.clone())?;
+            return Ok((result, res));
         }
 
         Err(format!("extract with {} failed, no tool_calls", self.tool.name()).into())
@@ -244,7 +242,7 @@ where
         &self,
         ctx: AgentCtx,
         prompt: String,
-        _resources: Option<Vec<Resource>>,
+        _resources: Vec<Resource>,
     ) -> Result<AgentOutput, BoxError> {
         let (_, res) = self.extract(&ctx, prompt).await?;
         Ok(res)

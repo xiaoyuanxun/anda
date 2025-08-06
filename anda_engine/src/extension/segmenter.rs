@@ -114,12 +114,12 @@ impl DocumentSegmenter {
                 res,
                 AgentOutput {
                     content: "".to_string(),
-                    tool_calls: Some(vec![ToolCall {
+                    tool_calls: vec![ToolCall {
                         id: self.tool_name.clone(),
                         name: self.tool_name.clone(),
                         args: res_str.clone(),
                         result: Some(res_str.into()),
-                    }]),
+                    }],
                     ..Default::default()
                 },
             ));
@@ -164,7 +164,7 @@ impl Agent<AgentCtx> for DocumentSegmenter {
         &self,
         ctx: AgentCtx,
         prompt: String,
-        _resources: Option<Vec<Resource>>,
+        _resources: Vec<Resource>,
     ) -> Result<AgentOutput, BoxError> {
         let (_, res) = self.segment(&ctx, &prompt).await?;
         Ok(res)

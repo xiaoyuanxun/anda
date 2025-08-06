@@ -16,6 +16,7 @@ anda_cognitive_nexus = { workspace = true }
 anda_db = { workspace = true }
 anda_kip = { workspace = true }
 chrono = { workspace = true }
+ic_cose_types = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }
 

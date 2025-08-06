@@ -74,21 +74,16 @@ impl CompletionFeaturesDyn for MockImplemented {
     fn completion(&self, req: CompletionRequest) -> BoxPinFut<Result<AgentOutput, BoxError>> {
         Box::pin(futures::future::ready(Ok(AgentOutput {
             content: req.prompt.clone(),
-            tool_calls: if req.tools.is_empty() {
-                None
-            } else {
-                Some(
-                    req.tools
-                        .iter()
-                        .map(|tool| ToolCall {
-                            id: tool.name.clone(),
-                            name: tool.name.clone(),
-                            args: req.prompt.clone(),
-                            result: None,
-                        })
-                        .collect(),
-                )
-            },
+            tool_calls: req
+                .tools
+                .iter()
+                .map(|tool| ToolCall {
+                    id: tool.name.clone(),
+                    name: tool.name.clone(),
+                    args: req.prompt.clone(),
+                    result: None,
+                })
+                .collect(),
             ..Default::default()
         })))
     }

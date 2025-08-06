@@ -311,7 +311,7 @@ impl Engine {
             .run(ctx.clone(), input.prompt, input.resources)
             .await?;
         let mut output = self.hooks.on_agent_end(&ctx, &input.name, output).await?;
-        output.full_history = None; // clear full history
+        output.full_history.clear(); // clear full history
         Ok(output)
     }
 

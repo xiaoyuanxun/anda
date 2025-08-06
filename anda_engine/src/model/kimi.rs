@@ -129,18 +129,22 @@ impl CompletionResponse {
         full_history.push(json!(choice.message));
         let mut output = AgentOutput {
             content: choice.message.content.unwrap_or_default(),
-            tool_calls: choice.message.tool_calls.map(|tools| {
-                tools
-                    .into_iter()
-                    .map(|tc| ToolCall {
-                        id: tc.id,
-                        name: tc.function.name,
-                        args: tc.function.arguments,
-                        result: None,
-                    })
-                    .collect()
-            }),
-            full_history: Some(full_history),
+            tool_calls: choice
+                .message
+                .tool_calls
+                .map(|tools| {
+                    tools
+                        .into_iter()
+                        .map(|tc| ToolCall {
+                            id: tc.id,
+                            name: tc.function.name,
+                            args: tc.function.arguments,
+                            result: None,
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            full_history,
             usage: self
                 .usage
                 .as_ref()
@@ -238,7 +242,7 @@ impl CompletionFeatures for CompletionModel {
     async fn completion(
         &self,
         req: CompletionRequest,
-        _resources: Option<Vec<Resource>>,
+        _resources: Vec<Resource>,
     ) -> Result<AgentOutput, BoxError> {
         CompletionFeaturesDyn::completion(self, req).await
     }
@@ -251,11 +255,11 @@ impl CompletionFeaturesDyn for CompletionModel {
 
         Box::pin(async move {
             // Add system to chat history (if available)
-            let has_system = req.system.is_some();
-            let mut full_history = if let Some(system) = &req.system {
+            let has_system = !req.system.is_empty();
+            let mut full_history = if has_system {
                 vec![json!(Message {
                     role: "system".into(),
-                    content: system.to_owned().into(),
+                    content: req.system.clone().into(),
                     name: req.system_name.clone(),
                     ..Default::default()
                 })]
@@ -381,7 +385,7 @@ mod tests {
         let now = Instant::now();
         let model = client.completion_model(KIMI_K2);
         let req = character.to_request("I am Yan, glad to see you".into(), Some("Yan".into()));
-        let res = CompletionFeatures::completion(&model, req, None)
+        let res = CompletionFeatures::completion(&model, req, Vec::new())
             .await
             .unwrap();
         println!("{:#?}", res);

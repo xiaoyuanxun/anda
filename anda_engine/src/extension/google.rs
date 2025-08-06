@@ -79,7 +79,7 @@ pub struct GoogleSearchTool {
 }
 
 impl GoogleSearchTool {
-    const NAME: &'static str = "google_web_search";
+    pub const NAME: &'static str = "google_web_search";
     /// Creates a new GoogleSearchTool instance
     ///
     /// # Arguments
@@ -194,7 +194,7 @@ impl Tool<BaseCtx> for GoogleSearchTool {
         &self,
         ctx: BaseCtx,
         args: Self::Args,
-        _resources: Option<Vec<Resource>>,
+        _resources: Vec<Resource>,
     ) -> Result<ToolOutput<Self::Output>, BoxError> {
         let res = self.search(&ctx, args).await?;
         Ok(ToolOutput::new(res))

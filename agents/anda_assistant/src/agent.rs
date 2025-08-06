@@ -1,20 +1,25 @@
 use anda_cognitive_nexus::{CognitiveNexus, ConceptPK};
 use anda_core::{
-    Agent, AgentContext, AgentOutput, BoxError, CompletionFeatures, CompletionRequest, Json,
-    Resource, StateFeatures, Tool, ToolSet,
+    Agent, AgentContext, AgentOutput, BoxError, CompletionFeatures, CompletionRequest, Document,
+    Json, Resource, ResourceRef, StateFeatures, Tool, ToolSet, evaluate_tokens,
 };
-use anda_db::database::AndaDB;
+use anda_db::{database::AndaDB, error::DBError};
 use anda_engine::{
     ANONYMOUS,
     context::{AgentCtx, BaseCtx, Web3SDK},
-    memory::{ChatRef, MemoryManagement},
+    extension::fetch::FetchWebResourcesTool,
+    memory::{
+        ChatRef, GetResourceTool, ListConversationsTool, MemoryManagement, SearchConversationsTool,
+    },
     unix_ms,
 };
 use anda_kip::{
-    META_SELF_NAME, PERSON_SELF_KIP, PERSON_SYSTEM_KIP, PERSON_TYPE, SYSTEM_INSTRUCTIONS, parse_kml,
+    EVENT_KIP, META_SELF_NAME, PERSON_SELF_KIP, PERSON_SYSTEM_KIP, PERSON_TYPE,
+    SYSTEM_INSTRUCTIONS, parse_kml,
 };
 use chrono::prelude::*;
-use std::sync::Arc;
+use ic_cose_types::cose::sha3_256;
+use std::{collections::BTreeMap, sync::Arc};
 
 /// An AI agent implementation for interacting with ICP blockchain ledgers.
 /// This agent provides capabilities to check balances and transfer ICP tokens
@@ -25,8 +30,6 @@ pub struct Assistant {
     memory: Arc<MemoryManagement>,
     tools: Vec<String>,
 }
-
-static EMPTY_MESSAGES: &[Json] = &[];
 
 impl Assistant {
     pub const NAME: &'static str = "assistant";
@@ -44,6 +47,7 @@ impl Assistant {
                     &PERSON_SELF_KIP
                         .replace("$self_reserved_principal_id", my_id.to_string().as_str()),
                     PERSON_SYSTEM_KIP,
+                    EVENT_KIP,
                 ]
                 .join("\n");
 
@@ -54,13 +58,20 @@ impl Assistant {
             Ok(())
         })
         .await?;
+
         let memory = Arc::new(MemoryManagement::connect(Arc::new(nexus), db).await?);
-        let tool_name = memory.name();
+        let memory_name = memory.name();
 
         Ok(Self {
             max_input_tokens: 65535,
             memory,
-            tools: vec![tool_name],
+            tools: vec![
+                memory_name,
+                SearchConversationsTool::NAME.to_string(),
+                ListConversationsTool::NAME.to_string(),
+                GetResourceTool::NAME.to_string(),
+                FetchWebResourcesTool::NAME.to_string(),
+            ],
         })
     }
 
@@ -72,6 +83,10 @@ impl Assistant {
     pub fn tools(&self) -> Result<ToolSet<BaseCtx>, BoxError> {
         let mut tools = ToolSet::new();
         tools.add(self.memory.clone())?;
+        tools.add(SearchConversationsTool::new(self.memory.clone()))?;
+        tools.add(ListConversationsTool::new(self.memory.clone()))?;
+        tools.add(GetResourceTool::new(self.memory.clone()))?;
+        tools.add(FetchWebResourcesTool::new())?;
         Ok(tools)
     }
 }
@@ -93,6 +108,10 @@ impl Agent<AgentCtx> for Assistant {
         self.tools.clone()
     }
 
+    fn supported_resource_tags(&self) -> Vec<String> {
+        vec!["text".to_string()]
+    }
+
     /// Main execution method for the agent.
     ///
     /// # Arguments
@@ -106,7 +125,7 @@ impl Agent<AgentCtx> for Assistant {
         &self,
         ctx: AgentCtx,
         prompt: String,
-        resources: Option<Vec<Resource>>,
+        mut resources: Vec<Resource>,
     ) -> Result<AgentOutput, BoxError> {
         let caller = ctx.caller();
         if caller == &ANONYMOUS {
@@ -115,17 +134,26 @@ impl Agent<AgentCtx> for Assistant {
 
         let start_time = unix_ms();
         let utc: DateTime<Utc> = DateTime::from_timestamp_millis(start_time as i64).unwrap();
+        let utc = utc.to_rfc3339();
         let primer = self.memory.describe_primer().await?;
-        let chats = self
+        let system = format!(
+            "{}\n---\n# Your Identity & Knowledge Domain Map\n{}\n---\n# Current Time: {}",
+            SYSTEM_INSTRUCTIONS, primer, utc
+        );
+
+        let (chats, cursor) = self
             .memory
-            .list_chats_by_user(caller, None, Some(42))
+            .list_chats_by_user(caller, None, Some(3))
             .await?;
         let mut chat_history = chats
             .into_iter()
             .map(|chat| chat.messages)
             .collect::<Vec<_>>();
-        let max_history_bytes = (self.max_input_tokens / 2) * 3; // Rough estimate of bytes per token
-        let mut writer: Vec<u8> = Vec::with_capacity(128);
+        let max_history_bytes = self
+            .max_input_tokens
+            .saturating_sub((evaluate_tokens(&system) + evaluate_tokens(&prompt)) * 3)
+            * 3; // Rough estimate of bytes per token
+        let mut writer: Vec<u8> = Vec::with_capacity(256);
         let _ = serde_json::to_writer(&mut writer, &chat_history);
         let mut history_bytes = writer.len();
         while history_bytes > max_history_bytes && !chat_history.is_empty() {
@@ -136,16 +164,65 @@ impl Agent<AgentCtx> for Assistant {
 
         let chat_history: Vec<Json> = chat_history.into_iter().flatten().collect();
         let chat_history_len = chat_history.len();
+        let mut rs: Vec<Resource> = Vec::with_capacity(resources.len());
+        let mut docs: Vec<Document> = Vec::with_capacity(resources.len());
+        for r in resources.iter_mut() {
+            if let Some(blob) = &r.blob {
+                r.hash = Some(sha3_256(blob).into());
+            }
+            // TODO: check when no blob
+
+            if r.metadata.is_none() {
+                r.metadata = Some(serde_json::Map::new());
+            }
+
+            let meta = r.metadata.as_mut().unwrap();
+            meta.insert("user".to_string(), caller.to_string().into());
+            meta.insert("created_at".to_string(), utc.clone().into());
+
+            let rf: ResourceRef = (r as &Resource).into();
+            let id = if r._id > 0 {
+                r._id // TODO: check if the resource exists and has permission
+            } else {
+                match self.memory.add_resource(&rf).await {
+                    Ok(id) => id,
+                    Err(DBError::AlreadyExists { _id, .. }) => _id,
+                    Err(err) => Err(err)?,
+                }
+            };
+
+            let r2 = Resource {
+                _id: id,
+                blob: None,
+                ..r.clone()
+            };
+            docs.push((&r2).into());
+            rs.push(r2)
+        }
+
+        if !rs.is_empty() {
+            self.memory.flush_resources().await?;
+        }
+
+        if let Some(cursor) = cursor {
+            docs.push(Document {
+                content: cursor.into(),
+                metadata: BTreeMap::from([
+                    ("_type".to_string(), "Cursor".into()),
+                    (
+                        "description".to_string(),
+                        "List previous conversations with this cursor".into(),
+                    ),
+                ]),
+            })
+        }
+
         let req = CompletionRequest {
-            system: Some(format!(
-                "{}\n{}\n---\nCurrent Time: {}",
-                SYSTEM_INSTRUCTIONS,
-                primer,
-                utc.to_rfc3339()
-            )),
+            system,
             prompt,
             prompter_name: Some(format!("{}", caller)),
             chat_history,
+            documents: docs.into(),
             tools: ctx.tool_definitions(Some(
                 &self.tools.iter().map(|v| v.as_str()).collect::<Vec<_>>(),
             )),
@@ -153,26 +230,20 @@ impl Agent<AgentCtx> for Assistant {
             ..Default::default()
         };
 
-        let res = ctx.completion(req, None).await?;
+        let res = ctx.completion(req, resources).await?;
         let end_time = unix_ms();
-        let messages = res
-            .full_history
-            .as_ref()
-            .map(|msgs| {
-                if msgs.len() > chat_history_len {
-                    &msgs[chat_history_len..]
-                } else {
-                    msgs
-                }
-            })
-            .unwrap_or(EMPTY_MESSAGES);
+        let messages = if res.full_history.len() > chat_history_len {
+            &res.full_history[chat_history_len..]
+        } else {
+            &res.full_history
+        };
         let chat = ChatRef {
             _id: 0, // This will be set by the database
             user: caller,
             thread: None,
             messages,
-            resources: resources.as_ref().map(|v| v.as_ref()),
-            artifacts: res.artifacts.as_ref().map(|v| v.as_ref()),
+            resources: &rs,
+            artifacts: &res.artifacts,
             period: end_time / 3600 / 1000,
             start_time,
             end_time,
