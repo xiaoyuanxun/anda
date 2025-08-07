@@ -92,7 +92,7 @@ impl FetchWebResourcesTool {
 
         headers.insert(
             header::ACCEPT,
-            "text/html, application/json, */*;q=0.9"
+            "application/json, text/*, */*;q=0.9"
                 .parse()
                 .expect("invalid header value"),
         );

@@ -49,39 +49,80 @@ pub struct User {
     pub state: BTreeMap<String, Json>,
 }
 
+impl User {
+    pub fn new(id: Principal) -> Self {
+        Self {
+            _id: 0,
+            id,
+            features: BTreeSet::new(),
+            status: 0,
+            subscription_tier: 0,
+            subscription_expiry: 0,
+            credit_balance: 0,
+            credit_expiry: 0,
+            last_access: 0,
+            agent_requests: 0,
+            tool_requests: 0,
+            credit_consumed: 0,
+            state: BTreeMap::new(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct UserState {
     pub(crate) user: RwLock<User>,
 }
 
 impl UserState {
-    pub fn new(user: User) -> Self {
+    pub fn new(id: Principal) -> Self {
+        Self {
+            user: RwLock::new(User::new(id)),
+        }
+    }
+
+    pub(crate) fn with_user(user: User) -> Self {
         Self {
             user: RwLock::new(user),
         }
     }
 
-    /// Returns the user ID.
-    pub fn with_user<F, R>(&self, f: F) -> R
+    fn with<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&User) -> R,
     {
         f(&self.user.read())
     }
 
+    pub fn with_state<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&BTreeMap<String, Json>) -> R,
+    {
+        let user = self.user.read();
+        f(&user.state)
+    }
+
+    pub fn with_state_mut<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut BTreeMap<String, Json>) -> R,
+    {
+        let mut user = self.user.write();
+        f(&mut user.state)
+    }
+
     /// Returns the subscription tier and expiry.
     pub fn subscription(&self) -> (u8, u64) {
-        self.with_user(|user| (user.subscription_tier, user.subscription_expiry))
+        self.with(|user| (user.subscription_tier, user.subscription_expiry))
     }
 
     /// Returns the credit balance and expiry.
     pub fn credit(&self) -> (u64, u64) {
-        self.with_user(|user| (user.credit_balance, user.credit_expiry))
+        self.with(|user| (user.credit_balance, user.credit_expiry))
     }
 
     /// Checks if the user has permission to access the engine.
     pub fn has_permission(&self, caller: &Principal, now_ms: u64) -> bool {
-        self.with_user(|user| {
+        self.with(|user| {
             &user.id == caller
                 && user.status >= 0
                 && (user.subscription_expiry > now_ms

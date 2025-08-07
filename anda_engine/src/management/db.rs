@@ -20,7 +20,7 @@ pub struct AndaManagement {
 }
 
 impl AndaManagement {
-    pub async fn connect(base: BaseManagement, db: Arc<AndaDB>) -> Result<Self, BoxError> {
+    pub async fn connect(db: Arc<AndaDB>, base: BaseManagement) -> Result<Self, BoxError> {
         let schema = User::schema()?;
         let users = db
             .open_or_create_collection(
@@ -88,7 +88,7 @@ impl Management for AndaManagement {
         self.base.check_visibility(caller)
     }
 
-    async fn get_user(&self, user: &Principal) -> Result<UserState, BoxError> {
+    async fn load_user(&self, user: &Principal) -> Result<UserState, BoxError> {
         let mut ids = self
             .users
             .query_ids(
@@ -99,15 +99,14 @@ impl Management for AndaManagement {
                 None,
             )
             .await?;
-        let id = ids.pop().ok_or_else(|| DBError::NotFound {
-            name: "user".to_string(),
-            path: user.to_text(),
-            source: "not found in Btree index".into(),
-            _id: 0,
-        })?;
+
+        let id = match ids.pop() {
+            Some(id) => id,
+            None => self.users.add_from(&User::new(*user)).await?,
+        };
 
         let user: User = self.users.get_as(id).await?;
-        Ok(UserState::new(user))
+        Ok(UserState::with_user(user))
     }
 
     async fn get_thread(&self, id: &Xid) -> Result<Thread, BoxError> {

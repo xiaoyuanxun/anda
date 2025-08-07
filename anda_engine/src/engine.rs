@@ -77,7 +77,7 @@ pub trait Hook: Send + Sync {
         &self,
         _ctx: &AgentCtx,
         _agent: &str,
-        _state: Option<&UserState>,
+        _state: &UserState,
         _thread: Option<&Thread>,
     ) -> Result<(), BoxError> {
         Ok(())
@@ -98,7 +98,7 @@ pub trait Hook: Send + Sync {
         &self,
         _ctx: &BaseCtx,
         _tool: &str,
-        _state: Option<&UserState>,
+        _state: &UserState,
     ) -> Result<(), BoxError> {
         Ok(())
     }
@@ -142,7 +142,7 @@ impl Hook for Hooks {
         &self,
         ctx: &AgentCtx,
         agent: &str,
-        state: Option<&UserState>,
+        state: &UserState,
         thread: Option<&Thread>,
     ) -> Result<(), BoxError> {
         for hook in &self.hooks {
@@ -167,7 +167,7 @@ impl Hook for Hooks {
         &self,
         ctx: &BaseCtx,
         tool: &str,
-        state: Option<&UserState>,
+        state: &UserState,
     ) -> Result<(), BoxError> {
         for hook in &self.hooks {
             hook.on_tool_start(ctx, tool, state).await?;
@@ -229,6 +229,7 @@ impl Engine {
         &self,
         caller: Principal,
         agent_name: &str,
+        user: Arc<UserState>,
         meta: RequestMeta,
     ) -> Result<AgentCtx, BoxError> {
         let name = agent_name.to_ascii_lowercase();
@@ -236,7 +237,7 @@ impl Engine {
             return Err(format!("agent {} not found", name).into());
         }
 
-        self.ctx.child_with(caller, &name, meta)
+        self.ctx.child_with(caller, &name, user, meta)
     }
 
     /// Executes an agent with the specified parameters.
@@ -269,16 +270,15 @@ impl Engine {
             .ok_or_else(|| format!("agent {} not found", input.name))?;
 
         let visibility = self.management.check_visibility(&caller)?;
-        let user_state = if visibility == Visibility::Public || self.management.is_manager(&caller)
+        let now_ms = unix_ms();
+        let user_state = self.management.load_user(&caller).await?;
+        let user_state = Arc::new(user_state);
+        if visibility == Visibility::Protected
+            && !self.management.is_manager(&caller)
+            && !user_state.has_permission(&caller, now_ms)
         {
-            None
-        } else {
-            let us = self.management.get_user(&caller).await?;
-            if !us.has_permission(&caller, unix_ms()) {
-                return Err("caller does not have permission".into());
-            }
-            Some(us)
-        };
+            return Err("caller does not have permission".into());
+        }
 
         let thread = if let Some(id) = &meta.thread {
             let th = self.management.get_thread(id).await?;
@@ -290,22 +290,21 @@ impl Engine {
             None
         };
 
-        let ctx = self.ctx_with(caller, &input.name, meta)?;
+        let ctx = self.ctx_with(caller, &input.name, user_state.clone(), meta)?;
         self.hooks
             .on_agent_start(&ctx, &input.name, user_state.as_ref(), thread.as_ref())
             .await?;
 
-        if let Some(user_state) = &user_state {
-            // Increment agent requests for the user
-            user_state.increment_agent_requests(unix_ms());
-            // Save the user state after incrementing requests
-            self.management.update_user(user_state).await?;
-        }
+        // Increment agent requests for the user
+        user_state.increment_agent_requests(now_ms);
+        // Save the user state after incrementing requests
+        self.management.update_user(user_state.as_ref()).await?;
 
         let output = agent
             .run(ctx.clone(), input.prompt, input.resources)
             .await?;
         let mut output = self.hooks.on_agent_end(&ctx, &input.name, output).await?;
+        self.management.update_user(user_state.as_ref()).await?;
         output.full_history.clear(); // clear full history
         Ok(output)
     }
@@ -338,31 +337,31 @@ impl Engine {
             .ok_or_else(|| format!("tool {} not found", &input.name))?;
 
         let visibility = self.management.check_visibility(&caller)?;
-        let user_state = if visibility == Visibility::Public || self.management.is_manager(&caller)
+        let now_ms = unix_ms();
+        let user_state = self.management.load_user(&caller).await?;
+        let user_state = Arc::new(user_state);
+        if visibility == Visibility::Protected
+            && !self.management.is_manager(&caller)
+            && !user_state.has_permission(&caller, now_ms)
         {
-            None
-        } else {
-            let us = self.management.get_user(&caller).await?;
-            if !us.has_permission(&caller, unix_ms()) {
-                return Err("caller does not have permission".into());
-            }
-            Some(us)
-        };
+            return Err("caller does not have permission".into());
+        }
 
-        let ctx = self.ctx.child_base_with(caller, &input.name, meta)?;
+        let ctx = self
+            .ctx
+            .child_base_with(caller, &input.name, user_state.clone(), meta)?;
         self.hooks
             .on_tool_start(&ctx, &input.name, user_state.as_ref())
             .await?;
-
-        if let Some(user_state) = &user_state {
-            // Increment tool requests for the user
-            user_state.increment_tool_requests(unix_ms());
-            // Save the user state after incrementing requests
-            self.management.update_user(user_state).await?;
-        }
+        // Increment tool requests for the user
+        user_state.increment_tool_requests(now_ms);
+        // Save the user state after incrementing requests
+        self.management.update_user(user_state.as_ref()).await?;
 
         let output = tool.call(ctx.clone(), args, input.resources).await?;
-        self.hooks.on_tool_end(&ctx, &input.name, output).await
+        let res = self.hooks.on_tool_end(&ctx, &input.name, output).await?;
+        self.management.update_user(user_state.as_ref()).await?;
+        Ok(res)
     }
 
     /// Returns function definitions for the specified agents.
@@ -675,13 +674,14 @@ impl EngineBuilder {
         let ctx = AgentCtx::new(ctx, self.model, tools.clone(), agents.clone());
 
         let meta = RequestMeta::default();
+        let user_state = Arc::new(UserState::new(Principal::anonymous()));
         for (name, tool) in &tools.set {
-            let ct = ctx.child_base_with(id, name, meta.clone())?;
+            let ct = ctx.child_base_with(id, name, user_state.clone(), meta.clone())?;
             tool.init(ct).await?;
         }
 
         for (name, agent) in &agents.set {
-            let ct = ctx.child_with(id, name, meta.clone())?;
+            let ct = ctx.child_with(id, name, user_state.clone(), meta.clone())?;
             agent.init(ct).await?;
         }
 

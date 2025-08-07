@@ -32,7 +32,7 @@ use bytes::Bytes;
 use candid::{CandidType, Principal, utils::ArgumentEncoder};
 use serde::{Serialize, de::DeserializeOwned};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     future::Future,
     sync::Arc,
     time::{Duration, Instant},
@@ -46,7 +46,7 @@ use super::{
     cache::CacheService,
     web3::{Web3Client, Web3SDK},
 };
-use crate::store::Store;
+use crate::{management::UserState, store::Store};
 
 #[derive(Clone)]
 pub struct BaseCtx {
@@ -60,6 +60,7 @@ pub struct BaseCtx {
     pub(crate) web3: Arc<Web3SDK>,
     /// Registered remote engines for tool and agent execution.
     pub(crate) remote: Arc<RemoteEngines>,
+    pub(crate) user: Arc<UserState>,
     pub(crate) meta: RequestMeta,
 
     cache: Arc<CacheService>,
@@ -90,10 +91,11 @@ impl BaseCtx {
         store: Store,
         remote: Arc<RemoteEngines>,
     ) -> Self {
+        let caller = Principal::anonymous();
         Self {
             id,
             name: name.clone(),
-            caller: Principal::anonymous(),
+            caller,
             path: Path::default(),
             cancellation_token,
             start_at: Instant::now(),
@@ -102,6 +104,7 @@ impl BaseCtx {
             web3,
             depth: 0,
             remote,
+            user: Arc::new(UserState::new(caller)),
             meta: RequestMeta::default(),
         }
     }
@@ -133,6 +136,7 @@ impl BaseCtx {
             web3: self.web3.clone(),
             depth: self.depth + 1,
             remote: self.remote.clone(),
+            user: self.user.clone(),
             meta: self.meta.clone(),
         };
 
@@ -150,6 +154,7 @@ impl BaseCtx {
     /// # Arguments
     /// * `path` - New path for the child context;
     /// * `caller` - caller principal (or ANONYMOUS);
+    /// * `user` - user state;
     /// * `meta` - Metadata for the new context.
     ///
     /// # Errors
@@ -158,6 +163,7 @@ impl BaseCtx {
         &self,
         caller: Principal,
         path: String,
+        user: Arc<UserState>,
         meta: RequestMeta,
     ) -> Result<Self, BoxError> {
         let path = Path::parse(path)?;
@@ -173,6 +179,7 @@ impl BaseCtx {
             web3: self.web3.clone(),
             depth: self.depth + 1,
             remote: self.remote.clone(),
+            user,
             meta,
         };
 
@@ -188,6 +195,20 @@ impl BaseCtx {
             thread: None,
             user: Some(self.name.clone()),
         }
+    }
+
+    pub fn with_user_state<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&BTreeMap<String, Json>) -> R,
+    {
+        self.user.with_state(f)
+    }
+
+    pub fn with_user_state_mut<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut BTreeMap<String, Json>) -> R,
+    {
+        self.user.with_state_mut(f)
     }
 }
 

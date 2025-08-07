@@ -39,7 +39,7 @@ use serde_json::json;
 use std::{future::Future, sync::Arc, time::Duration};
 
 use super::{base::BaseCtx, engine::RemoteEngines};
-use crate::model::Model;
+use crate::{management::UserState, model::Model};
 
 pub static DYNAMIC_REMOTE_ENGINES: &str = "_engines";
 
@@ -109,12 +109,13 @@ impl AgentCtx {
         &self,
         caller: Principal,
         agent_name: &str,
+        user: Arc<UserState>,
         meta: RequestMeta,
     ) -> Result<Self, BoxError> {
         Ok(Self {
             base: self
                 .base
-                .child_with(caller, format!("A:{}", agent_name), meta)?,
+                .child_with(caller, format!("A:{}", agent_name), user, meta)?,
             model: self.model.clone(),
             tools: self.tools.clone(),
             agents: self.agents.clone(),
@@ -131,10 +132,11 @@ impl AgentCtx {
         &self,
         caller: Principal,
         tool_name: &str,
+        user: Arc<UserState>,
         meta: RequestMeta,
     ) -> Result<BaseCtx, BoxError> {
         self.base
-            .child_with(caller, format!("T:{}", tool_name), meta)
+            .child_with(caller, format!("T:{}", tool_name), user, meta)
     }
 }
 

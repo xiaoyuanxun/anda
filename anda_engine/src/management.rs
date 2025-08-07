@@ -20,12 +20,8 @@ pub trait Management: Send + Sync {
     fn is_manager(&self, caller: &Principal) -> bool;
     fn check_visibility(&self, caller: &Principal) -> Result<Visibility, BoxError>;
 
-    async fn get_user(&self, _caller: &Principal) -> Result<UserState, BoxError> {
-        Err("`get_user` is not implemented".into())
-    }
-
-    async fn add_user(&self, _caller: Principal) -> Result<(), BoxError> {
-        Err("`add_user` is not implemented".into())
+    async fn load_user(&self, _caller: &Principal) -> Result<UserState, BoxError> {
+        Err("`load_user` is not implemented".into())
     }
 
     async fn update_user(&self, _user: &UserState) -> Result<(), BoxError> {
@@ -81,5 +77,13 @@ impl Management for BaseManagement {
         }
 
         Ok(self.visibility)
+    }
+
+    async fn load_user(&self, user: &Principal) -> Result<UserState, BoxError> {
+        Ok(UserState::new(*user))
+    }
+
+    async fn update_user(&self, _user: &UserState) -> Result<(), BoxError> {
+        Ok(())
     }
 }

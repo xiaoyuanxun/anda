@@ -816,7 +816,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_conversation_state() {
+    fn test_conversation_status() {
         let chat = Conversation {
             _id: 0,
             user: Principal::anonymous(),
@@ -833,7 +833,7 @@ mod tests {
         println!("{}", rt);
 
         let rt = serde_json::to_string(&chat).unwrap();
-        assert!(rt.contains(r#","state":"completed","#));
+        assert!(rt.contains(r#","status":"completed","#));
         let chat2: Conversation = serde_json::from_str(&rt).unwrap();
         assert_eq!(chat.status, chat2.status);
     }
