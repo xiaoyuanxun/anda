@@ -1,4 +1,7 @@
+use candid::Principal;
+use chrono::prelude::*;
 use ic_auth_types::{ByteArrayB64, ByteBufB64};
+use ic_cose_types::cose::sha3_256;
 use serde::Serialize;
 
 use anda_db_schema::{Json, Map};
@@ -63,6 +66,29 @@ impl<'a> From<&'a Resource> for ResourceRef<'a> {
             metadata: resource.metadata.as_ref(),
         }
     }
+}
+
+pub fn update_resources(user: &Principal, resources: Vec<Resource>) -> Vec<Resource> {
+    let user = user.to_string();
+    let utc = Utc::now().to_rfc3339();
+    resources
+        .into_iter()
+        .map(|mut r| {
+            if let Some(blob) = &r.blob {
+                r.hash = Some(sha3_256(blob).into());
+            }
+
+            if r._id == 0 {
+                if r.metadata.is_none() {
+                    r.metadata = Some(Map::new());
+                }
+                let meta = r.metadata.as_mut().unwrap();
+                meta.insert("user".to_string(), user.clone().into());
+                meta.insert("created_at".to_string(), utc.clone().into());
+            }
+            r
+        })
+        .collect()
 }
 
 /// Extracts resources with the given tags from the list of resources.

@@ -1,15 +1,17 @@
 use anda_cognitive_nexus::{CognitiveNexus, ConceptPK};
 use anda_core::{
     Agent, AgentContext, AgentOutput, BoxError, CompletionFeatures, CompletionRequest, Document,
-    Json, Resource, ResourceRef, StateFeatures, Tool, ToolSet, evaluate_tokens,
+    Json, Resource, StateFeatures, Tool, ToolSet, evaluate_tokens, update_resources,
 };
-use anda_db::{database::AndaDB, error::DBError};
+use anda_db::database::AndaDB;
+use anda_db_schema::{Ft, Fv};
 use anda_engine::{
     ANONYMOUS,
     context::{AgentCtx, BaseCtx, Web3SDK},
     extension::fetch::FetchWebResourcesTool,
     memory::{
-        ChatRef, GetResourceTool, ListConversationsTool, MemoryManagement, SearchConversationsTool,
+        ConversationRef, ConversationStatus, GetResourceContentTool, ListConversationsTool,
+        MemoryManagement, SearchConversationsTool,
     },
     unix_ms,
 };
@@ -18,7 +20,7 @@ use anda_kip::{
     SYSTEM_INSTRUCTIONS, parse_kml,
 };
 use chrono::prelude::*;
-use ic_cose_types::cose::sha3_256;
+use ciborium::cbor;
 use std::{collections::BTreeMap, sync::Arc};
 
 /// An AI agent implementation for interacting with ICP blockchain ledgers.
@@ -33,7 +35,7 @@ pub struct Assistant {
 
 impl Assistant {
     pub const NAME: &'static str = "assistant";
-    pub async fn connect<F>(web3: Arc<Web3SDK>, db: Arc<AndaDB>) -> Result<Self, BoxError> {
+    pub async fn connect<F>(db: Arc<AndaDB>, web3: Arc<Web3SDK>) -> Result<Self, BoxError> {
         let my_id = web3.get_principal();
         let nexus = CognitiveNexus::connect(db.clone(), async |nexus| {
             if !nexus
@@ -59,7 +61,7 @@ impl Assistant {
         })
         .await?;
 
-        let memory = Arc::new(MemoryManagement::connect(Arc::new(nexus), db).await?);
+        let memory = Arc::new(MemoryManagement::connect(db, Arc::new(nexus)).await?);
         let memory_name = memory.name();
 
         Ok(Self {
@@ -69,7 +71,7 @@ impl Assistant {
                 memory_name,
                 SearchConversationsTool::NAME.to_string(),
                 ListConversationsTool::NAME.to_string(),
-                GetResourceTool::NAME.to_string(),
+                GetResourceContentTool::NAME.to_string(),
                 FetchWebResourcesTool::NAME.to_string(),
             ],
         })
@@ -85,7 +87,7 @@ impl Assistant {
         tools.add(self.memory.clone())?;
         tools.add(SearchConversationsTool::new(self.memory.clone()))?;
         tools.add(ListConversationsTool::new(self.memory.clone()))?;
-        tools.add(GetResourceTool::new(self.memory.clone()))?;
+        tools.add(GetResourceContentTool::new(self.memory.clone()))?;
         tools.add(FetchWebResourcesTool::new())?;
         Ok(tools)
     }
@@ -125,15 +127,15 @@ impl Agent<AgentCtx> for Assistant {
         &self,
         ctx: AgentCtx,
         prompt: String,
-        mut resources: Vec<Resource>,
+        resources: Vec<Resource>,
     ) -> Result<AgentOutput, BoxError> {
         let caller = ctx.caller();
         if caller == &ANONYMOUS {
             return Err("anonymous caller not allowed".into());
         }
 
-        let start_time = unix_ms();
-        let utc: DateTime<Utc> = DateTime::from_timestamp_millis(start_time as i64).unwrap();
+        let created_at = unix_ms();
+        let utc: DateTime<Utc> = DateTime::from_timestamp_millis(created_at as i64).unwrap();
         let utc = utc.to_rfc3339();
         let primer = self.memory.describe_primer().await?;
         let system = format!(
@@ -141,11 +143,11 @@ impl Agent<AgentCtx> for Assistant {
             SYSTEM_INSTRUCTIONS, primer, utc
         );
 
-        let (chats, cursor) = self
+        let (conversations, cursor) = self
             .memory
-            .list_chats_by_user(caller, None, Some(3))
+            .list_conversations_by_user(caller, None, Some(3))
             .await?;
-        let mut chat_history = chats
+        let mut chat_history = conversations
             .into_iter()
             .map(|chat| chat.messages)
             .collect::<Vec<_>>();
@@ -164,44 +166,12 @@ impl Agent<AgentCtx> for Assistant {
 
         let chat_history: Vec<Json> = chat_history.into_iter().flatten().collect();
         let chat_history_len = chat_history.len();
-        let mut rs: Vec<Resource> = Vec::with_capacity(resources.len());
+        let resources = update_resources(caller, resources);
+        let rs = self.memory.try_add_resources(&resources).await?;
+
         let mut docs: Vec<Document> = Vec::with_capacity(resources.len());
-        for r in resources.iter_mut() {
-            if let Some(blob) = &r.blob {
-                r.hash = Some(sha3_256(blob).into());
-            }
-            // TODO: check when no blob
-
-            if r.metadata.is_none() {
-                r.metadata = Some(serde_json::Map::new());
-            }
-
-            let meta = r.metadata.as_mut().unwrap();
-            meta.insert("user".to_string(), caller.to_string().into());
-            meta.insert("created_at".to_string(), utc.clone().into());
-
-            let rf: ResourceRef = (r as &Resource).into();
-            let id = if r._id > 0 {
-                r._id // TODO: check if the resource exists and has permission
-            } else {
-                match self.memory.add_resource(&rf).await {
-                    Ok(id) => id,
-                    Err(DBError::AlreadyExists { _id, .. }) => _id,
-                    Err(err) => Err(err)?,
-                }
-            };
-
-            let r2 = Resource {
-                _id: id,
-                blob: None,
-                ..r.clone()
-            };
-            docs.push((&r2).into());
-            rs.push(r2)
-        }
-
-        if !rs.is_empty() {
-            self.memory.flush_resources().await?;
+        for r in rs.iter() {
+            docs.push(r.into());
         }
 
         if let Some(cursor) = cursor {
@@ -217,6 +187,22 @@ impl Agent<AgentCtx> for Assistant {
             })
         }
 
+        let mut conversation = ConversationRef {
+            _id: 0,
+            user: caller,
+            thread: None,
+            messages: &[],
+            resources: &rs,
+            artifacts: &[],
+            status: ConversationStatus::Working,
+            period: created_at / 3600 / 1000,
+            created_at,
+            updated_at: created_at,
+        };
+
+        let id = self.memory.add_conversation(&conversation).await?;
+        conversation._id = id;
+
         let req = CompletionRequest {
             system,
             prompt,
@@ -230,25 +216,44 @@ impl Agent<AgentCtx> for Assistant {
             ..Default::default()
         };
 
-        let res = ctx.completion(req, resources).await?;
-        let end_time = unix_ms();
-        let messages = if res.full_history.len() > chat_history_len {
+        let mut res = ctx.completion(req, resources).await?;
+        res.conversation = Some(id);
+
+        let artifacts = self.memory.try_add_resources(&res.artifacts).await?;
+
+        conversation.messages = if res.full_history.len() > chat_history_len {
             &res.full_history[chat_history_len..]
         } else {
             &res.full_history
         };
-        let chat = ChatRef {
-            _id: 0, // This will be set by the database
-            user: caller,
-            thread: None,
-            messages,
-            resources: &rs,
-            artifacts: &res.artifacts,
-            period: end_time / 3600 / 1000,
-            start_time,
-            end_time,
-        };
-        let _ = self.memory.add_chat(&chat).await;
+        conversation.artifacts = &artifacts;
+        conversation.status = ConversationStatus::Completed;
+        conversation.updated_at = unix_ms();
+
+        let _ = self
+            .memory
+            .update_conversation(
+                id,
+                BTreeMap::from([
+                    (
+                        "messages".to_string(),
+                        Fv::array_from(cbor!(conversation.messages).unwrap(), &[Ft::Json])?,
+                    ),
+                    (
+                        "artifacts".to_string(),
+                        Fv::array_from(
+                            cbor!(conversation.artifacts).unwrap(),
+                            &[Resource::field_type()],
+                        )?,
+                    ),
+                    (
+                        "status".to_string(),
+                        Fv::Text(conversation.status.to_string()),
+                    ),
+                    ("updated_at".to_string(), Fv::U64(conversation.updated_at)),
+                ]),
+            )
+            .await;
         Ok(res)
     }
 }

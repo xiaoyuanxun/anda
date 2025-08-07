@@ -22,10 +22,6 @@ pub struct Thread {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 
-    /// The principal of the agent that created and serve the thread.
-    #[field_type = "Bytes"]
-    pub agent: Principal,
-
     /// The initiator of the thread, typically an agent or user principal.
     #[field_type = "Array<Bytes>"]
     pub managers: BTreeSet<Principal>,
@@ -47,6 +43,6 @@ pub struct Thread {
 impl Thread {
     /// Check if the given principal has permission to access the thread.
     pub fn has_permission(&self, id: &Principal) -> bool {
-        &self.agent == id || self.managers.contains(id) || self.participants.contains(id)
+        self.managers.contains(id) || self.participants.contains(id)
     }
 }

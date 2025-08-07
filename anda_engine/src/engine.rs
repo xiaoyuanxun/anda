@@ -280,13 +280,8 @@ impl Engine {
             Some(us)
         };
 
-        let thread = if let Some((agent, id)) = &meta.thread {
-            let th = if agent == &self.id {
-                self.management.get_thread(id).await?
-            } else {
-                return Err("TODO: get thread from remote agent".into());
-            };
-
+        let thread = if let Some(id) = &meta.thread {
+            let th = self.management.get_thread(id).await?;
             if !th.has_permission(&caller) {
                 return Err("caller does not have permission to access the thread".into());
             }

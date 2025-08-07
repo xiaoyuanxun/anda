@@ -53,7 +53,6 @@ impl AndaManagement {
                     collection.set_tokenizer(jieba_tokenizer());
                     // create BTree indexes if not exists
                     collection.create_btree_index_nx(&["id"]).await?;
-                    collection.create_btree_index_nx(&["agent"]).await?;
                     collection.create_btree_index_nx(&["managers"]).await?;
                     collection.create_btree_index_nx(&["participants"]).await?;
                     collection

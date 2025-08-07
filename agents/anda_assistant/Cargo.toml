@@ -14,8 +14,10 @@ anda_core = { path = "../../anda_core", version = "0.7" }
 anda_engine = { path = "../../anda_engine", version = "0.7" }
 anda_cognitive_nexus = { workspace = true }
 anda_db = { workspace = true }
+anda_db_schema = { workspace = true }
 anda_kip = { workspace = true }
 chrono = { workspace = true }
+ciborium = { workspace = true }
 ic_cose_types = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }

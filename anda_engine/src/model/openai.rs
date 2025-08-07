@@ -237,6 +237,7 @@ impl CompletionResponse {
         if !matches!(choice.finish_reason.as_str(), "stop" | "tool_calls") {
             output.failed_reason = Some(choice.finish_reason);
         }
+
         if let Some(refusal) = choice.message.refusal {
             output.failed_reason = Some(refusal);
         }
