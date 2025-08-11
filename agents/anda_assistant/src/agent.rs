@@ -16,8 +16,7 @@ use anda_engine::{
     unix_ms,
 };
 use anda_kip::{
-    EVENT_KIP, META_SELF_NAME, PERSON_SELF_KIP, PERSON_SYSTEM_KIP, PERSON_TYPE,
-    SYSTEM_INSTRUCTIONS, parse_kml,
+    META_SELF_NAME, PERSON_SELF_KIP, PERSON_SYSTEM_KIP, PERSON_TYPE, SYSTEM_INSTRUCTIONS, parse_kml,
 };
 use chrono::prelude::*;
 use ciborium::cbor;
@@ -35,7 +34,7 @@ pub struct Assistant {
 
 impl Assistant {
     pub const NAME: &'static str = "assistant";
-    pub async fn connect<F>(db: Arc<AndaDB>, web3: Arc<Web3SDK>) -> Result<Self, BoxError> {
+    pub async fn connect(db: Arc<AndaDB>, web3: Arc<Web3SDK>) -> Result<Self, BoxError> {
         let my_id = web3.get_principal();
         let nexus = CognitiveNexus::connect(db.clone(), async |nexus| {
             if !nexus
@@ -49,7 +48,6 @@ impl Assistant {
                     &PERSON_SELF_KIP
                         .replace("$self_reserved_principal_id", my_id.to_string().as_str()),
                     PERSON_SYSTEM_KIP,
-                    EVENT_KIP,
                 ]
                 .join("\n");
 
@@ -88,8 +86,22 @@ impl Assistant {
         tools.add(SearchConversationsTool::new(self.memory.clone()))?;
         tools.add(ListConversationsTool::new(self.memory.clone()))?;
         tools.add(GetResourceContentTool::new(self.memory.clone()))?;
-        tools.add(FetchWebResourcesTool::new())?;
+        // tools.add(FetchWebResourcesTool::new())?;
         Ok(tools)
+    }
+
+    pub fn memory(&self) -> Arc<MemoryManagement> {
+        self.memory.clone()
+    }
+
+    pub async fn to_kip_system_role_instructions(&self) -> Result<String, BoxError> {
+        let utc = Utc::now().to_rfc3339();
+        let system = self.memory.describe_system().await?;
+
+        Ok(format!(
+            "{}\n---\n# Your Identity & Knowledge Domain\n{}\n---\n# Current Time: {}",
+            SYSTEM_INSTRUCTIONS, system, utc
+        ))
     }
 }
 

@@ -43,7 +43,7 @@ use std::{
     sync::Arc,
 };
 use structured_logger::unix_ms;
-use tokio_util::sync::CancellationToken;
+use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
 
 use crate::{
     context::{AgentCtx, BaseCtx, Web3Client, Web3SDK},
@@ -216,6 +216,16 @@ impl Engine {
     /// Cancels all tasks in the engine by triggering the cancellation token.
     pub fn cancel(&self) {
         self.ctx.base.cancellation_token.cancel()
+    }
+
+    /// Returns `true` if the Engine is cancelled.
+    pub fn is_cancelled(&self) -> bool {
+        self.ctx.base.cancellation_token.is_cancelled()
+    }
+
+    /// Returns a [`Future`] that gets fulfilled when cancellation is requested.
+    pub fn cancelled(&self) -> WaitForCancellationFuture<'_> {
+        self.ctx.base.cancellation_token.cancelled()
     }
 
     /// Creates and returns a child cancellation token.
@@ -625,6 +635,41 @@ impl EngineBuilder {
     pub fn with_hooks(mut self, hooks: Arc<Hooks>) -> Self {
         self.hooks = hooks;
         self
+    }
+
+    /// Creates an empty Engine instance.
+    pub fn empty(self) -> Engine {
+        let id = self.web3.as_ref().get_principal();
+        let ctx = BaseCtx::new(
+            id,
+            self.info.name.clone(),
+            self.cancellation_token,
+            BTreeSet::new(),
+            self.web3,
+            self.store,
+            Arc::new(RemoteEngines::new()),
+        );
+
+        let tools = Arc::new(ToolSet::new());
+        let agents = Arc::new(AgentSet::new());
+        let ctx = AgentCtx::new(ctx, self.model, tools, agents);
+
+        Engine {
+            id,
+            ctx,
+            info: self.info,
+            default_agent: String::new(),
+            export_agents: self.export_agents,
+            export_tools: self.export_tools,
+            hooks: self.hooks,
+            management: self.management.unwrap_or_else(|| {
+                Arc::new(BaseManagement {
+                    controller: id,
+                    managers: BTreeSet::new(),
+                    visibility: Visibility::Private, // default visibility
+                })
+            }),
+        }
     }
 
     /// Finalizes the builder and creates an Engine instance.

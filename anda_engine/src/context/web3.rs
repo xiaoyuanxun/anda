@@ -26,6 +26,10 @@ impl Web3SDK {
         Self::Web3(Web3Client { client })
     }
 
+    pub fn not_implemented() -> Self {
+        Self::Web3(Web3Client::not_implemented())
+    }
+
     pub fn get_principal(&self) -> Principal {
         match self {
             Web3SDK::Tee(cli) => cli.get_principal(),
@@ -322,6 +326,7 @@ impl Web3ClientFeatures for NotImplemented {
     }
 }
 
+#[derive(Clone)]
 pub struct Web3Client {
     pub client: Arc<dyn Web3ClientFeatures>,
 }
