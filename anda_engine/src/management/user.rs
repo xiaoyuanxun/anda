@@ -44,9 +44,6 @@ pub struct User {
 
     /// The number of credit consumed by the user.
     pub credit_consumed: u64,
-
-    /// The user state.
-    pub state: BTreeMap<String, Json>,
 }
 
 impl User {
@@ -64,7 +61,6 @@ impl User {
             agent_requests: 0,
             tool_requests: 0,
             credit_consumed: 0,
-            state: BTreeMap::new(),
         }
     }
 }
@@ -92,22 +88,6 @@ impl UserState {
         F: FnOnce(&User) -> R,
     {
         f(&self.user.read())
-    }
-
-    pub fn with_state<F, R>(&self, f: F) -> R
-    where
-        F: FnOnce(&BTreeMap<String, Json>) -> R,
-    {
-        let user = self.user.read();
-        f(&user.state)
-    }
-
-    pub fn with_state_mut<F, R>(&self, f: F) -> R
-    where
-        F: FnOnce(&mut BTreeMap<String, Json>) -> R,
-    {
-        let mut user = self.user.write();
-        f(&mut user.state)
     }
 
     /// Returns the subscription tier and expiry.

@@ -74,10 +74,34 @@ pub struct ConversationRef<'a> {
     pub messages: &'a [Json],
     pub resources: &'a [Resource],
     pub artifacts: &'a [Resource],
-    pub status: ConversationStatus,
+    pub status: &'a ConversationStatus,
     pub period: u64,
     pub created_at: u64,
     pub updated_at: u64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ConversationState {
+    pub _id: u64,
+    pub status: ConversationStatus,
+}
+
+impl From<&ConversationRef<'_>> for ConversationState {
+    fn from(conversation: &ConversationRef<'_>) -> Self {
+        Self {
+            _id: conversation._id,
+            status: conversation.status.clone(),
+        }
+    }
+}
+
+impl From<&Conversation> for ConversationState {
+    fn from(conversation: &Conversation) -> Self {
+        Self {
+            _id: conversation._id,
+            status: conversation.status.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -118,6 +142,8 @@ pub struct KIPLogs {
 
     #[field_type = "Map<String, Json>"]
     pub response: anda_kip::Response,
+
+    pub conversation: Option<u64>,
 
     pub period: u64,
 
@@ -475,6 +501,8 @@ impl Tool<BaseCtx> for Arc<MemoryManagement> {
         _resources: Vec<Resource>,
     ) -> Result<ToolOutput<Self::Output>, BoxError> {
         let timestamp = unix_ms();
+        let conversation = ctx.get_state::<ConversationState>().map(|c| c._id);
+
         let (command, res) = request.execute(self.nexus.as_ref()).await;
         let log = KIPLogs {
             _id: 0, // This will be set by the database
@@ -482,6 +510,7 @@ impl Tool<BaseCtx> for Arc<MemoryManagement> {
             command,
             request,
             response: res.clone(),
+            conversation,
             period: timestamp / 3600 / 1000,
             timestamp,
         };

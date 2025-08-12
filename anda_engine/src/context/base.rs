@@ -30,9 +30,12 @@ use anda_core::{
 };
 use bytes::Bytes;
 use candid::{CandidType, Principal, utils::ArgumentEncoder};
+use http::Extensions;
+use parking_lot::RwLock;
 use serde::{Serialize, de::DeserializeOwned};
+use serde_json::{from_value, json};
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeSet,
     future::Future,
     sync::Arc,
     time::{Duration, Instant},
@@ -60,7 +63,7 @@ pub struct BaseCtx {
     pub(crate) web3: Arc<Web3SDK>,
     /// Registered remote engines for tool and agent execution.
     pub(crate) remote: Arc<RemoteEngines>,
-    pub(crate) user: Arc<UserState>,
+    pub(crate) state: Arc<RwLock<Extensions>>,
     pub(crate) meta: RequestMeta,
 
     cache: Arc<CacheService>,
@@ -104,7 +107,7 @@ impl BaseCtx {
             web3,
             depth: 0,
             remote,
-            user: Arc::new(UserState::new(caller)),
+            state: Arc::new(RwLock::new(Extensions::default())),
             meta: RequestMeta::default(),
         }
     }
@@ -136,7 +139,7 @@ impl BaseCtx {
             web3: self.web3.clone(),
             depth: self.depth + 1,
             remote: self.remote.clone(),
-            user: self.user.clone(),
+            state: self.state.clone(),
             meta: self.meta.clone(),
         };
 
@@ -163,7 +166,6 @@ impl BaseCtx {
         &self,
         caller: Principal,
         path: String,
-        user: Arc<UserState>,
         meta: RequestMeta,
     ) -> Result<Self, BoxError> {
         let path = Path::parse(path)?;
@@ -179,7 +181,7 @@ impl BaseCtx {
             web3: self.web3.clone(),
             depth: self.depth + 1,
             remote: self.remote.clone(),
-            user,
+            state: self.state.clone(),
             meta,
         };
 
@@ -197,18 +199,18 @@ impl BaseCtx {
         }
     }
 
-    pub fn with_user_state<F, R>(&self, f: F) -> R
+    pub fn get_state<T>(&self) -> Option<T>
     where
-        F: FnOnce(&BTreeMap<String, Json>) -> R,
+        T: Clone + Send + Sync + 'static,
     {
-        self.user.with_state(f)
+        self.state.read().get::<T>().cloned()
     }
 
-    pub fn with_user_state_mut<F, R>(&self, f: F) -> R
+    pub fn set_state<T>(&self, v: T) -> Option<T>
     where
-        F: FnOnce(&mut BTreeMap<String, Json>) -> R,
+        T: Clone + Send + Sync + 'static,
     {
-        self.user.with_state_mut(f)
+        self.state.write().insert(v)
     }
 }
 

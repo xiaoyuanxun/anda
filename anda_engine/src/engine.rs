@@ -239,7 +239,6 @@ impl Engine {
         &self,
         caller: Principal,
         agent_name: &str,
-        user: Arc<UserState>,
         meta: RequestMeta,
     ) -> Result<AgentCtx, BoxError> {
         let name = agent_name.to_ascii_lowercase();
@@ -247,7 +246,7 @@ impl Engine {
             return Err(format!("agent {} not found", name).into());
         }
 
-        self.ctx.child_with(caller, &name, user, meta)
+        self.ctx.child_with(caller, &name, meta)
     }
 
     /// Executes an agent with the specified parameters.
@@ -300,7 +299,7 @@ impl Engine {
             None
         };
 
-        let ctx = self.ctx_with(caller, &input.name, user_state.clone(), meta)?;
+        let ctx = self.ctx_with(caller, &input.name, meta)?;
         self.hooks
             .on_agent_start(&ctx, &input.name, user_state.as_ref(), thread.as_ref())
             .await?;
@@ -357,9 +356,7 @@ impl Engine {
             return Err("caller does not have permission".into());
         }
 
-        let ctx = self
-            .ctx
-            .child_base_with(caller, &input.name, user_state.clone(), meta)?;
+        let ctx = self.ctx.child_base_with(caller, &input.name, meta)?;
         self.hooks
             .on_tool_start(&ctx, &input.name, user_state.as_ref())
             .await?;
@@ -719,14 +716,13 @@ impl EngineBuilder {
         let ctx = AgentCtx::new(ctx, self.model, tools.clone(), agents.clone());
 
         let meta = RequestMeta::default();
-        let user_state = Arc::new(UserState::new(Principal::anonymous()));
         for (name, tool) in &tools.set {
-            let ct = ctx.child_base_with(id, name, user_state.clone(), meta.clone())?;
+            let ct = ctx.child_base_with(id, name, meta.clone())?;
             tool.init(ct).await?;
         }
 
         for (name, agent) in &agents.set {
-            let ct = ctx.child_with(id, name, user_state.clone(), meta.clone())?;
+            let ct = ctx.child_with(id, name, meta.clone())?;
             agent.init(ct).await?;
         }
 

@@ -109,13 +109,12 @@ impl AgentCtx {
         &self,
         caller: Principal,
         agent_name: &str,
-        user: Arc<UserState>,
         meta: RequestMeta,
     ) -> Result<Self, BoxError> {
         Ok(Self {
             base: self
                 .base
-                .child_with(caller, format!("A:{}", agent_name), user, meta)?,
+                .child_with(caller, format!("A:{}", agent_name), meta)?,
             model: self.model.clone(),
             tools: self.tools.clone(),
             agents: self.agents.clone(),
@@ -132,11 +131,10 @@ impl AgentCtx {
         &self,
         caller: Principal,
         tool_name: &str,
-        user: Arc<UserState>,
         meta: RequestMeta,
     ) -> Result<BaseCtx, BoxError> {
         self.base
-            .child_with(caller, format!("T:{}", tool_name), user, meta)
+            .child_with(caller, format!("T:{}", tool_name), meta)
     }
 }
 

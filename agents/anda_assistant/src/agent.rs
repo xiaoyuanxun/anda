@@ -10,8 +10,8 @@ use anda_engine::{
     context::{AgentCtx, BaseCtx, Web3SDK},
     extension::fetch::FetchWebResourcesTool,
     memory::{
-        ConversationRef, ConversationStatus, GetResourceContentTool, ListConversationsTool,
-        MemoryManagement, SearchConversationsTool,
+        ConversationRef, ConversationState, ConversationStatus, GetResourceContentTool,
+        ListConversationsTool, MemoryManagement, SearchConversationsTool,
     },
     unix_ms,
 };
@@ -206,7 +206,7 @@ impl Agent<AgentCtx> for Assistant {
             messages: &[],
             resources: &rs,
             artifacts: &[],
-            status: ConversationStatus::Working,
+            status: &ConversationStatus::Working,
             period: created_at / 3600 / 1000,
             created_at,
             updated_at: created_at,
@@ -214,6 +214,7 @@ impl Agent<AgentCtx> for Assistant {
 
         let id = self.memory.add_conversation(&conversation).await?;
         conversation._id = id;
+        ctx.base.set_state(ConversationState::from(&conversation));
 
         let req = CompletionRequest {
             system,
@@ -239,7 +240,7 @@ impl Agent<AgentCtx> for Assistant {
             &res.full_history
         };
         conversation.artifacts = &artifacts;
-        conversation.status = ConversationStatus::Completed;
+        conversation.status = &ConversationStatus::Completed;
         conversation.updated_at = unix_ms();
 
         let _ = self
@@ -266,6 +267,8 @@ impl Agent<AgentCtx> for Assistant {
                 ]),
             )
             .await;
+
+        ctx.base.set_state(ConversationState::from(&conversation));
         Ok(res)
     }
 }
