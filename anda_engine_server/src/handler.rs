@@ -45,7 +45,7 @@ pub async fn get_information(
     };
 
     let info = AppInformation {
-        engines: app.engines.iter().map(|(_, e)| e.info().clone()).collect(),
+        engines: app.engines.values().map(|e| e.info().clone()).collect(),
         default_engine: app.default_engine,
         start_time_ms: app.start_time_ms,
         caller,

@@ -148,14 +148,12 @@ impl FetchWebResourcesTool {
         if let Some(encoding_name) = content_type
             .as_ref()
             .and_then(|mime| mime.get_param("charset").map(|charset| charset.as_str()))
-        {
-            if let Some(encoding) = Encoding::for_label(encoding_name.as_bytes()) {
+            && let Some(encoding) = Encoding::for_label(encoding_name.as_bytes()) {
                 let (text, _, had_errors) = encoding.decode(data);
                 if !had_errors {
                     return Some(text.into_owned());
                 }
             }
-        }
         None
     }
 }

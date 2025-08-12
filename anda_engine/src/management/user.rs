@@ -1,8 +1,8 @@
-use anda_db_schema::{AndaDBSchema, FieldEntry, FieldType, Json, Schema, SchemaError};
+use anda_db_schema::{AndaDBSchema, FieldEntry, FieldType, Schema, SchemaError};
 use candid::Principal;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 /// Represents a state for a user to access the engine.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, AndaDBSchema)]

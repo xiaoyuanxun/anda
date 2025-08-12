@@ -33,7 +33,6 @@ use candid::{CandidType, Principal, utils::ArgumentEncoder};
 use http::Extensions;
 use parking_lot::RwLock;
 use serde::{Serialize, de::DeserializeOwned};
-use serde_json::{from_value, json};
 use std::{
     collections::BTreeSet,
     future::Future,
@@ -49,7 +48,7 @@ use super::{
     cache::CacheService,
     web3::{Web3Client, Web3SDK},
 };
-use crate::{management::UserState, store::Store};
+use crate::store::Store;
 
 #[derive(Clone)]
 pub struct BaseCtx {

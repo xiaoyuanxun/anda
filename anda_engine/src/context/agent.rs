@@ -39,7 +39,7 @@ use serde_json::json;
 use std::{future::Future, sync::Arc, time::Duration};
 
 use super::{base::BaseCtx, engine::RemoteEngines};
-use crate::{management::UserState, model::Model};
+use crate::model::Model;
 
 pub static DYNAMIC_REMOTE_ENGINES: &str = "_engines";
 
@@ -319,12 +319,10 @@ impl AgentContext for AgentCtx {
         if let Ok((engines, _)) = self
             .cache_store_get::<RemoteEngines>(DYNAMIC_REMOTE_ENGINES)
             .await
-        {
-            if let Some((endpoint, tool_name)) = engines.get_tool_endpoint(&input.name) {
+            && let Some((endpoint, tool_name)) = engines.get_tool_endpoint(&input.name) {
                 input.name = tool_name;
                 return self.base.remote_tool_call(&endpoint, input).await;
             }
-        }
 
         Err(format!("tool {} not found", &input.name).into())
     }
@@ -355,12 +353,10 @@ impl AgentContext for AgentCtx {
         if let Ok((engines, _)) = self
             .cache_store_get::<RemoteEngines>(DYNAMIC_REMOTE_ENGINES)
             .await
-        {
-            if let Some((endpoint, agent_name)) = engines.get_agent_endpoint(&input.name) {
+            && let Some((endpoint, agent_name)) = engines.get_agent_endpoint(&input.name) {
                 input.name = agent_name;
                 return self.remote_agent_run(&endpoint, input).await;
             }
-        }
 
         Err(format!("agent {} not found", input.name).into())
     }

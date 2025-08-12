@@ -336,22 +336,20 @@ impl CompletionFeaturesDyn for CompletionModel {
                 );
             };
 
-            if log_enabled!(Debug) {
-                if let Ok(val) = serde_json::to_string(&body) {
+            if log_enabled!(Debug)
+                && let Ok(val) = serde_json::to_string(&body) {
                     log::debug!(request = val; "DeepSeek completions request");
                 }
-            }
 
             let response = client.post("/chat/completions").json(body).send().await?;
             if response.status().is_success() {
                 let text = response.text().await?;
                 match serde_json::from_str::<CompletionResponse>(&text) {
                     Ok(res) => {
-                        if log_enabled!(Debug) {
-                            if let Ok(val) = serde_json::to_string(&res) {
+                        if log_enabled!(Debug)
+                            && let Ok(val) = serde_json::to_string(&res) {
                                 log::debug!(response = val; "DeepSeek completions response");
                             }
-                        }
                         if has_system {
                             full_history.remove(0); // Remove system message from history
                         }

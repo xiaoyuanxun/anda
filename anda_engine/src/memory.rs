@@ -453,8 +453,8 @@ impl MemoryManagement {
             .await?;
         let count = ids.len() as u64;
         for id in ids {
-            if let Ok(Some(doc)) = self.conversations.remove(id).await {
-                if let Ok(conversation) = doc.try_into::<Conversation>() {
+            if let Ok(Some(doc)) = self.conversations.remove(id).await
+                && let Ok(conversation) = doc.try_into::<Conversation>() {
                     for resource in conversation.resources {
                         if resource._id > 0 {
                             let _ = self.resources.remove(resource._id).await;
@@ -466,8 +466,7 @@ impl MemoryManagement {
                             let _ = self.resources.remove(artifact._id).await;
                         }
                     }
-                }
-            };
+                };
         }
 
         let now_ms = unix_ms();
