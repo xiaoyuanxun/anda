@@ -86,7 +86,7 @@ impl Assistant {
         tools.add(SearchConversationsTool::new(self.memory.clone()))?;
         tools.add(ListConversationsTool::new(self.memory.clone()))?;
         tools.add(GetResourceContentTool::new(self.memory.clone()))?;
-        // tools.add(FetchWebResourcesTool::new())?;
+        tools.add(FetchWebResourcesTool::new())?;
         Ok(tools)
     }
 

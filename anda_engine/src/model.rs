@@ -14,8 +14,12 @@
 //! while maintaining a consistent interface through the `CompletionFeaturesDyn` and
 //! `EmbeddingFeaturesDyn` traits.
 
-use anda_core::{AgentOutput, BoxError, BoxPinFut, CompletionRequest, Embedding, ToolCall, Usage};
+use anda_core::{
+    AgentOutput, BoxError, BoxPinFut, CONTENT_TYPE_JSON, CompletionRequest, Embedding, ToolCall,
+    Usage,
+};
 use std::sync::Arc;
+use std::time::Duration;
 
 pub mod cohere;
 pub mod deepseek;
@@ -23,6 +27,8 @@ pub mod gemini;
 pub mod kimi;
 pub mod openai;
 pub mod xai;
+
+use crate::APP_USER_AGENT;
 
 /// Trait for dynamic completion features that can be used across threads
 pub trait CompletionFeaturesDyn: Send + Sync + 'static {
@@ -181,4 +187,25 @@ impl Model {
     pub async fn embed_query(&self, text: &str) -> Result<(Embedding, Usage), BoxError> {
         self.embedder.embed_query(text.to_string()).await
     }
+}
+
+/// Creates a new reqwest client builder with default settings
+pub fn request_client_builder() -> reqwest::ClientBuilder {
+    reqwest::Client::builder()
+        .use_rustls_tls()
+        .https_only(true)
+        .http2_keep_alive_interval(Some(Duration::from_secs(25)))
+        .http2_keep_alive_timeout(Duration::from_secs(15))
+        .http2_keep_alive_while_idle(true)
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(300))
+        .gzip(true)
+        .user_agent(APP_USER_AGENT)
+        .default_headers({
+            let mut headers = reqwest::header::HeaderMap::new();
+            let ct: http::HeaderValue = CONTENT_TYPE_JSON.parse().unwrap();
+            headers.insert(http::header::CONTENT_TYPE, ct.clone());
+            headers.insert(http::header::ACCEPT, ct);
+            headers
+        })
 }

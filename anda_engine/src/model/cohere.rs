@@ -5,13 +5,11 @@
 //! Cohere embedding models and handles API communication, error handling,
 //! and response parsing.
 
-use anda_core::{BoxError, BoxPinFut, CONTENT_TYPE_JSON, Embedding, Usage};
+use anda_core::{BoxError, BoxPinFut, Embedding, Usage};
 use serde::Deserialize;
 use serde_json::json;
-use std::time::Duration;
 
-use super::EmbeddingFeaturesDyn;
-use crate::APP_USER_AGENT;
+use super::{EmbeddingFeaturesDyn, request_client_builder};
 
 // ================================================================
 // Main Cohere Client
@@ -34,6 +32,7 @@ pub const EMBED_MULTILINGUAL_LIGHT_V3: &str = "embed-multilingual-light-v3.0";
 #[derive(Clone)]
 pub struct Client {
     endpoint: String,
+    api_key: String,
     http: reqwest::Client,
 }
 
@@ -45,31 +44,28 @@ impl Client {
     pub fn new(api_key: &str) -> Self {
         Self {
             endpoint: COHERE_API_BASE_URL.to_string(),
-            http: reqwest::Client::builder()
-                .use_rustls_tls()
-                .https_only(true)
-                .http2_keep_alive_interval(Some(Duration::from_secs(25)))
-                .http2_keep_alive_timeout(Duration::from_secs(15))
-                .http2_keep_alive_while_idle(true)
-                .connect_timeout(Duration::from_secs(10))
-                .timeout(Duration::from_secs(120))
-                .gzip(true)
-                .user_agent(APP_USER_AGENT)
-                .default_headers({
-                    let mut headers = reqwest::header::HeaderMap::new();
-                    let ct: http::HeaderValue = CONTENT_TYPE_JSON.parse().unwrap();
-                    headers.insert(http::header::CONTENT_TYPE, ct.clone());
-                    headers.insert(http::header::ACCEPT, ct);
-                    headers.insert(
-                        http::header::AUTHORIZATION,
-                        format!("Bearer {}", api_key)
-                            .parse()
-                            .expect("Bearer token should parse"),
-                    );
-                    headers
-                })
+            api_key: api_key.to_string(),
+            http: request_client_builder()
                 .build()
                 .expect("Cohere reqwest client should build"),
+        }
+    }
+
+    /// Sets a custom API base URL for the client
+    pub fn with_api_base(self, api_base: &str) -> Self {
+        Self {
+            endpoint: api_base.to_string(),
+            api_key: self.api_key,
+            http: self.http,
+        }
+    }
+
+    /// Sets a custom HTTP client for the client
+    pub fn with_client(self, http: reqwest::Client) -> Self {
+        Self {
+            endpoint: self.endpoint,
+            api_key: self.api_key,
+            http,
         }
     }
 
@@ -79,7 +75,7 @@ impl Client {
     /// * `path` - API endpoint path (e.g., "/v1/embed")
     pub fn post(&self, path: &str) -> reqwest::RequestBuilder {
         let url = format!("{}{}", self.endpoint, path);
-        self.http.post(url)
+        self.http.post(url).bearer_auth(&self.api_key)
     }
 
     /// Creates an embedding model instance with default dimensions

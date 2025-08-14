@@ -217,7 +217,7 @@ impl MemoryManagement {
                     // set tokenizer
                     collection.set_tokenizer(jieba_tokenizer());
                     // create BTree indexes if not exists
-                    collection.create_btree_index_nx(&["tag"]).await?;
+                    collection.create_btree_index_nx(&["tags"]).await?;
                     collection.create_btree_index_nx(&["hash"]).await?;
                     collection.create_btree_index_nx(&["mime_type"]).await?;
                     collection
@@ -367,7 +367,7 @@ impl MemoryManagement {
             })
             .await?;
         let cursor = if rt.len() >= limit {
-            BTree::to_cursor(&rt.last().unwrap()._id)
+            BTree::to_cursor(&rt.first().unwrap()._id)
         } else {
             None
         };
@@ -454,19 +454,20 @@ impl MemoryManagement {
         let count = ids.len() as u64;
         for id in ids {
             if let Ok(Some(doc)) = self.conversations.remove(id).await
-                && let Ok(conversation) = doc.try_into::<Conversation>() {
-                    for resource in conversation.resources {
-                        if resource._id > 0 {
-                            let _ = self.resources.remove(resource._id).await;
-                        }
+                && let Ok(conversation) = doc.try_into::<Conversation>()
+            {
+                for resource in conversation.resources {
+                    if resource._id > 0 {
+                        let _ = self.resources.remove(resource._id).await;
                     }
+                }
 
-                    for artifact in conversation.artifacts {
-                        if artifact._id > 0 {
-                            let _ = self.resources.remove(artifact._id).await;
-                        }
+                for artifact in conversation.artifacts {
+                    if artifact._id > 0 {
+                        let _ = self.resources.remove(artifact._id).await;
                     }
-                };
+                }
+            };
         }
 
         let now_ms = unix_ms();
@@ -602,7 +603,7 @@ pub struct ListConversationsTool {
 }
 
 impl ListConversationsTool {
-    pub const NAME: &'static str = "list_conversations";
+    pub const NAME: &'static str = "list_prev_conversations";
 
     /// Creates a new ListConversationsTool instance
     pub fn new(memory: Arc<MemoryManagement>) -> Self {
@@ -715,8 +716,8 @@ impl Tool<BaseCtx> for SearchConversationsTool {
 }
 
 /// Arguments for "memory_api" tool
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(tag = "_type")]
 pub enum MemoryToolArgs {
     /// Get a conversation by ID
     GetConversation {
@@ -724,7 +725,7 @@ pub enum MemoryToolArgs {
         _id: u64,
     },
     /// List previous conversations
-    ListConversations {
+    ListPrevConversations {
         /// The cursor for pagination
         cursor: Option<String>,
         /// The limit for pagination, default to 10
@@ -802,7 +803,7 @@ impl Tool<BaseCtx> for MemoryTool {
                     next_cursor: None,
                 }))
             }
-            MemoryToolArgs::ListConversations { cursor, limit } => {
+            MemoryToolArgs::ListPrevConversations { cursor, limit } => {
                 let (conversations, next_cursor) = self
                     .memory
                     .list_conversations_by_user(ctx.caller(), cursor, limit)
@@ -864,5 +865,11 @@ mod tests {
         assert!(rt.contains(r#","status":"completed","#));
         let chat2: Conversation = serde_json::from_str(&rt).unwrap();
         assert_eq!(chat.status, chat2.status);
+
+        let args = MemoryToolArgs::GetConversation { _id: 1 };
+        let rt = serde_json::to_string(&args).unwrap();
+        assert_eq!(rt, r#"{"_type":"GetConversation","_id":1}"#);
+        let args1: MemoryToolArgs = serde_json::from_str(&rt).unwrap();
+        assert_eq!(args, args1);
     }
 }

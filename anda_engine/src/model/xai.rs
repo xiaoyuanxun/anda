@@ -6,16 +6,13 @@
 //! - Response parsing and conversion to Anda's internal formats
 
 use anda_core::{
-    AgentOutput, BoxError, BoxPinFut, CONTENT_TYPE_JSON, CompletionRequest, FunctionDefinition,
-    Message, ToolCall,
+    AgentOutput, BoxError, BoxPinFut, CompletionRequest, FunctionDefinition, Message, ToolCall,
 };
 use log::{Level::Debug, log_enabled};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::time::Duration;
 
-use super::CompletionFeaturesDyn;
-use crate::APP_USER_AGENT;
+use super::{CompletionFeaturesDyn, request_client_builder};
 
 // ================================================================
 // Main Grok Client
@@ -27,6 +24,7 @@ pub static GROK_BETA: &str = "grok-2-latest";
 #[derive(Clone)]
 pub struct Client {
     endpoint: String,
+    api_key: String,
     http: reqwest::Client,
 }
 
@@ -47,38 +45,35 @@ impl Client {
         };
         Self {
             endpoint,
-            http: reqwest::Client::builder()
-                .use_rustls_tls()
-                .https_only(true)
-                .http2_keep_alive_interval(Some(Duration::from_secs(25)))
-                .http2_keep_alive_timeout(Duration::from_secs(15))
-                .http2_keep_alive_while_idle(true)
-                .connect_timeout(Duration::from_secs(10))
-                .timeout(Duration::from_secs(180))
-                .gzip(true)
-                .user_agent(APP_USER_AGENT)
-                .default_headers({
-                    let mut headers = reqwest::header::HeaderMap::new();
-                    let ct: http::HeaderValue = CONTENT_TYPE_JSON.parse().unwrap();
-                    headers.insert(http::header::CONTENT_TYPE, ct.clone());
-                    headers.insert(http::header::ACCEPT, ct);
-                    headers.insert(
-                        http::header::AUTHORIZATION,
-                        format!("Bearer {}", api_key)
-                            .parse()
-                            .expect("Bearer token should parse"),
-                    );
-                    headers
-                })
+            api_key: api_key.to_string(),
+            http: request_client_builder()
                 .build()
                 .expect("Grok reqwest client should build"),
+        }
+    }
+
+    /// Sets a custom API base URL for the client
+    pub fn with_api_base(self, api_base: &str) -> Self {
+        Self {
+            endpoint: api_base.to_string(),
+            api_key: self.api_key,
+            http: self.http,
+        }
+    }
+
+    /// Sets a custom HTTP client for the client
+    pub fn with_client(self, http: reqwest::Client) -> Self {
+        Self {
+            endpoint: self.endpoint,
+            api_key: self.api_key,
+            http,
         }
     }
 
     /// Creates a POST request builder for the specified API path
     fn post(&self, path: &str) -> reqwest::RequestBuilder {
         let url = format!("{}{}", self.endpoint, path);
-        self.http.post(url)
+        self.http.post(url).bearer_auth(&self.api_key)
     }
 
     /// Creates a new completion model instance using the default Grok model
@@ -314,9 +309,10 @@ impl CompletionFeaturesDyn for CompletionModel {
             };
 
             if log_enabled!(Debug)
-                && let Ok(val) = serde_json::to_string(&body) {
-                    log::debug!(request = val; "Grok completions request");
-                }
+                && let Ok(val) = serde_json::to_string(&body)
+            {
+                log::debug!(request = val; "Grok completions request");
+            }
 
             let response = client.post("/chat/completions").json(body).send().await?;
             if response.status().is_success() {
@@ -324,9 +320,10 @@ impl CompletionFeaturesDyn for CompletionModel {
                 match serde_json::from_str::<CompletionResponse>(&text) {
                     Ok(res) => {
                         if log_enabled!(Debug)
-                            && let Ok(val) = serde_json::to_string(&res) {
-                                log::debug!(response = val; "Grok completions response");
-                            }
+                            && let Ok(val) = serde_json::to_string(&res)
+                        {
+                            log::debug!(response = val; "Grok completions response");
+                        }
                         if has_system {
                             full_history.remove(0); // Remove system message from history
                         }

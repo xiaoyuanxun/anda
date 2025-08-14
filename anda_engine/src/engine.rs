@@ -233,6 +233,13 @@ impl Engine {
         self.ctx.base.cancellation_token.child_token()
     }
 
+    /// Closes the engine, cancelling all tasks and waiting for cancellation to complete.
+    pub async fn close(&self) -> Result<(), BoxError> {
+        self.ctx.base.cancellation_token.cancel();
+        self.cancelled().await;
+        Ok(())
+    }
+
     /// Creates a new [`AgentCtx`] with the specified agent name, user, and caller.
     /// Returns an error if the agent is not found or if the user name is invalid.
     pub fn ctx_with(
