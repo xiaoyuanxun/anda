@@ -562,7 +562,7 @@ fn connect_model(cfg: &config::Llm) -> Result<Model, BoxError> {
                 }),
             ),
             Arc::new(
-                cohere::Client::new(&cfg.cohere_api_key)
+                cohere::Client::new(&cfg.cohere_api_key, None)
                     .embedding_model(&cfg.cohere_embedding_model),
             ),
         ))

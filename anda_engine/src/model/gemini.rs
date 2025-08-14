@@ -54,15 +54,6 @@ impl Client {
         }
     }
 
-    /// Sets a custom API base URL for the client
-    pub fn with_api_base(self, api_base: &str) -> Self {
-        Self {
-            endpoint: api_base.to_string(),
-            api_key: self.api_key,
-            http: self.http,
-        }
-    }
-
     /// Sets a custom HTTP client for the client
     pub fn with_client(self, http: reqwest::Client) -> Self {
         Self {

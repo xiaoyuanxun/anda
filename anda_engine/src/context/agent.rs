@@ -136,6 +136,23 @@ impl AgentCtx {
         self.base
             .child_with(caller, format!("T:{}", tool_name), meta)
     }
+
+    /// Creates a completion runner for iterative processing of completion requests.
+    pub fn completion_iter(
+        &self,
+        req: CompletionRequest,
+        resources: Vec<Resource>,
+    ) -> CompletionRunner {
+        CompletionRunner {
+            ctx: self.clone(),
+            req,
+            resources,
+            tool_calls_result: Vec::new(),
+            usage: Usage::default(),
+            artifacts: Vec::new(),
+            done: false,
+        }
+    }
 }
 
 impl CacheStoreFeatures for AgentCtx {}
@@ -319,10 +336,11 @@ impl AgentContext for AgentCtx {
         if let Ok((engines, _)) = self
             .cache_store_get::<RemoteEngines>(DYNAMIC_REMOTE_ENGINES)
             .await
-            && let Some((endpoint, tool_name)) = engines.get_tool_endpoint(&input.name) {
-                input.name = tool_name;
-                return self.base.remote_tool_call(&endpoint, input).await;
-            }
+            && let Some((endpoint, tool_name)) = engines.get_tool_endpoint(&input.name)
+        {
+            input.name = tool_name;
+            return self.base.remote_tool_call(&endpoint, input).await;
+        }
 
         Err(format!("tool {} not found", &input.name).into())
     }
@@ -353,10 +371,11 @@ impl AgentContext for AgentCtx {
         if let Ok((engines, _)) = self
             .cache_store_get::<RemoteEngines>(DYNAMIC_REMOTE_ENGINES)
             .await
-            && let Some((endpoint, agent_name)) = engines.get_agent_endpoint(&input.name) {
-                input.name = agent_name;
-                return self.remote_agent_run(&endpoint, input).await;
-            }
+            && let Some((endpoint, agent_name)) = engines.get_agent_endpoint(&input.name)
+        {
+            input.name = agent_name;
+            return self.remote_agent_run(&endpoint, input).await;
+        }
 
         Err(format!("agent {} not found", input.name).into())
     }
@@ -412,115 +431,22 @@ impl CompletionFeatures for AgentCtx {
     /// 3. Returns final result when no more tool calls need processing.
     async fn completion(
         &self,
-        mut req: CompletionRequest,
-        mut resources: Vec<Resource>,
+        req: CompletionRequest,
+        resources: Vec<Resource>,
     ) -> Result<AgentOutput, BoxError> {
-        let mut tool_calls_result: Vec<ToolCall> = Vec::new();
-        let mut usage = Usage::default();
-        let mut artifacts: Vec<Resource> = Vec::new();
+        let mut runner = self.completion_iter(req, resources);
+        let mut last: Option<AgentOutput> = None;
 
-        loop {
-            let mut output = self.model.completion(req.clone()).await?;
-            usage.accumulate(&output.usage);
-            // automatically executes tools calls
-            let mut tool_calls_continue: Vec<Json> = Vec::new();
-            for tool in output.tool_calls.iter_mut() {
-                if !req.tools.iter().any(|t| t.name == tool.name) {
-                    // tool already called, skip
-                    continue;
-                }
-
-                // remove called tool from req.tools
-                req.tools.retain(|t| t.name != tool.name);
-                if self.tools.contains(&tool.name) || tool.name.starts_with("RT_") {
-                    match self
-                        .tool_call(ToolInput {
-                            name: tool.name.clone(),
-                            args: serde_json::from_str(&tool.args)?,
-                            resources: self.select_tool_resources(&tool.name, &mut resources).await,
-                            meta: Some(self.meta().clone()),
-                        })
-                        .await
-                    {
-                        Ok(mut res) => {
-                            usage.accumulate(&res.usage);
-                            let content: Json = if res.output.is_string() {
-                                res.output.clone()
-                            } else {
-                                serde_json::to_string(&res.output)?.into()
-                            };
-
-                            tool_calls_continue.push(json!(Message {
-                                role: "tool".to_string(),
-                                content,
-                                name: None,
-                                tool_call_id: Some(tool.id.clone()),
-                            }));
-
-                            artifacts.append(&mut res.artifacts);
-                            tool.result = Some(serde_json::to_value(&res)?);
-                        }
-                        Err(err) => {
-                            output.failed_reason = Some(err.to_string());
-                            output.usage = usage;
-                            return Ok(output);
-                        }
-                    }
-                } else if self.agents.contains(&tool.name)
-                    || tool.name.starts_with("LA_")
-                    || tool.name.starts_with("RA_")
-                {
-                    let args: AgentArgs = serde_json::from_str(&tool.args)?;
-                    match self
-                        .agent_run(AgentInput {
-                            name: tool.name.clone(),
-                            prompt: args.prompt,
-                            resources: self.agents.select_resources(&tool.name, &mut resources),
-                            meta: Some(self.meta().clone()),
-                        })
-                        .await
-                    {
-                        Ok(mut res) => {
-                            usage.accumulate(&res.usage);
-                            if res.failed_reason.is_some() {
-                                output.failed_reason = res.failed_reason;
-                                return Ok(output);
-                            }
-
-                            tool_calls_continue.push(json!(Message {
-                                role: "tool".to_string(),
-                                content: res.content.clone().into(),
-                                name: None,
-                                tool_call_id: Some(tool.id.clone()),
-                            }));
-
-                            artifacts.append(&mut res.artifacts);
-                            tool.result = Some(serde_json::to_value(&res)?);
-                        }
-                        Err(err) => {
-                            output.failed_reason = Some(err.to_string());
-                            output.usage = usage;
-                            return Ok(output);
-                        }
-                    }
-                }
-                // ignore unknown tool
+        while let Some(step) = runner.next().await? {
+            // 出错即返回（保持原行为）
+            if step.failed_reason.is_some() {
+                return Ok(step);
             }
-
-            tool_calls_result.append(&mut output.tool_calls);
-            if tool_calls_continue.is_empty() {
-                output.tool_calls = tool_calls_result;
-                output.artifacts = artifacts;
-
-                output.usage = usage;
-                return Ok(output);
-            }
-
-            req.documents.clear();
-            req.prompt = "".to_string();
-            req.chat_history = output.full_history;
-            req.chat_history.append(&mut tool_calls_continue);
+            last = Some(step);
         }
+
+        // 理论上一定有输出
+        Ok(last.expect("completion runner returned no output"))
     }
 }
 
@@ -903,6 +829,167 @@ impl HttpFeatures for AgentCtx {
         T: DeserializeOwned,
     {
         self.base.https_signed_rpc(endpoint, method, args).await
+    }
+}
+
+/// 逐步执行 completion 的执行器。
+pub struct CompletionRunner {
+    ctx: AgentCtx,
+    req: CompletionRequest,
+    resources: Vec<Resource>,
+    tool_calls_result: Vec<ToolCall>,
+    usage: Usage,
+    artifacts: Vec<Resource>,
+    done: bool,
+}
+
+impl CompletionRunner {
+    pub fn is_done(&self) -> bool {
+        self.done
+    }
+
+    /// 执行一次迭代：
+    /// - 调用模型 completion；
+    /// - 自动处理工具/代理调用，并把结果写回对话历史；
+    /// - 若还有后续步骤，会构造下一轮请求并返回当前中间结果；
+    /// - 若已完成或失败，将返回最终结果；下一次调用将返回 Ok(None)。
+    pub async fn next(&mut self) -> Result<Option<AgentOutput>, BoxError> {
+        if self.done {
+            return Ok(None);
+        }
+
+        let mut output = self.ctx.model.completion(self.req.clone()).await?;
+        self.usage.accumulate(&output.usage);
+
+        // 自动执行工具/代理调用
+        let mut tool_calls_continue: Vec<Json> = Vec::new();
+        for tool in output.tool_calls.iter_mut() {
+            if !self.req.tools.iter().any(|t| t.name == tool.name) {
+                // 已调用过（或不在本轮请求中），跳过
+                continue;
+            }
+
+            // 从 req.tools 中移除已调用的工具，避免重复调用
+            self.req.tools.retain(|t| t.name != tool.name);
+
+            if self.ctx.tools.contains(&tool.name) || tool.name.starts_with("RT_") {
+                // 工具调用
+                match self
+                    .ctx
+                    .tool_call(ToolInput {
+                        name: tool.name.clone(),
+                        args: serde_json::from_str(&tool.args)?,
+                        resources: self
+                            .ctx
+                            .select_tool_resources(&tool.name, &mut self.resources)
+                            .await,
+                        meta: Some(self.ctx.meta().clone()),
+                    })
+                    .await
+                {
+                    Ok(mut res) => {
+                        self.usage.accumulate(&res.usage);
+                        let content: Json = if res.output.is_string() {
+                            res.output.clone()
+                        } else {
+                            serde_json::to_string(&res.output)?.into()
+                        };
+
+                        tool_calls_continue.push(json!(Message {
+                            role: "tool".to_string(),
+                            content,
+                            name: None,
+                            tool_call_id: Some(tool.id.clone()),
+                        }));
+
+                        self.artifacts.append(&mut res.artifacts);
+                        tool.result = Some(serde_json::to_value(&res)?);
+                    }
+                    Err(err) => {
+                        // 与原实现一致：出错时直接返回
+                        output.failed_reason = Some(err.to_string());
+                        output.usage = self.usage.clone();
+                        output.artifacts = self.artifacts.clone();
+                        self.done = true;
+                        return Ok(Some(output));
+                    }
+                }
+            } else if self.ctx.agents.contains(&tool.name)
+                || tool.name.starts_with("LA_")
+                || tool.name.starts_with("RA_")
+            {
+                // 代理调用
+                let args: AgentArgs = serde_json::from_str(&tool.args)?;
+                match self
+                    .ctx
+                    .agent_run(AgentInput {
+                        name: tool.name.clone(),
+                        prompt: args.prompt,
+                        resources: self
+                            .ctx
+                            .agents
+                            .select_resources(&tool.name, &mut self.resources),
+                        meta: Some(self.ctx.meta().clone()),
+                    })
+                    .await
+                {
+                    Ok(mut res) => {
+                        self.usage.accumulate(&res.usage);
+                        if res.failed_reason.is_some() {
+                            output.failed_reason = res.failed_reason;
+                            output.usage = self.usage.clone();
+                            output.artifacts = self.artifacts.clone();
+                            self.done = true;
+                            return Ok(Some(output));
+                        }
+
+                        tool_calls_continue.push(json!(Message {
+                            role: "tool".to_string(),
+                            content: res.content.clone().into(),
+                            name: None,
+                            tool_call_id: Some(tool.id.clone()),
+                        }));
+
+                        self.artifacts.append(&mut res.artifacts);
+                        tool.result = Some(serde_json::to_value(&res)?);
+                    }
+                    Err(err) => {
+                        output.failed_reason = Some(err.to_string());
+                        output.usage = self.usage.clone();
+                        output.artifacts = self.artifacts.clone();
+                        self.done = true;
+                        return Ok(Some(output));
+                    }
+                }
+            }
+            // 未知工具名，忽略
+        }
+
+        // 累计当前轮的 tool_calls
+        self.tool_calls_result.append(&mut output.tool_calls);
+
+        // 若无需继续，返回最终结果并结束
+        if tool_calls_continue.is_empty() {
+            output.tool_calls = std::mem::take(&mut self.tool_calls_result);
+            output.artifacts = std::mem::take(&mut self.artifacts);
+            output.usage = self.usage.clone();
+            self.done = true;
+            return Ok(Some(output));
+        }
+
+        // 准备下一轮请求
+        self.req.documents.clear();
+        self.req.prompt = "".to_string();
+        self.req.chat_history = output.full_history.clone();
+        self.req.chat_history.append(&mut tool_calls_continue);
+
+        // 返回本轮的中间结果（带当前累计 usage；不强制覆盖 artifacts/tool_calls，
+        // 让调用方查看模型本轮原始输出；最终轮会附带汇总）
+        // // output.tool_calls = self.tool_calls_result.clone();
+        // // output.artifacts = self.artifacts.clone();
+        output.usage = self.usage.clone();
+
+        Ok(Some(output))
     }
 }
 

@@ -28,6 +28,8 @@ pub mod kimi;
 pub mod openai;
 pub mod xai;
 
+pub use reqwest::Proxy;
+
 use crate::APP_USER_AGENT;
 
 /// Trait for dynamic completion features that can be used across threads

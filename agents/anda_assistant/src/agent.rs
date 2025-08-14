@@ -1,17 +1,16 @@
 use anda_cognitive_nexus::{CognitiveNexus, ConceptPK};
 use anda_core::{
-    Agent, AgentContext, AgentOutput, BoxError, CompletionFeatures, CompletionRequest, Document,
-    Json, Resource, StateFeatures, Tool, ToolSet, evaluate_tokens, update_resources,
+    Agent, AgentContext, AgentOutput, BoxError, CompletionRequest, Document, Json, Resource,
+    StateFeatures, Tool, ToolSet, evaluate_tokens, update_resources,
 };
 use anda_db::database::AndaDB;
-use anda_db_schema::{Ft, Fv};
 use anda_engine::{
     ANONYMOUS,
     context::{AgentCtx, BaseCtx, Web3SDK},
     extension::fetch::FetchWebResourcesTool,
     memory::{
-        ConversationRef, ConversationState, ConversationStatus, GetResourceContentTool,
-        ListConversationsTool, MemoryManagement, SearchConversationsTool,
+        Conversation, ConversationRef, ConversationState, ConversationStatus,
+        GetResourceContentTool, ListConversationsTool, MemoryManagement, SearchConversationsTool,
     },
     unix_ms,
 };
@@ -19,7 +18,6 @@ use anda_kip::{
     META_SELF_NAME, PERSON_SELF_KIP, PERSON_SYSTEM_KIP, PERSON_TYPE, SYSTEM_INSTRUCTIONS, parse_kml,
 };
 use chrono::prelude::*;
-use ciborium::cbor;
 use std::{collections::BTreeMap, sync::Arc};
 
 /// An AI agent implementation for interacting with ICP blockchain ledgers.
@@ -199,20 +197,23 @@ impl Agent<AgentCtx> for Assistant {
             })
         }
 
-        let mut conversation = ConversationRef {
+        let mut conversation = Conversation {
             _id: 0,
-            user: caller,
+            user: caller.clone(),
             thread: None,
-            messages: &[],
-            resources: &rs,
-            artifacts: &[],
-            status: &ConversationStatus::Working,
+            messages: vec![],
+            resources: resources.clone(),
+            artifacts: vec![],
+            status: ConversationStatus::Working,
             period: created_at / 3600 / 1000,
             created_at,
             updated_at: created_at,
         };
 
-        let id = self.memory.add_conversation(&conversation).await?;
+        let id = self
+            .memory
+            .add_conversation(ConversationRef::from(&conversation))
+            .await?;
         conversation._id = id;
         ctx.base.set_state(ConversationState::from(&conversation));
 
@@ -229,46 +230,70 @@ impl Agent<AgentCtx> for Assistant {
             ..Default::default()
         };
 
-        let mut res = ctx.completion(req, resources).await?;
+        let mut runner = ctx.completion_iter(req, resources);
+
+        let mut res = runner.next().await?.unwrap(); // 理论上一定有输出
         res.conversation = Some(id);
 
         let artifacts = self.memory.try_add_resources(&res.artifacts).await?;
 
         conversation.messages = if res.full_history.len() > chat_history_len {
-            &res.full_history[chat_history_len..]
+            res.full_history[chat_history_len..].to_vec()
         } else {
-            &res.full_history
+            res.full_history.clone()
         };
-        conversation.artifacts = &artifacts;
-        conversation.status = &ConversationStatus::Completed;
+        conversation.artifacts = artifacts;
+        conversation.status = if runner.is_done() {
+            ConversationStatus::Completed
+        } else if res.failed_reason.is_some() {
+            ConversationStatus::Failed
+        } else {
+            ConversationStatus::Working
+        };
         conversation.updated_at = unix_ms();
 
         let _ = self
             .memory
-            .update_conversation(
-                id,
-                BTreeMap::from([
-                    (
-                        "messages".to_string(),
-                        Fv::array_from(cbor!(conversation.messages).unwrap(), &[Ft::Json])?,
-                    ),
-                    (
-                        "artifacts".to_string(),
-                        Fv::array_from(
-                            cbor!(conversation.artifacts).unwrap(),
-                            &[Resource::field_type()],
-                        )?,
-                    ),
-                    (
-                        "status".to_string(),
-                        Fv::Text(conversation.status.to_string()),
-                    ),
-                    ("updated_at".to_string(), Fv::U64(conversation.updated_at)),
-                ]),
-            )
+            .update_conversation(id, conversation.to_changes()?)
             .await;
 
         ctx.base.set_state(ConversationState::from(&conversation));
+
+        let assistant = self.clone();
+        tokio::spawn(async move {
+            while let Some(res) = runner.next().await? {
+                let artifacts = assistant.memory.try_add_resources(&res.artifacts).await?;
+
+                conversation.messages = if res.full_history.len() > chat_history_len {
+                    res.full_history[chat_history_len..].to_vec()
+                } else {
+                    res.full_history.clone()
+                };
+                conversation.artifacts = artifacts;
+                conversation.status = if runner.is_done() {
+                    ConversationStatus::Completed
+                } else if res.failed_reason.is_some() {
+                    ConversationStatus::Failed
+                } else {
+                    ConversationStatus::Working
+                };
+                conversation.updated_at = unix_ms();
+
+                let _ = assistant
+                    .memory
+                    .update_conversation(id, conversation.to_changes()?)
+                    .await;
+
+                ctx.base.set_state(ConversationState::from(&conversation));
+
+                if res.failed_reason.is_some() {
+                    break;
+                }
+            }
+
+            Ok::<(), BoxError>(())
+        });
+
         Ok(res)
     }
 }

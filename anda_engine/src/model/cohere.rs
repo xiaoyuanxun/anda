@@ -41,22 +41,19 @@ impl Client {
     ///
     /// # Arguments
     /// * `api_key` - Cohere API key for authentication
-    pub fn new(api_key: &str) -> Self {
+    pub fn new(api_key: &str, endpoint: Option<String>) -> Self {
+        let endpoint = endpoint.unwrap_or_else(|| COHERE_API_BASE_URL.to_string());
+        let endpoint = if endpoint.is_empty() {
+            COHERE_API_BASE_URL.to_string()
+        } else {
+            endpoint
+        };
         Self {
-            endpoint: COHERE_API_BASE_URL.to_string(),
+            endpoint,
             api_key: api_key.to_string(),
             http: request_client_builder()
                 .build()
                 .expect("Cohere reqwest client should build"),
-        }
-    }
-
-    /// Sets a custom API base URL for the client
-    pub fn with_api_base(self, api_base: &str) -> Self {
-        Self {
-            endpoint: api_base.to_string(),
-            api_key: self.api_key,
-            http: self.http,
         }
     }
 
@@ -325,7 +322,7 @@ mod tests {
         println!("Character path: {}", character_path);
         let character = std::fs::read_to_string(character_path).expect("Character file not found");
         let character = Character::from_toml(&character).expect("Character should parse");
-        let client = Client::new(&api_key);
+        let client = Client::new(&api_key, None);
         let model = client.embedding_model(EMBED_MULTILINGUAL_V3);
         let req = character.to_request("Who are you?".into(), Some("AndaICP".into()));
         let res = model.embed(vec![req.system]).await.unwrap();

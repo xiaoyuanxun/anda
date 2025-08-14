@@ -10,13 +10,14 @@ use anda_db::{
     index::BTree,
     query::{Filter, Query, RangeQuery, Search},
 };
-use anda_db_schema::{AndaDBSchema, FieldEntry, FieldType, Fv, Json, Schema, SchemaError};
+use anda_db_schema::{AndaDBSchema, FieldEntry, FieldType, Ft, Fv, Json, Schema, SchemaError};
 use anda_db_tfs::jieba_tokenizer;
 use anda_kip::{
     CommandType, DescribeTarget, KIP_FUNCTION_DEFINITION, META_SYSTEM_NAME, MetaCommand,
     PERSON_TYPE, Request, Response,
 };
 use candid::Principal;
+use ciborium::cbor;
 use ic_auth_types::ByteBufB64;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -66,6 +67,23 @@ pub struct Conversation {
     pub updated_at: u64,
 }
 
+impl Conversation {
+    pub fn to_changes(&self) -> Result<BTreeMap<String, Fv>, BoxError> {
+        Ok(BTreeMap::from([
+            (
+                "messages".to_string(),
+                Fv::array_from(cbor!(self.messages).unwrap(), &[Ft::Json])?,
+            ),
+            (
+                "artifacts".to_string(),
+                Fv::array_from(cbor!(self.artifacts).unwrap(), &[Resource::field_type()])?,
+            ),
+            ("status".to_string(), Fv::Text(self.status.to_string())),
+            ("updated_at".to_string(), Fv::U64(self.updated_at)),
+        ]))
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct ConversationRef<'a> {
     pub _id: u64,
@@ -78,6 +96,23 @@ pub struct ConversationRef<'a> {
     pub period: u64,
     pub created_at: u64,
     pub updated_at: u64,
+}
+
+impl<'a> From<&'a Conversation> for ConversationRef<'a> {
+    fn from(conversation: &'a Conversation) -> Self {
+        Self {
+            _id: conversation._id,
+            user: &conversation.user,
+            thread: conversation.thread.as_ref(),
+            messages: &conversation.messages,
+            resources: &conversation.resources,
+            artifacts: &conversation.artifacts,
+            status: &conversation.status,
+            period: conversation.period,
+            created_at: conversation.created_at,
+            updated_at: conversation.updated_at,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -263,8 +298,8 @@ impl MemoryManagement {
         }))
     }
 
-    pub async fn add_resource(&self, resource: &ResourceRef<'_>) -> Result<u64, DBError> {
-        let id = self.resources.add_from(resource).await?;
+    pub async fn add_resource(&self, resource: ResourceRef<'_>) -> Result<u64, DBError> {
+        let id = self.resources.add_from(&resource).await?;
         self.resources.flush(unix_ms()).await?;
         Ok(id)
     }
@@ -311,9 +346,9 @@ impl MemoryManagement {
 
     pub async fn add_conversation(
         &self,
-        conversation: &ConversationRef<'_>,
+        conversation: ConversationRef<'_>,
     ) -> Result<u64, DBError> {
-        let id = self.conversations.add_from(conversation).await?;
+        let id = self.conversations.add_from(&conversation).await?;
         self.conversations.flush(unix_ms()).await?;
         Ok(id)
     }
