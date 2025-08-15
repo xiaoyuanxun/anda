@@ -21,8 +21,8 @@ pub struct CompletionRequest {
     /// The system message to be sent to the completion model provider, as the "system" role.
     pub system: String,
 
-    /// The name of system role.
-    pub system_name: Option<String>,
+    /// The name of role, defaulting to "user".
+    pub role: Option<String>,
 
     /// The chat history (raw message) to be sent to the completion model provider.
     pub chat_history: Vec<Json>,
@@ -30,7 +30,7 @@ pub struct CompletionRequest {
     /// The documents to embed into the prompt.
     pub documents: Documents,
 
-    /// The prompt to be sent to the completion model provider as "user" role
+    /// The prompt to be sent to the completion model provider as role
     /// It can be empty.
     pub prompt: String,
 
@@ -85,21 +85,6 @@ impl CompletionRequest {
         self.tools.extend(tools);
         self
     }
-
-    /// Returns the prompt with context if available.
-    pub fn prompt_with_context(&self) -> Option<String> {
-        if self.documents.0.is_empty() && self.prompt.is_empty() {
-            return None;
-        }
-
-        if self.documents.0.is_empty() {
-            Some(self.prompt.clone())
-        } else if self.prompt.is_empty() {
-            Some(format!("{}", self.documents))
-        } else {
-            Some(format!("{}\n---\n{}", self.prompt, self.documents))
-        }
-    }
 }
 
 /// Represents a message send to LLM for completion.
@@ -148,6 +133,21 @@ impl From<&Resource> for Document {
 /// Collection of knowledge documents.
 #[derive(Clone, Debug, Default)]
 pub struct Documents(pub Vec<Document>);
+
+impl Documents {
+    pub fn to_message(&self, rfc3339_datetime: &str) -> Option<Message> {
+        if self.0.is_empty() {
+            return None;
+        }
+
+        Some(Message {
+            role: "tool".into(),
+            content: format!("Current Datetime: {}\n---\n{}", rfc3339_datetime, self).into(),
+            name: None,
+            tool_call_id: None,
+        })
+    }
+}
 
 impl From<Vec<String>> for Documents {
     fn from(texts: Vec<String>) -> Self {
@@ -262,7 +262,6 @@ impl FromStr for ContentPart {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::to_string;
 
     #[test]
     fn test_prompt() {
@@ -285,22 +284,10 @@ mod tests {
             .into(),
             ..Default::default()
         };
-        let prompt = req.prompt_with_context().unwrap();
-        println!("{}", prompt);
+        println!("{}", req.documents);
         assert_eq!(
-            prompt,
-            "This is a test prompt.\n---\n<attachments>\n{\"content\":\"Test document 1.\",\"metadata\":{\"_id\":1}}\n{\"content\":\"Test document 2.\",\"metadata\":{\"_id\":2,\"a\":\"b\",\"key\":\"value\"}}\n</attachments>"
-        );
-
-        let msg = json!(Message {
-            role: "user".into(),
-            content: prompt.into(),
-            name: req.prompter_name,
-            ..Default::default()
-        });
-        assert_eq!(
-            to_string(&msg).unwrap(),
-            r#"{"content":"This is a test prompt.\n---\n<attachments>\n{\"content\":\"Test document 1.\",\"metadata\":{\"_id\":1}}\n{\"content\":\"Test document 2.\",\"metadata\":{\"_id\":2,\"a\":\"b\",\"key\":\"value\"}}\n</attachments>","role":"user"}"#
+            req.documents.to_string(),
+            "<attachments>\n{\"content\":\"Test document 1.\",\"metadata\":{\"_id\":1}}\n{\"content\":\"Test document 2.\",\"metadata\":{\"_id\":2,\"a\":\"b\",\"key\":\"value\"}}\n</attachments>"
         );
     }
 

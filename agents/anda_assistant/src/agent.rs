@@ -1,9 +1,9 @@
 use anda_cognitive_nexus::{CognitiveNexus, ConceptPK};
 use anda_core::{
-    Agent, AgentContext, AgentOutput, BoxError, CompletionRequest, Document, Json, Resource,
-    StateFeatures, Tool, ToolSet, evaluate_tokens, update_resources,
+    Agent, AgentContext, AgentOutput, BoxError, CompletionRequest, Document, Documents, Json,
+    Message, Resource, StateFeatures, Tool, ToolSet, evaluate_tokens, update_resources,
 };
-use anda_db::database::AndaDB;
+use anda_db::{database::AndaDB, index::BTree};
 use anda_engine::{
     ANONYMOUS,
     context::{AgentCtx, BaseCtx, Web3SDK},
@@ -12,13 +12,12 @@ use anda_engine::{
         Conversation, ConversationRef, ConversationState, ConversationStatus,
         GetResourceContentTool, ListConversationsTool, MemoryManagement, SearchConversationsTool,
     },
-    unix_ms,
+    rfc3339_datetime_now, unix_ms,
 };
-use anda_kip::{
-    META_SELF_NAME, PERSON_SELF_KIP, PERSON_SYSTEM_KIP, PERSON_TYPE, SYSTEM_INSTRUCTIONS, parse_kml,
-};
-use chrono::prelude::*;
+use anda_kip::{META_SELF_NAME, PERSON_SELF_KIP, PERSON_SYSTEM_KIP, PERSON_TYPE, parse_kml};
 use std::{collections::BTreeMap, sync::Arc};
+
+static SYSTEM_INSTRUCTIONS: &str = include_str!("../SystemInstructions.md");
 
 /// An AI agent implementation for interacting with ICP blockchain ledgers.
 /// This agent provides capabilities to check balances and transfer ICP tokens
@@ -93,12 +92,11 @@ impl Assistant {
     }
 
     pub async fn to_kip_system_role_instructions(&self) -> Result<String, BoxError> {
-        let utc = Utc::now().to_rfc3339();
         let system = self.memory.describe_system().await?;
 
         Ok(format!(
-            "{}\n---\n# Your Identity & Knowledge Domain\n{}\n---\n# Current Time: {}",
-            SYSTEM_INSTRUCTIONS, system, utc
+            "{}\n---\n# Your Identity & Knowledge Domain\n{}",
+            SYSTEM_INSTRUCTIONS, system
         ))
     }
 }
@@ -145,37 +143,46 @@ impl Agent<AgentCtx> for Assistant {
         }
 
         let created_at = unix_ms();
-        let utc: DateTime<Utc> = DateTime::from_timestamp_millis(created_at as i64).unwrap();
-        let utc = utc.to_rfc3339();
         let primer = self.memory.describe_primer().await?;
         let system = format!(
-            "{}\n---\n# Your Identity & Knowledge Domain Map\n{}\n---\n# Current Time: {}",
-            SYSTEM_INSTRUCTIONS, primer, utc
+            "{}\n---\n# Your Identity & Knowledge Domain Map\n{}\n",
+            SYSTEM_INSTRUCTIONS, primer
         );
 
-        let (conversations, cursor) = self
+        let (mut conversations, mut cursor) = self
             .memory
-            .list_conversations_by_user(caller, None, Some(3))
+            .list_conversations_by_user(caller, None, Some(7))
             .await?;
-        let mut chat_history = conversations
-            .into_iter()
-            .map(|chat| chat.messages)
-            .collect::<Vec<_>>();
         let max_history_bytes = self
             .max_input_tokens
-            .saturating_sub((evaluate_tokens(&system) + evaluate_tokens(&prompt)) * 3)
+            .saturating_sub((evaluate_tokens(&system) + evaluate_tokens(&prompt)) * 2)
             * 3; // Rough estimate of bytes per token
         let mut writer: Vec<u8> = Vec::with_capacity(256);
-        let _ = serde_json::to_writer(&mut writer, &chat_history);
+        let _ = serde_json::to_writer(&mut writer, &conversations);
         let mut history_bytes = writer.len();
-        while history_bytes > max_history_bytes && !chat_history.is_empty() {
+        while history_bytes > max_history_bytes && !conversations.is_empty() {
             writer.clear();
-            let _ = serde_json::to_writer(&mut writer, &chat_history.remove(0));
+            let conv = conversations.remove(0);
+            cursor = BTree::to_cursor(&conv._id);
+            let _ = serde_json::to_writer(&mut writer, &conv);
             history_bytes = history_bytes.saturating_sub(writer.len());
         }
 
-        let chat_history: Vec<Json> = chat_history.into_iter().flatten().collect();
-        let chat_history_len = chat_history.len();
+        let mut chat_history: Vec<Json> = vec![];
+        if !conversations.is_empty() {
+            let docs: Vec<Document> = conversations.iter().map(Document::from).collect();
+            let content = format!(
+                "Current Datetime: {}\nPrevious Conversations: \n---\n{}",
+                rfc3339_datetime_now(),
+                Documents::from(docs)
+            );
+            chat_history.push(serde_json::json!(Message {
+                role: "tool".into(),
+                content: content.into(),
+                ..Default::default()
+            }));
+        }
+
         let resources = update_resources(caller, resources);
         let rs = self.memory.try_add_resources(&resources).await?;
 
@@ -199,7 +206,7 @@ impl Agent<AgentCtx> for Assistant {
 
         let mut conversation = Conversation {
             _id: 0,
-            user: caller.clone(),
+            user: *caller,
             thread: None,
             messages: vec![],
             resources: resources.clone(),
@@ -237,11 +244,7 @@ impl Agent<AgentCtx> for Assistant {
 
         let artifacts = self.memory.try_add_resources(&res.artifacts).await?;
 
-        conversation.messages = if res.full_history.len() > chat_history_len {
-            res.full_history[chat_history_len..].to_vec()
-        } else {
-            res.full_history.clone()
-        };
+        conversation.messages = res.full_history.clone();
         conversation.artifacts = artifacts;
         conversation.status = if runner.is_done() {
             ConversationStatus::Completed
@@ -261,14 +264,13 @@ impl Agent<AgentCtx> for Assistant {
 
         let assistant = self.clone();
         tokio::spawn(async move {
-            while let Some(res) = runner.next().await? {
+            while let Some(res) = runner.next().await.map_err(|err| {
+                log::error!("Conversation {id} in CompletionRunner error: {:?}", err);
+                err
+            })? {
                 let artifacts = assistant.memory.try_add_resources(&res.artifacts).await?;
 
-                conversation.messages = if res.full_history.len() > chat_history_len {
-                    res.full_history[chat_history_len..].to_vec()
-                } else {
-                    res.full_history.clone()
-                };
+                conversation.messages = res.full_history.clone();
                 conversation.artifacts = artifacts;
                 conversation.status = if runner.is_done() {
                     ConversationStatus::Completed

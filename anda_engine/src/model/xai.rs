@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use super::{CompletionFeaturesDyn, request_client_builder};
+use crate::rfc3339_datetime_now;
 
 // ================================================================
 // Main Grok Client
@@ -162,7 +163,11 @@ pub struct MessageOutput {
     pub role: String,
     #[serde(default)]
     pub content: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub refusal: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCallOutput>>,
 }
 
@@ -226,12 +231,10 @@ impl CompletionFeaturesDyn for CompletionModel {
 
         Box::pin(async move {
             // Add system to chat history (if available)
-            let has_system = !req.system.is_empty();
-            let mut full_history = if has_system {
+            let mut full_history = if !req.system.is_empty() {
                 vec![json!(Message {
                     role: "system".into(),
                     content: req.system.clone().into(),
-                    name: req.system_name.clone(),
                     ..Default::default()
                 })]
             } else {
@@ -240,21 +243,29 @@ impl CompletionFeaturesDyn for CompletionModel {
 
             // Extend existing chat history
             full_history.append(&mut req.chat_history);
+            let skip_messages = full_history.len();
+
+            let role = req.role.unwrap_or("user".to_string());
+            if !req.prompt.is_empty() {
+                full_history.push(json!(Message {
+                    role: role.clone(),
+                    content: req.prompt.into(),
+                    name: req.prompter_name.clone(),
+                    ..Default::default()
+                }));
+            }
 
             if !req.content_parts.is_empty() {
                 full_history.push(json!(Message {
-                    role: "user".into(),
+                    role: role.clone(),
                     content: json!(req.content_parts),
                     name: req.prompter_name,
                     ..Default::default()
                 }));
-            } else if let Some(prompt) = req.prompt_with_context() {
-                full_history.push(json!(Message {
-                    role: "user".into(),
-                    content: prompt.into(),
-                    name: req.prompter_name,
-                    ..Default::default()
-                }));
+            }
+
+            if let Some(prompt) = req.documents.to_message(&rfc3339_datetime_now()) {
+                full_history.push(json!(prompt));
             }
 
             let mut body = json!({
@@ -315,8 +326,8 @@ impl CompletionFeaturesDyn for CompletionModel {
                         {
                             log::debug!(response = val; "Grok completions response");
                         }
-                        if has_system {
-                            full_history.remove(0); // Remove system message from history
+                        if skip_messages > 0 {
+                            full_history.drain(0..skip_messages);
                         }
                         res.try_into(full_history)
                     }

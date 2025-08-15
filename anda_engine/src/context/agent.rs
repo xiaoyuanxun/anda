@@ -147,10 +147,12 @@ impl AgentCtx {
             ctx: self.clone(),
             req,
             resources,
+            full_history: Vec::new(),
             tool_calls_result: Vec::new(),
             usage: Usage::default(),
             artifacts: Vec::new(),
             done: false,
+            step: 0,
         }
     }
 }
@@ -832,32 +834,42 @@ impl HttpFeatures for AgentCtx {
     }
 }
 
-/// 逐步执行 completion 的执行器。
+/// A iteration style executor for completion.
 pub struct CompletionRunner {
     ctx: AgentCtx,
     req: CompletionRequest,
     resources: Vec<Resource>,
+    full_history: Vec<Json>,
     tool_calls_result: Vec<ToolCall>,
     usage: Usage,
     artifacts: Vec<Resource>,
     done: bool,
+    step: usize,
 }
 
 impl CompletionRunner {
+    /// Returns whether the completion has finished.
     pub fn is_done(&self) -> bool {
         self.done
     }
 
-    /// 执行一次迭代：
-    /// - 调用模型 completion；
-    /// - 自动处理工具/代理调用，并把结果写回对话历史；
-    /// - 若还有后续步骤，会构造下一轮请求并返回当前中间结果；
-    /// - 若已完成或失败，将返回最终结果；下一次调用将返回 Ok(None)。
+    /// Returns the number of steps executed.
+    pub fn steps(&self) -> usize {
+        self.step
+    }
+
+    /// Execute the next step.
+    /// - Calls the model completion.
+    /// - Automatically handles tool/agent calls and writes the results back to the conversation history.
+    /// - If there are more steps, it constructs the next request and returns the current intermediate result.
+    /// - If completed or failed, it returns the final result; the next call will return Ok(None).
+    ///
     pub async fn next(&mut self) -> Result<Option<AgentOutput>, BoxError> {
         if self.done {
             return Ok(None);
         }
 
+        self.step += 1;
         let mut output = self.ctx.model.completion(self.req.clone()).await?;
         self.usage.accumulate(&output.usage);
 
@@ -906,12 +918,8 @@ impl CompletionRunner {
                         tool.result = Some(serde_json::to_value(&res)?);
                     }
                     Err(err) => {
-                        // 与原实现一致：出错时直接返回
                         output.failed_reason = Some(err.to_string());
-                        output.usage = self.usage.clone();
-                        output.artifacts = self.artifacts.clone();
-                        self.done = true;
-                        return Ok(Some(output));
+                        return Ok(Some(self.final_output(output)));
                     }
                 }
             } else if self.ctx.agents.contains(&tool.name)
@@ -937,10 +945,7 @@ impl CompletionRunner {
                         self.usage.accumulate(&res.usage);
                         if res.failed_reason.is_some() {
                             output.failed_reason = res.failed_reason;
-                            output.usage = self.usage.clone();
-                            output.artifacts = self.artifacts.clone();
-                            self.done = true;
-                            return Ok(Some(output));
+                            return Ok(Some(self.final_output(output)));
                         }
 
                         tool_calls_continue.push(json!(Message {
@@ -955,10 +960,7 @@ impl CompletionRunner {
                     }
                     Err(err) => {
                         output.failed_reason = Some(err.to_string());
-                        output.usage = self.usage.clone();
-                        output.artifacts = self.artifacts.clone();
-                        self.done = true;
-                        return Ok(Some(output));
+                        return Ok(Some(self.final_output(output)));
                     }
                 }
             }
@@ -970,26 +972,41 @@ impl CompletionRunner {
 
         // 若无需继续，返回最终结果并结束
         if tool_calls_continue.is_empty() {
-            output.tool_calls = std::mem::take(&mut self.tool_calls_result);
-            output.artifacts = std::mem::take(&mut self.artifacts);
-            output.usage = self.usage.clone();
-            self.done = true;
-            return Ok(Some(output));
+            return Ok(Some(self.final_output(output)));
         }
 
         // 准备下一轮请求
         self.req.documents.clear();
+        self.req.content_parts.clear();
         self.req.prompt = "".to_string();
-        self.req.chat_history = output.full_history.clone();
-        self.req.chat_history.append(&mut tool_calls_continue);
+
+        // 本轮对话新生成的消息（不包含 req.chat_history）
+        output.full_history.append(&mut tool_calls_continue);
+        // 追加到下一轮请求
+        self.req.chat_history.extend(output.full_history.clone());
+        // 累计所有对话历史（不包含初始的 req.chat_history）
+        self.full_history.append(&mut output.full_history);
 
         // 返回本轮的中间结果（带当前累计 usage；不强制覆盖 artifacts/tool_calls，
         // 让调用方查看模型本轮原始输出；最终轮会附带汇总）
         // // output.tool_calls = self.tool_calls_result.clone();
         // // output.artifacts = self.artifacts.clone();
         output.usage = self.usage.clone();
+        // 本次 output 也包含当前所有对话
+        output.full_history = self.full_history.clone();
 
         Ok(Some(output))
+    }
+
+    fn final_output(&mut self, mut output: AgentOutput) -> AgentOutput {
+        self.done = true;
+        self.full_history.append(&mut output.full_history);
+        output.full_history = std::mem::take(&mut self.full_history);
+        output.tool_calls = std::mem::take(&mut self.tool_calls_result);
+        output.artifacts = std::mem::take(&mut self.artifacts);
+        output.usage = std::mem::take(&mut self.usage);
+
+        output
     }
 }
 

@@ -1,7 +1,7 @@
 use anda_cognitive_nexus::{CognitiveNexus, ConceptPK};
 use anda_core::{
-    BoxError, FunctionDefinition, Resource, ResourceRef, StateFeatures, Tool, ToolOutput, Xid,
-    gen_schema_for,
+    BoxError, Document, Documents, FunctionDefinition, Resource, ResourceRef, StateFeatures, Tool,
+    ToolOutput, Xid, gen_schema_for,
 };
 use anda_db::{
     collection::{Collection, CollectionConfig},
@@ -28,7 +28,10 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
-use crate::{context::BaseCtx, extension::fetch::FetchWebResourcesTool, unix_ms};
+use crate::{
+    context::BaseCtx, extension::fetch::FetchWebResourcesTool, rfc3339_datetime,
+    rfc3339_datetime_now, unix_ms,
+};
 
 pub static FUNCTION_DEFINITION: LazyLock<FunctionDefinition> =
     LazyLock::new(|| serde_json::from_value(KIP_FUNCTION_DEFINITION.clone()).unwrap());
@@ -81,6 +84,32 @@ impl Conversation {
             ("status".to_string(), Fv::Text(self.status.to_string())),
             ("updated_at".to_string(), Fv::U64(self.updated_at)),
         ]))
+    }
+}
+
+impl From<&Conversation> for Document {
+    fn from(conversation: &Conversation) -> Self {
+        let mut metadata = BTreeMap::from([
+            ("_type".to_string(), "Conversation".into()),
+            ("_id".to_string(), conversation._id.into()),
+            ("user".to_string(), conversation.user.to_string().into()),
+            ("status".to_string(), conversation.status.to_string().into()),
+            (
+                "created_at".to_string(),
+                rfc3339_datetime(conversation.created_at).unwrap().into(),
+            ),
+            (
+                "updated_at".to_string(),
+                rfc3339_datetime(conversation.updated_at).unwrap().into(),
+            ),
+        ]);
+        if let Some(thread) = &conversation.thread {
+            metadata.insert("thread".to_string(), thread.to_string().into());
+        }
+        Self {
+            content: json!(&conversation.messages),
+            metadata,
+        }
     }
 }
 
@@ -678,9 +707,15 @@ impl Tool<BaseCtx> for ListConversationsTool {
             .memory
             .list_conversations_by_user(ctx.caller(), args.cursor, args.limit)
             .await?;
+        let docs: Vec<Document> = conversations.iter().map(Document::from).collect();
+        let result = format!(
+            "Current Datetime: {}\n---\n{}",
+            rfc3339_datetime_now(),
+            Documents::from(docs)
+        );
 
         Ok(ToolOutput::new(Response::Ok {
-            result: json!(conversations),
+            result: result.into(),
             next_cursor,
         }))
     }
@@ -743,8 +778,15 @@ impl Tool<BaseCtx> for SearchConversationsTool {
             .search_conversations(ctx.caller(), args.query, args.limit)
             .await?;
 
+        let docs: Vec<Document> = conversations.iter().map(Document::from).collect();
+        let result = format!(
+            "Current Datetime: {}\n---\n{}",
+            rfc3339_datetime_now(),
+            Documents::from(docs)
+        );
+
         Ok(ToolOutput::new(Response::Ok {
-            result: json!(conversations),
+            result: result.into(),
             next_cursor: None,
         }))
     }

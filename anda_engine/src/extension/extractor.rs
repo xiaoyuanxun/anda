@@ -217,6 +217,10 @@ impl<T: JsonSchema + DeserializeOwned + Serialize + Send + Sync> Extractor<T> {
         };
 
         let mut res = ctx.completion(req, Vec::new()).await?;
+        if let Some(failed) = res.failed_reason {
+            return Err(failed.into());
+        }
+
         if let Some(tool) = res.tool_calls.iter_mut().next() {
             let result = self.tool.submit(tool.args.clone())?;
             return Ok((result, res));
@@ -322,14 +326,14 @@ mod tests {
         assert!(res.is_err());
         assert!(res.unwrap_err().to_string().contains("invalid args"));
 
-        let res = ctx
+        let _res = ctx
             .agent_run(AgentInput::new(
                 agent_name.to_string(),
                 r#"{"name": "Anda"}"#.into(),
             ))
             .await
             .unwrap();
-        println!("test_with_ctx: {:?}", res);
+        // println!("test_with_ctx: {:?}", res);
         // assert_eq!(
         //     res.tool_calls.as_ref().unwrap()[0].result.unwrap().as_str(),
         //     Some(r#"{"name":"Anda","age":null}"#)
