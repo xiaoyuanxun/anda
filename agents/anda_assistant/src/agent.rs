@@ -1,12 +1,12 @@
 use anda_cognitive_nexus::{CognitiveNexus, ConceptPK};
 use anda_core::{
     Agent, AgentContext, AgentOutput, BoxError, CompletionRequest, Document, Documents, Json,
-    Message, Resource, StateFeatures, Tool, ToolSet, evaluate_tokens, update_resources,
+    Message, Principal, Resource, StateFeatures, Tool, ToolSet, evaluate_tokens, update_resources,
 };
 use anda_db::{database::AndaDB, index::BTree};
 use anda_engine::{
     ANONYMOUS,
-    context::{AgentCtx, BaseCtx, Web3SDK},
+    context::{AgentCtx, BaseCtx},
     extension::fetch::FetchWebResourcesTool,
     memory::{
         Conversation, ConversationRef, ConversationState, ConversationStatus,
@@ -14,25 +14,25 @@ use anda_engine::{
     },
     rfc3339_datetime_now, unix_ms,
 };
-use anda_kip::{META_SELF_NAME, PERSON_SELF_KIP, PERSON_SYSTEM_KIP, PERSON_TYPE, parse_kml};
+use anda_kip::{
+    META_SELF_NAME, PERSON_SELF_KIP, PERSON_SYSTEM_KIP, PERSON_TYPE, SYSTEM_INSTRUCTIONS, parse_kml,
+};
 use std::{collections::BTreeMap, sync::Arc};
 
-static SYSTEM_INSTRUCTIONS: &str = include_str!("../SystemInstructions.md");
-
-/// An AI agent implementation for interacting with ICP blockchain ledgers.
-/// This agent provides capabilities to check balances and transfer ICP tokens
-/// using the provided tools.
 #[derive(Clone)]
 pub struct Assistant {
     max_input_tokens: usize,
     memory: Arc<MemoryManagement>,
     tools: Vec<String>,
+    system_instructions: String,
 }
 
 impl Assistant {
     pub const NAME: &'static str = "assistant";
-    pub async fn connect(db: Arc<AndaDB>, web3: Arc<Web3SDK>) -> Result<Self, BoxError> {
-        let my_id = web3.get_principal();
+    pub async fn connect(db: Arc<AndaDB>, id: Option<Principal>) -> Result<Self, BoxError> {
+        let id = id
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "uuc56-gyb".to_string()); // Principal::from_slice(&[1])
         let nexus = CognitiveNexus::connect(db.clone(), async |nexus| {
             if !nexus
                 .has_concept(&ConceptPK::Object {
@@ -42,8 +42,7 @@ impl Assistant {
                 .await
             {
                 let kml = &[
-                    &PERSON_SELF_KIP
-                        .replace("$self_reserved_principal_id", my_id.to_string().as_str()),
+                    &PERSON_SELF_KIP.replace("$self_reserved_principal_id", &id),
                     PERSON_SYSTEM_KIP,
                 ]
                 .join("\n");
@@ -61,6 +60,7 @@ impl Assistant {
 
         Ok(Self {
             max_input_tokens: 65535,
+            system_instructions: SYSTEM_INSTRUCTIONS.to_string(),
             memory,
             tools: vec![
                 memory_name,
@@ -74,6 +74,11 @@ impl Assistant {
 
     pub fn with_max_input_tokens(&mut self, max_input_tokens: usize) -> &mut Self {
         self.max_input_tokens = max_input_tokens;
+        self
+    }
+
+    pub fn with_system_instructions(&mut self, instructions: &str) -> &mut Self {
+        self.system_instructions = instructions.to_string();
         self
     }
 
@@ -98,6 +103,26 @@ impl Assistant {
             "{}\n---\n# Your Identity & Knowledge Domain\n{}",
             SYSTEM_INSTRUCTIONS, system
         ))
+    }
+
+    pub async fn self_name(&self) -> Option<String> {
+        if let Ok(concept) = self
+            .memory
+            .nexus()
+            .get_concept(&ConceptPK::Object {
+                r#type: PERSON_TYPE.to_string(),
+                name: META_SELF_NAME.to_string(),
+            })
+            .await
+        {
+            concept
+                .attributes
+                .get("name")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        } else {
+            None
+        }
     }
 }
 

@@ -13,7 +13,7 @@ use anda_db::{
 use anda_db_schema::{AndaDBSchema, FieldEntry, FieldType, Ft, Fv, Json, Schema, SchemaError};
 use anda_db_tfs::jieba_tokenizer;
 use anda_kip::{
-    CommandType, DescribeTarget, KIP_FUNCTION_DEFINITION, META_SYSTEM_NAME, MetaCommand,
+    CommandType, DescribeTarget, KIP_FUNCTION_DEFINITION, KipError, META_SYSTEM_NAME, MetaCommand,
     PERSON_TYPE, Request, Response,
 };
 use candid::Principal;
@@ -301,7 +301,11 @@ impl MemoryManagement {
         })
     }
 
-    pub async fn describe_primer(&self) -> Result<Json, BoxError> {
+    pub fn nexus(&self) -> Arc<CognitiveNexus> {
+        self.nexus.clone()
+    }
+
+    pub async fn describe_primer(&self) -> Result<Json, KipError> {
         let (primer, _) = self
             .nexus
             .execute_meta(MetaCommand::Describe(DescribeTarget::Primer))
@@ -309,7 +313,7 @@ impl MemoryManagement {
         Ok(primer)
     }
 
-    pub async fn describe_system(&self) -> Result<Json, BoxError> {
+    pub async fn describe_system(&self) -> Result<Json, KipError> {
         let system = self
             .nexus
             .get_concept(&ConceptPK::Object {

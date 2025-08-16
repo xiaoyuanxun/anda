@@ -6,7 +6,6 @@ pub use agent::*;
 mod tests {
     use super::*;
     use anda_db::database::{AndaDB, DBConfig};
-    use anda_engine::context::{Web3Client, Web3SDK};
     use object_store::memory::InMemory;
     use std::sync::Arc;
 
@@ -21,8 +20,7 @@ mod tests {
             .await
             .unwrap();
         let db = Arc::new(db);
-        let web3 = Arc::new(Web3SDK::Web3(Web3Client::not_implemented()));
-        let _agent = Assistant::connect(db, web3).await.unwrap();
+        let _agent = Assistant::connect(db, None).await.unwrap();
     }
 
     #[tokio::test]
