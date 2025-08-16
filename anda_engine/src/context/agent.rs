@@ -34,9 +34,16 @@ use anda_core::{
 };
 use bytes::Bytes;
 use candid::{CandidType, Principal, utils::ArgumentEncoder};
+use futures_util::Stream;
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::json;
-use std::{future::Future, sync::Arc, time::Duration};
+use std::{
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+    time::Duration,
+};
 
 use super::{base::BaseCtx, engine::RemoteEngines};
 use crate::model::Model;
@@ -153,6 +160,17 @@ impl AgentCtx {
             artifacts: Vec::new(),
             done: false,
             step: 0,
+        }
+    }
+
+    /// Creates a completion stream for processing of completion requests.
+    pub fn completion_stream(
+        &self,
+        req: CompletionRequest,
+        resources: Vec<Resource>,
+    ) -> CompletionStream {
+        CompletionStream {
+            runner: self.completion_iter(req, resources),
         }
     }
 }
@@ -872,6 +890,10 @@ impl CompletionRunner {
         self.step += 1;
         let mut output = self.ctx.model.completion(self.req.clone()).await?;
         self.usage.accumulate(&output.usage);
+        // 追加到下一轮请求
+        self.req.chat_history.extend(output.full_history.clone());
+        // 累计所有对话历史（不包含初始的 req.chat_history）
+        self.full_history.append(&mut output.full_history);
 
         // 自动执行工具/代理调用
         let mut tool_calls_continue: Vec<Json> = Vec::new();
@@ -904,15 +926,29 @@ impl CompletionRunner {
                         let content: Json = if res.output.is_string() {
                             res.output.clone()
                         } else {
+                            // content should be string
                             serde_json::to_string(&res.output)?.into()
                         };
-
-                        tool_calls_continue.push(json!(Message {
+                        let message = json!(Message {
                             role: "tool".to_string(),
                             content,
-                            name: None,
+                            name: Some("$system".to_string()),
                             tool_call_id: Some(tool.id.clone()),
-                        }));
+                        });
+
+                        if res
+                            .output
+                            .get("ignore")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false)
+                            && !tool.id.is_empty()
+                        {
+                            self.full_history.push(message);
+                        } else {
+                            // If the tool response does not contain "ignore", we process it
+                            // ChatGPT: An assistant message with 'tool_calls' must be followed by tool messages responding to each 'tool_call_id'.
+                            tool_calls_continue.push(message);
+                        }
 
                         self.artifacts.append(&mut res.artifacts);
                         tool.result = Some(serde_json::to_value(&res)?);
@@ -951,7 +987,7 @@ impl CompletionRunner {
                         tool_calls_continue.push(json!(Message {
                             role: "tool".to_string(),
                             content: res.content.clone().into(),
-                            name: None,
+                            name: Some("$system".to_string()),
                             tool_call_id: Some(tool.id.clone()),
                         }));
 
@@ -980,12 +1016,10 @@ impl CompletionRunner {
         self.req.content_parts.clear();
         self.req.prompt = "".to_string();
 
-        // 本轮对话新生成的消息（不包含 req.chat_history）
-        output.full_history.append(&mut tool_calls_continue);
         // 追加到下一轮请求
-        self.req.chat_history.extend(output.full_history.clone());
+        self.req.chat_history.extend(tool_calls_continue.clone());
         // 累计所有对话历史（不包含初始的 req.chat_history）
-        self.full_history.append(&mut output.full_history);
+        self.full_history.append(&mut tool_calls_continue);
 
         // 返回本轮的中间结果（带当前累计 usage；不强制覆盖 artifacts/tool_calls，
         // 让调用方查看模型本轮原始输出；最终轮会附带汇总）
@@ -1007,6 +1041,26 @@ impl CompletionRunner {
         output.usage = std::mem::take(&mut self.usage);
 
         output
+    }
+}
+
+pub struct CompletionStream {
+    runner: CompletionRunner,
+}
+
+impl Stream for CompletionStream {
+    type Item = Result<AgentOutput, BoxError>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let future = self.runner.next();
+        tokio::pin!(future);
+
+        match future.poll(cx) {
+            Poll::Ready(Ok(Some(output))) => Poll::Ready(Some(Ok(output))),
+            Poll::Ready(Ok(None)) => Poll::Ready(None),
+            Poll::Ready(Err(e)) => Poll::Ready(Some(Err(e))),
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
 

@@ -1,7 +1,7 @@
 use anda_cognitive_nexus::{CognitiveNexus, ConceptPK};
 use anda_core::{
     BoxError, Document, Documents, FunctionDefinition, Resource, ResourceRef, StateFeatures, Tool,
-    ToolOutput, Xid, gen_schema_for,
+    ToolOutput, Usage, Xid, gen_schema_for,
 };
 use anda_db::{
     collection::{Collection, CollectionConfig},
@@ -29,8 +29,8 @@ use std::{
 };
 
 use crate::{
-    context::BaseCtx, extension::fetch::FetchWebResourcesTool, rfc3339_datetime,
-    rfc3339_datetime_now, unix_ms,
+    context::BaseCtx, extension::fetch::FetchWebResourcesTool, json_convert_rfc3339_timestamp,
+    json_set_unix_ms_timestamp, rfc3339_datetime, rfc3339_datetime_now, unix_ms,
 };
 
 pub static FUNCTION_DEFINITION: LazyLock<FunctionDefinition> =
@@ -59,6 +59,10 @@ pub struct Conversation {
     #[field_type = "Text"]
     pub status: ConversationStatus,
 
+    /// The LLM usage statistics for the conversation.
+    #[field_type = "Map<String, U64>"]
+    pub usage: Usage,
+
     /// The period when the conversation was created, in hours (timestamp / 3600 / 1000).
     /// It is used to index the conversation for faster retrieval by time.
     pub period: u64,
@@ -71,6 +75,11 @@ pub struct Conversation {
 }
 
 impl Conversation {
+    pub fn append_messages(&mut self, message: Vec<Json>, now_ms: u64) {
+        self.messages
+            .extend(json_set_unix_ms_timestamp(message, now_ms));
+    }
+
     pub fn to_changes(&self) -> Result<BTreeMap<String, Fv>, BoxError> {
         Ok(BTreeMap::from([
             (
@@ -82,6 +91,13 @@ impl Conversation {
                 Fv::array_from(cbor!(self.artifacts).unwrap(), &[Resource::field_type()])?,
             ),
             ("status".to_string(), Fv::Text(self.status.to_string())),
+            (
+                "usage".to_string(),
+                Fv::map_from(
+                    cbor!(self.usage).unwrap(),
+                    &BTreeMap::from([("*".to_string(), Ft::U64)]),
+                )?,
+            ),
             ("updated_at".to_string(), Fv::U64(self.updated_at)),
         ]))
     }
@@ -107,7 +123,7 @@ impl From<&Conversation> for Document {
             metadata.insert("thread".to_string(), thread.to_string().into());
         }
         Self {
-            content: json!(&conversation.messages),
+            content: json_convert_rfc3339_timestamp(conversation.messages.clone()).into(),
             metadata,
         }
     }
@@ -122,6 +138,7 @@ pub struct ConversationRef<'a> {
     pub resources: &'a [Resource],
     pub artifacts: &'a [Resource],
     pub status: &'a ConversationStatus,
+    pub usage: &'a Usage,
     pub period: u64,
     pub created_at: u64,
     pub updated_at: u64,
@@ -137,6 +154,7 @@ impl<'a> From<&'a Conversation> for ConversationRef<'a> {
             resources: &conversation.resources,
             artifacts: &conversation.artifacts,
             status: &conversation.status,
+            usage: &conversation.usage,
             period: conversation.period,
             created_at: conversation.created_at,
             updated_at: conversation.updated_at,
@@ -721,6 +739,7 @@ impl Tool<BaseCtx> for ListConversationsTool {
         Ok(ToolOutput::new(Response::Ok {
             result: result.into(),
             next_cursor,
+            ignore: None,
         }))
     }
 }
@@ -792,6 +811,7 @@ impl Tool<BaseCtx> for SearchConversationsTool {
         Ok(ToolOutput::new(Response::Ok {
             result: result.into(),
             next_cursor: None,
+            ignore: None,
         }))
     }
 }
@@ -882,6 +902,7 @@ impl Tool<BaseCtx> for MemoryTool {
                 Ok(ToolOutput::new(Response::Ok {
                     result: json!(conversation),
                     next_cursor: None,
+                    ignore: None,
                 }))
             }
             MemoryToolArgs::ListPrevConversations { cursor, limit } => {
@@ -893,6 +914,7 @@ impl Tool<BaseCtx> for MemoryTool {
                 Ok(ToolOutput::new(Response::Ok {
                     result: json!(conversations),
                     next_cursor,
+                    ignore: None,
                 }))
             }
             MemoryToolArgs::SearchConversations { query, limit } => {
@@ -904,6 +926,7 @@ impl Tool<BaseCtx> for MemoryTool {
                 Ok(ToolOutput::new(Response::Ok {
                     result: json!(conversations),
                     next_cursor: None,
+                    ignore: None,
                 }))
             }
             MemoryToolArgs::ListKipLogs { cursor, limit } => {
@@ -915,6 +938,7 @@ impl Tool<BaseCtx> for MemoryTool {
                 Ok(ToolOutput::new(Response::Ok {
                     result: json!(logs),
                     next_cursor,
+                    ignore: None,
                 }))
             }
         }
@@ -938,6 +962,7 @@ mod tests {
             period: 0,
             created_at: 0,
             updated_at: 0,
+            usage: Usage::default(),
         };
         let rt = ConversationStatus::Completed;
         println!("{}", rt);

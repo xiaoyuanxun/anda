@@ -88,7 +88,7 @@ moka = { version = "0.12", features = ["future"] }
 xid = "1.1"
 toml = "0.8"
 k256 = { version = "0.13", features = ["ecdsa"] }
-log = "0.4"
+log = { version = "0.4", features = ["kv_serde"] }
 dotenv = "0.15"
 schemars = { version = "0.9" }
 clap = { version = "4.5", features = ["derive", "env"] }

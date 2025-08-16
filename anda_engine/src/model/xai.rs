@@ -147,6 +147,13 @@ impl CompletionResponse {
 
         Ok(output)
     }
+
+    fn maybe_failed(&self) -> bool {
+        self.choices.iter().any(|choice| {
+            !matches!(choice.finish_reason.as_str(), "stop" | "tool_calls")
+                || choice.message.refusal.is_some()
+        })
+    }
 }
 
 /// Individual completion choice from Grok API
@@ -326,6 +333,12 @@ impl CompletionFeaturesDyn for CompletionModel {
                         {
                             log::debug!(response = val; "Grok completions response");
                         }
+                        if res.maybe_failed() {
+                            log::warn!(
+                                request:serde = body,
+                                response:serde = res;
+                                "completions maybe failed");
+                        }
                         if skip_messages > 0 {
                             full_history.drain(0..skip_messages);
                         }
@@ -336,7 +349,12 @@ impl CompletionFeaturesDyn for CompletionModel {
                     }
                 }
             } else {
+                let status = response.status();
                 let msg = response.text().await?;
+                log::error!(
+                    request:serde = body;
+                    "completions request failed: {status}, body: {msg}",
+                );
                 Err(format!("Grok completions error: {}", msg).into())
             }
         })

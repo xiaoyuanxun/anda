@@ -1,13 +1,15 @@
 use anda_cognitive_nexus::{CognitiveNexus, ConceptPK};
 use anda_core::{
     Agent, AgentContext, AgentOutput, BoxError, CompletionRequest, Document, Documents, Json,
-    Message, Principal, Resource, StateFeatures, Tool, ToolSet, evaluate_tokens, update_resources,
+    Message, Principal, Resource, StateFeatures, Tool, ToolSet, Usage, evaluate_tokens,
+    update_resources,
 };
 use anda_db::{database::AndaDB, index::BTree};
 use anda_engine::{
     ANONYMOUS,
     context::{AgentCtx, BaseCtx},
     extension::fetch::FetchWebResourcesTool,
+    json_set_unix_ms_timestamp,
     memory::{
         Conversation, ConversationRef, ConversationState, ConversationStatus,
         GetResourceContentTool, ListConversationsTool, MemoryManagement, SearchConversationsTool,
@@ -72,12 +74,12 @@ impl Assistant {
         })
     }
 
-    pub fn with_max_input_tokens(&mut self, max_input_tokens: usize) -> &mut Self {
+    pub fn with_max_input_tokens(mut self, max_input_tokens: usize) -> Self {
         self.max_input_tokens = max_input_tokens;
         self
     }
 
-    pub fn with_system_instructions(&mut self, instructions: &str) -> &mut Self {
+    pub fn with_system_instructions(mut self, instructions: &str) -> Self {
         self.system_instructions = instructions.to_string();
         self
     }
@@ -202,8 +204,9 @@ impl Agent<AgentCtx> for Assistant {
                 Documents::from(docs)
             );
             chat_history.push(serde_json::json!(Message {
-                role: "tool".into(),
+                role: "assistant".into(),
                 content: content.into(),
+                name: Some("$system".into()),
                 ..Default::default()
             }));
         }
@@ -229,17 +232,27 @@ impl Agent<AgentCtx> for Assistant {
             })
         }
 
+        let name = format!("{}", caller);
         let mut conversation = Conversation {
             _id: 0,
             user: *caller,
             thread: None,
-            messages: vec![],
+            messages: json_set_unix_ms_timestamp(
+                vec![serde_json::json!(Message {
+                    role: "user".into(),
+                    content: prompt.clone().into(),
+                    name: Some(name.clone()),
+                    ..Default::default()
+                })],
+                created_at,
+            ),
             resources: resources.clone(),
             artifacts: vec![],
-            status: ConversationStatus::Working,
+            status: ConversationStatus::Submitted,
             period: created_at / 3600 / 1000,
             created_at,
             updated_at: created_at,
+            usage: Usage::default(),
         };
 
         let id = self
@@ -248,73 +261,74 @@ impl Agent<AgentCtx> for Assistant {
             .await?;
         conversation._id = id;
         ctx.base.set_state(ConversationState::from(&conversation));
-
-        let req = CompletionRequest {
-            system,
-            prompt,
-            prompter_name: Some(format!("{}", caller)),
-            chat_history,
-            documents: docs.into(),
-            tools: ctx.tool_definitions(Some(
-                &self.tools.iter().map(|v| v.as_str()).collect::<Vec<_>>(),
-            )),
-            tool_choice_required: false,
+        let res = AgentOutput {
+            conversation: Some(id),
             ..Default::default()
         };
 
-        let mut runner = ctx.completion_iter(req, resources);
-
-        let mut res = runner.next().await?.unwrap(); // 理论上一定有输出
-        res.conversation = Some(id);
-
-        let artifacts = self.memory.try_add_resources(&res.artifacts).await?;
-
-        conversation.messages = res.full_history.clone();
-        conversation.artifacts = artifacts;
-        conversation.status = if runner.is_done() {
-            ConversationStatus::Completed
-        } else if res.failed_reason.is_some() {
-            ConversationStatus::Failed
-        } else {
-            ConversationStatus::Working
-        };
-        conversation.updated_at = unix_ms();
-
-        let _ = self
-            .memory
-            .update_conversation(id, conversation.to_changes()?)
-            .await;
-
-        ctx.base.set_state(ConversationState::from(&conversation));
-
         let assistant = self.clone();
+        let mut runner = ctx.completion_iter(
+            CompletionRequest {
+                system,
+                prompt,
+                prompter_name: Some(name),
+                chat_history,
+                documents: docs.into(),
+                tools: ctx.tool_definitions(Some(
+                    &self.tools.iter().map(|v| v.as_str()).collect::<Vec<_>>(),
+                )),
+                tool_choice_required: false,
+                ..Default::default()
+            },
+            resources,
+        );
+
         tokio::spawn(async move {
-            while let Some(res) = runner.next().await.map_err(|err| {
-                log::error!("Conversation {id} in CompletionRunner error: {:?}", err);
-                err
-            })? {
-                let artifacts = assistant.memory.try_add_resources(&res.artifacts).await?;
+            loop {
+                match runner.next().await {
+                    Ok(None) => break,
+                    Ok(Some(mut res)) => {
+                        let now_ms = unix_ms();
+                        let artifacts = assistant.memory.try_add_resources(&res.artifacts).await?;
 
-                conversation.messages = res.full_history.clone();
-                conversation.artifacts = artifacts;
-                conversation.status = if runner.is_done() {
-                    ConversationStatus::Completed
-                } else if res.failed_reason.is_some() {
-                    ConversationStatus::Failed
-                } else {
-                    ConversationStatus::Working
-                };
-                conversation.updated_at = unix_ms();
+                        res.full_history.drain(0..conversation.messages.len());
+                        conversation.append_messages(res.full_history, now_ms);
+                        conversation.artifacts = artifacts;
+                        conversation.status = if runner.is_done() {
+                            ConversationStatus::Completed
+                        } else if res.failed_reason.is_some() {
+                            ConversationStatus::Failed
+                        } else {
+                            ConversationStatus::Working
+                        };
+                        conversation.usage = res.usage;
+                        conversation.updated_at = now_ms;
 
-                let _ = assistant
-                    .memory
-                    .update_conversation(id, conversation.to_changes()?)
-                    .await;
+                        let _ = assistant
+                            .memory
+                            .update_conversation(id, conversation.to_changes()?)
+                            .await;
 
-                ctx.base.set_state(ConversationState::from(&conversation));
+                        ctx.base.set_state(ConversationState::from(&conversation));
 
-                if res.failed_reason.is_some() {
-                    break;
+                        if res.failed_reason.is_some() {
+                            break;
+                        }
+                    }
+                    Err(err) => {
+                        log::error!("Conversation {id} in CompletionRunner error: {:?}", err);
+                        let now_ms = unix_ms();
+
+                        conversation.status = ConversationStatus::Failed;
+                        conversation.updated_at = now_ms;
+                        let _ = assistant
+                            .memory
+                            .update_conversation(id, conversation.to_changes()?)
+                            .await;
+
+                        ctx.base.set_state(ConversationState::from(&conversation));
+                        break;
+                    }
                 }
             }
 
