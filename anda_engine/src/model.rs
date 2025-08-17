@@ -85,11 +85,16 @@ impl CompletionFeaturesDyn for MockImplemented {
             tool_calls: req
                 .tools
                 .iter()
-                .map(|tool| ToolCall {
-                    id: tool.name.clone(),
-                    name: tool.name.clone(),
-                    args: req.prompt.clone(),
-                    result: None,
+                .filter_map(|tool| {
+                    if req.prompt.is_empty() {
+                        return None;
+                    }
+                    Some(ToolCall {
+                        id: tool.name.clone(),
+                        name: tool.name.clone(),
+                        args: req.prompt.clone(),
+                        result: None,
+                    })
                 })
                 .collect(),
             ..Default::default()

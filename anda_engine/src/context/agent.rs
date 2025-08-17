@@ -898,21 +898,23 @@ impl CompletionRunner {
         // 自动执行工具/代理调用
         let mut tool_calls_continue: Vec<Json> = Vec::new();
         for tool in output.tool_calls.iter_mut() {
-            if !self.req.tools.iter().any(|t| t.name == tool.name) {
-                // 已调用过（或不在本轮请求中），跳过
-                continue;
-            }
-
-            // 从 req.tools 中移除已调用的工具，避免重复调用
-            self.req.tools.retain(|t| t.name != tool.name);
-
             if self.ctx.tools.contains(&tool.name) || tool.name.starts_with("RT_") {
                 // 工具调用
+                let args: Json = match serde_json::from_str(&tool.args) {
+                    Ok(args) => args,
+                    Err(err) => {
+                        output.failed_reason = Some(format!(
+                            "failed to parse tool args {:?}: {}",
+                            tool.args, err
+                        ));
+                        return Ok(Some(self.final_output(output)));
+                    }
+                };
                 match self
                     .ctx
                     .tool_call(ToolInput {
                         name: tool.name.clone(),
-                        args: serde_json::from_str(&tool.args)?,
+                        args,
                         resources: self
                             .ctx
                             .select_tool_resources(&tool.name, &mut self.resources)
@@ -951,7 +953,7 @@ impl CompletionRunner {
                         }
 
                         self.artifacts.append(&mut res.artifacts);
-                        tool.result = Some(serde_json::to_value(&res)?);
+                        tool.result = serde_json::to_value(&res).ok();
                     }
                     Err(err) => {
                         output.failed_reason = Some(err.to_string());
@@ -963,7 +965,16 @@ impl CompletionRunner {
                 || tool.name.starts_with("RA_")
             {
                 // 代理调用
-                let args: AgentArgs = serde_json::from_str(&tool.args)?;
+                let args: AgentArgs = match serde_json::from_str(&tool.args) {
+                    Ok(args) => args,
+                    Err(err) => {
+                        output.failed_reason = Some(format!(
+                            "failed to parse agent args {:?}: {}",
+                            tool.args, err
+                        ));
+                        return Ok(Some(self.final_output(output)));
+                    }
+                };
                 match self
                     .ctx
                     .agent_run(AgentInput {
@@ -992,7 +1003,7 @@ impl CompletionRunner {
                         }));
 
                         self.artifacts.append(&mut res.artifacts);
-                        tool.result = Some(serde_json::to_value(&res)?);
+                        tool.result = serde_json::to_value(&res).ok();
                     }
                     Err(err) => {
                         output.failed_reason = Some(err.to_string());
