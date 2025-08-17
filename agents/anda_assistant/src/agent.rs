@@ -169,6 +169,7 @@ impl Agent<AgentCtx> for Assistant {
             return Err("anonymous caller not allowed".into());
         }
 
+        let user_name = ctx.meta().user.clone().unwrap_or_default();
         let created_at = unix_ms();
         let primer = self.memory.describe_primer().await?;
         let system = format!(
@@ -214,9 +215,15 @@ impl Agent<AgentCtx> for Assistant {
         let resources = update_resources(caller, resources);
         let rs = self.memory.try_add_resources(&resources).await?;
 
-        let mut docs: Vec<Document> = Vec::with_capacity(resources.len());
-        for r in rs.iter() {
-            docs.push(r.into());
+        let mut docs: Vec<Document> = Vec::with_capacity(resources.len() + 2);
+        if !user_name.is_empty() {
+            docs.push(Document {
+                content: serde_json::json!({
+                    "id": caller.to_string(),
+                    "name": user_name
+                }),
+                metadata: BTreeMap::from([("_type".to_string(), "User".into())]),
+            });
         }
 
         if let Some(cursor) = cursor {
@@ -230,6 +237,10 @@ impl Agent<AgentCtx> for Assistant {
                     ),
                 ]),
             })
+        }
+
+        for r in rs.iter() {
+            docs.push(r.into());
         }
 
         let name = format!("{}", caller);
