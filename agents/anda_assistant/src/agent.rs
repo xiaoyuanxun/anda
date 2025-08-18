@@ -126,6 +126,26 @@ impl Assistant {
             None
         }
     }
+
+    pub async fn caller_name(&self, caller: &Principal) -> Option<String> {
+        if let Ok(concept) = self
+            .memory
+            .nexus()
+            .get_concept(&ConceptPK::Object {
+                r#type: PERSON_TYPE.to_string(),
+                name: caller.to_string(),
+            })
+            .await
+        {
+            concept
+                .attributes
+                .get("name")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        } else {
+            None
+        }
+    }
 }
 
 /// Implementation of the [`Agent`] trait for Assistant.
@@ -170,6 +190,8 @@ impl Agent<AgentCtx> for Assistant {
         }
 
         let user_name = ctx.meta().user.clone().unwrap_or_default();
+        let caller_name = self.caller_name(caller).await.unwrap_or_default();
+
         let created_at = unix_ms();
         let primer = self.memory.describe_primer().await?;
         let system = format!(
@@ -205,7 +227,7 @@ impl Agent<AgentCtx> for Assistant {
                 Documents::from(docs)
             );
             chat_history.push(serde_json::json!(Message {
-                role: "assistant".into(),
+                role: "user".into(),
                 content: content.into(),
                 name: Some("$system".into()),
                 ..Default::default()
@@ -216,7 +238,7 @@ impl Agent<AgentCtx> for Assistant {
         let rs = self.memory.try_add_resources(&resources).await?;
 
         let mut docs: Vec<Document> = Vec::with_capacity(resources.len() + 2);
-        if !user_name.is_empty() {
+        if !user_name.is_empty() && user_name != caller_name {
             docs.push(Document {
                 content: serde_json::json!({
                     "id": caller.to_string(),

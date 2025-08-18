@@ -237,6 +237,7 @@ impl CompletionResponse {
         self.choices.iter().any(|choice| {
             !matches!(choice.finish_reason.as_str(), "stop" | "tool_calls")
                 || choice.message.refusal.is_some()
+                || (choice.message.content.is_none() && choice.message.tool_calls.is_none())
         })
     }
 }
@@ -462,26 +463,27 @@ impl CompletionFeaturesDyn for CompletionModel {
             let skip_messages = full_history.len();
 
             let role = req.role.unwrap_or("user".to_string());
-            if !req.prompt.is_empty() {
-                full_history.push(json!(Message {
-                    role: role.clone(),
-                    content: req.prompt.into(),
-                    name: req.prompter_name.clone(),
-                    ..Default::default()
-                }));
+
+            if let Some(prompt) = req.documents.to_message(&rfc3339_datetime_now()) {
+                full_history.push(json!(prompt));
             }
 
             if !req.content_parts.is_empty() {
                 full_history.push(json!(Message {
                     role: role.clone(),
                     content: json!(req.content_parts),
-                    name: req.prompter_name,
+                    name: req.prompter_name.clone(),
                     ..Default::default()
                 }));
             }
 
-            if let Some(prompt) = req.documents.to_message(&rfc3339_datetime_now()) {
-                full_history.push(json!(prompt));
+            if !req.prompt.is_empty() {
+                full_history.push(json!(Message {
+                    role: role.clone(),
+                    content: req.prompt.into(),
+                    name: req.prompter_name,
+                    ..Default::default()
+                }));
             }
 
             let mut body = json!({
@@ -541,12 +543,12 @@ impl CompletionFeaturesDyn for CompletionModel {
                 let text = response.text().await?;
                 match serde_json::from_str::<CompletionResponse>(&text) {
                     Ok(res) => {
-                        if log_enabled!(Debug)
-                            && let Ok(val) = serde_json::to_string(&res)
-                        {
-                            log::debug!(response = val; "OpenAI completions response");
-                        }
-                        if res.maybe_failed() {
+                        if log_enabled!(Debug) {
+                            log::debug!(
+                                request:serde = body,
+                                response:serde = res;
+                                "DeepSeek completions response");
+                        } else if res.maybe_failed() {
                             log::warn!(
                                 request:serde = body,
                                 response:serde = res;

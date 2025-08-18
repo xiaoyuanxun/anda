@@ -141,7 +141,7 @@ impl Documents {
         }
 
         Some(Message {
-            role: "assistant".into(),
+            role: "user".into(),
             content: format!("Current Datetime: {}\n---\n{}", rfc3339_datetime, self).into(),
             name: Some("$system".into()),
             tool_call_id: None,
