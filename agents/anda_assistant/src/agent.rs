@@ -293,6 +293,7 @@ impl Agent<AgentCtx> for Assistant {
             .add_conversation(ConversationRef::from(&conversation))
             .await?;
         conversation._id = id;
+        conversation.messages.clear(); // clear the first pending message.
         ctx.base.set_state(ConversationState::from(&conversation));
         let res = AgentOutput {
             conversation: Some(id),

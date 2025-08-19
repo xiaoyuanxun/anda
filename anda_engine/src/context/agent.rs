@@ -938,19 +938,9 @@ impl CompletionRunner {
                             tool_call_id: Some(tool.id.clone()),
                         });
 
-                        if res
-                            .output
-                            .get("ignore")
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false)
-                            && !tool.id.is_empty()
-                        {
-                            self.full_history.push(message);
-                        } else {
-                            // If the tool response does not contain "ignore", we process it
-                            // ChatGPT: An assistant message with 'tool_calls' must be followed by tool messages responding to each 'tool_call_id'.
-                            tool_calls_continue.push(message);
-                        }
+                        // We can not ignore some tool calls.
+                        // GPT-5: An assistant message with 'tool_calls' must be followed by tool messages responding to each 'tool_call_id'.
+                        tool_calls_continue.push(message);
 
                         self.artifacts.append(&mut res.artifacts);
                         tool.result = serde_json::to_value(&res).ok();
