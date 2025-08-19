@@ -318,55 +318,76 @@ impl Agent<AgentCtx> for Assistant {
         );
 
         tokio::spawn(async move {
-            loop {
-                match runner.next().await {
-                    Ok(None) => break,
-                    Ok(Some(mut res)) => {
-                        let now_ms = unix_ms();
-                        let artifacts = assistant.memory.try_add_resources(&res.artifacts).await?;
+            let mut rt = async || {
+                let mut first_round = true;
+                loop {
+                    match runner.next().await {
+                        Ok(None) => break,
+                        Ok(Some(mut res)) => {
+                            let now_ms = unix_ms();
+                            let artifacts =
+                                assistant.memory.try_add_resources(&res.artifacts).await?;
 
-                        res.full_history.drain(0..conversation.messages.len());
-                        conversation.append_messages(res.full_history, now_ms);
-                        conversation.artifacts = artifacts;
-                        conversation.status = if runner.is_done() {
-                            ConversationStatus::Completed
-                        } else if res.failed_reason.is_some() {
-                            ConversationStatus::Failed
-                        } else {
-                            ConversationStatus::Working
-                        };
-                        conversation.usage = res.usage;
-                        conversation.updated_at = now_ms;
+                            if first_round {
+                                first_round = false;
+                                let response = res.full_history.pop().ok_or_else(
+                                    || "No response message in the first round of completion",
+                                )?;
+                                conversation.append_messages(res.full_history, created_at);
+                                conversation.append_messages(vec![response], now_ms);
+                            } else {
+                                res.full_history.drain(0..conversation.messages.len());
+                                conversation.append_messages(res.full_history, now_ms);
+                            }
 
-                        let _ = assistant
-                            .memory
-                            .update_conversation(id, conversation.to_changes()?)
-                            .await;
+                            conversation.artifacts = artifacts;
+                            conversation.status = if runner.is_done() {
+                                ConversationStatus::Completed
+                            } else if res.failed_reason.is_some() {
+                                ConversationStatus::Failed
+                            } else {
+                                ConversationStatus::Working
+                            };
+                            conversation.usage = res.usage;
+                            conversation.updated_at = now_ms;
 
-                        ctx.base.set_state(ConversationState::from(&conversation));
+                            let _ = assistant
+                                .memory
+                                .update_conversation(id, conversation.to_changes()?)
+                                .await;
 
-                        if res.failed_reason.is_some() {
+                            ctx.base.set_state(ConversationState::from(&conversation));
+
+                            if res.failed_reason.is_some() {
+                                break;
+                            }
+                        }
+                        Err(err) => {
+                            log::error!("Conversation {id} in CompletionRunner error: {:?}", err);
+                            let now_ms = unix_ms();
+
+                            conversation.status = ConversationStatus::Failed;
+                            conversation.updated_at = now_ms;
+                            let _ = assistant
+                                .memory
+                                .update_conversation(id, conversation.to_changes()?)
+                                .await;
+
+                            ctx.base.set_state(ConversationState::from(&conversation));
                             break;
                         }
                     }
-                    Err(err) => {
-                        log::error!("Conversation {id} in CompletionRunner error: {:?}", err);
-                        let now_ms = unix_ms();
+                }
 
-                        conversation.status = ConversationStatus::Failed;
-                        conversation.updated_at = now_ms;
-                        let _ = assistant
-                            .memory
-                            .update_conversation(id, conversation.to_changes()?)
-                            .await;
+                Ok::<(), BoxError>(())
+            };
 
-                        ctx.base.set_state(ConversationState::from(&conversation));
-                        break;
-                    }
+            match rt().await {
+                Ok(_) => {}
+                Err(err) => {
+                    log::error!("Error occurred in conversation {id}: {:?}", err);
                 }
             }
-
-            Ok::<(), BoxError>(())
         });
 
         Ok(res)
