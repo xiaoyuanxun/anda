@@ -330,9 +330,7 @@ impl Agent<AgentCtx> for Assistant {
 
                             if first_round {
                                 first_round = false;
-                                let response = res.full_history.pop().ok_or_else(
-                                    || "No response message in the first round of completion",
-                                )?;
+                                let response = res.full_history.pop().ok_or("No response message in the first round of completion")?;
                                 conversation.append_messages(res.full_history, created_at);
                                 conversation.append_messages(vec![response], now_ms);
                             } else {

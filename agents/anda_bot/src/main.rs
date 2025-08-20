@@ -350,8 +350,8 @@ async fn bootstrap_tee(
 
     engine = engine.register_agent(agent.clone())?;
 
-    let agent = Arc::new(agent);
-    let engine = Arc::new(engine.build(default_agent.clone()).await?);
+    let _agent = Arc::new(agent);
+    let _engine = Arc::new(engine.build(default_agent.clone()).await?);
     let app_state = handler::AppState {
         info: Arc::new(handler::AppInformation {
             id: my_principal,
@@ -391,14 +391,14 @@ async fn bootstrap_local(
     cfg: config::Conf,
     character: Character,
     store_path: String,
-    manager: String,
+    _manager: String,
 ) -> Result<(), BoxError> {
     let global_cancel_token = CancellationToken::new();
     let root_path = Path::from(SYSTEM_PATH);
 
     let engine_name = ENGINE_NAME.to_string();
     let default_agent = character.handle.clone();
-    let default_agent_path = default_agent.to_ascii_lowercase();
+    let _default_agent_path = default_agent.to_ascii_lowercase();
 
     let identity = load_identity(id_secret)?;
     let web3 = Web3Client::builder()
@@ -475,8 +475,8 @@ async fn bootstrap_local(
 
     engine = engine.register_agent(agent.clone())?;
 
-    let agent = Arc::new(agent);
-    let engine = Arc::new(engine.build(default_agent.clone()).await?);
+    let _agent = Arc::new(agent);
+    let _engine = Arc::new(engine.build(default_agent.clone()).await?);
     let app_state = handler::AppState {
         info: Arc::new(handler::AppInformation {
             id: my_principal,
