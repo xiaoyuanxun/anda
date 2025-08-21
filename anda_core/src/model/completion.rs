@@ -124,8 +124,8 @@ impl From<&Resource> for Document {
         };
 
         Self {
-            content: Json::Null,
             metadata,
+            content: Json::Null,
         }
     }
 }

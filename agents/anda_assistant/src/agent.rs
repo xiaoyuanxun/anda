@@ -203,10 +203,9 @@ impl Agent<AgentCtx> for Assistant {
             .memory
             .list_conversations_by_user(caller, None, Some(7))
             .await?;
-        let max_history_bytes = self
-            .max_input_tokens
-            .saturating_sub((evaluate_tokens(&system) + evaluate_tokens(&prompt)) * 2)
-            * 3; // Rough estimate of bytes per token
+        let max_history_bytes = self.max_input_tokens.saturating_sub(
+            ((evaluate_tokens(&system) + evaluate_tokens(&prompt)) as f64 * 1.2) as usize,
+        ) * 3; // Rough estimate of bytes per token
         let mut writer: Vec<u8> = Vec::with_capacity(256);
         let _ = serde_json::to_writer(&mut writer, &conversations);
         let mut history_bytes = writer.len();
@@ -330,7 +329,9 @@ impl Agent<AgentCtx> for Assistant {
 
                             if first_round {
                                 first_round = false;
-                                let response = res.full_history.pop().ok_or("No response message in the first round of completion")?;
+                                let response = res.full_history.pop().ok_or(
+                                    "No response message in the first round of completion",
+                                )?;
                                 conversation.append_messages(res.full_history, created_at);
                                 conversation.append_messages(vec![response], now_ms);
                             } else {
