@@ -425,24 +425,23 @@ impl MemoryManagement {
         limit: Option<usize>,
     ) -> Result<(Vec<Conversation>, Option<String>), BoxError> {
         let limit = limit.unwrap_or(10).min(100);
-        let cursor = BTree::from_cursor::<u64>(&cursor)?;
-        let filter = if let Some(cursor) = cursor {
-            Some(Filter::And(vec![
-                Box::new(Filter::Field((
-                    "user".to_string(),
-                    RangeQuery::Eq(Fv::Bytes(user.as_slice().to_vec())),
-                ))),
-                Box::new(Filter::Field((
-                    "_id".to_string(),
-                    RangeQuery::Lt(Fv::U64(cursor)),
-                ))),
-            ]))
-        } else {
-            Some(Filter::Field((
+        let cursor = match BTree::from_cursor::<u64>(&cursor)? {
+            Some(cursor) => cursor,
+            None => {
+                let stats = self.conversations.stats();
+                stats.max_document_id + 1
+            }
+        };
+        let filter = Some(Filter::And(vec![
+            Box::new(Filter::Field((
                 "user".to_string(),
                 RangeQuery::Eq(Fv::Bytes(user.as_slice().to_vec())),
-            )))
-        };
+            ))),
+            Box::new(Filter::Field((
+                "_id".to_string(),
+                RangeQuery::Lt(Fv::U64(cursor)),
+            ))),
+        ]));
 
         let rt: Vec<Conversation> = self
             .conversations
@@ -491,24 +490,23 @@ impl MemoryManagement {
         limit: Option<usize>,
     ) -> Result<(Vec<KIPLogs>, Option<String>), BoxError> {
         let limit = limit.unwrap_or(10).min(100);
-        let cursor = BTree::from_cursor::<u64>(&cursor)?;
-        let filter = if let Some(cursor) = cursor {
-            Some(Filter::And(vec![
-                Box::new(Filter::Field((
-                    "user".to_string(),
-                    RangeQuery::Eq(Fv::Bytes(user.as_slice().to_vec())),
-                ))),
-                Box::new(Filter::Field((
-                    "_id".to_string(),
-                    RangeQuery::Lt(Fv::U64(cursor)),
-                ))),
-            ]))
-        } else {
-            Some(Filter::Field((
+        let cursor = match BTree::from_cursor::<u64>(&cursor)? {
+            Some(cursor) => cursor,
+            None => {
+                let stats = self.conversations.stats();
+                stats.max_document_id + 1
+            }
+        };
+        let filter = Some(Filter::And(vec![
+            Box::new(Filter::Field((
                 "user".to_string(),
                 RangeQuery::Eq(Fv::Bytes(user.as_slice().to_vec())),
-            )))
-        };
+            ))),
+            Box::new(Filter::Field((
+                "_id".to_string(),
+                RangeQuery::Lt(Fv::U64(cursor)),
+            ))),
+        ]));
 
         let rt: Vec<KIPLogs> = self
             .logs
