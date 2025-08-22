@@ -427,10 +427,7 @@ impl MemoryManagement {
         let limit = limit.unwrap_or(10).min(100);
         let cursor = match BTree::from_cursor::<u64>(&cursor)? {
             Some(cursor) => cursor,
-            None => {
-                let stats = self.conversations.stats();
-                stats.max_document_id + 1
-            }
+            None => self.conversations.max_document_id() + 1,
         };
         let filter = Some(Filter::And(vec![
             Box::new(Filter::Field((
@@ -492,10 +489,7 @@ impl MemoryManagement {
         let limit = limit.unwrap_or(10).min(100);
         let cursor = match BTree::from_cursor::<u64>(&cursor)? {
             Some(cursor) => cursor,
-            None => {
-                let stats = self.conversations.stats();
-                stats.max_document_id + 1
-            }
+            None => self.logs.max_document_id() + 1,
         };
         let filter = Some(Filter::And(vec![
             Box::new(Filter::Field((
