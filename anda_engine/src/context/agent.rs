@@ -887,6 +887,20 @@ impl CompletionRunner {
             return Ok(None);
         }
 
+        let token = self.ctx.base.cancellation_token();
+        tokio::select! {
+            _ = token.cancelled() => {
+                let output = AgentOutput {
+                    failed_reason: Some("operation cancelled".to_string()),
+                    ..Default::default()
+                };
+                Ok(Some(self.final_output(output)))
+            }
+            res = self.inner_next() => res
+        }
+    }
+
+    async fn inner_next(&mut self) -> Result<Option<AgentOutput>, BoxError> {
         self.step += 1;
         let mut output = self.ctx.model.completion(self.req.clone()).await?;
         self.usage.accumulate(&output.usage);
@@ -898,6 +912,10 @@ impl CompletionRunner {
         // 自动执行工具/代理调用
         let mut tool_calls_continue: Vec<Json> = Vec::new();
         for tool in output.tool_calls.iter_mut() {
+            if self.ctx.cancellation_token().is_cancelled() {
+                return Err("operation cancelled".into());
+            }
+
             if self.ctx.tools.contains(&tool.name) || tool.name.starts_with("RT_") {
                 // 工具调用
                 let args: Json = match serde_json::from_str(&tool.args) {

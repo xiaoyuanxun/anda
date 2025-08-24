@@ -812,9 +812,19 @@ impl Tool<BaseCtx> for SearchConversationsTool {
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(tag = "_type")]
 pub enum MemoryToolArgs {
+    GetResource {
+        /// The ID of the resource to get
+        _id: u64,
+        /// The ID of the conversation where the resource is located
+        conversation: u64,
+    },
     /// Get a conversation by ID
     GetConversation {
         /// The ID of the conversation to get
+        _id: u64,
+    },
+    StopConversation {
+        /// The ID of the conversation to stop
         _id: u64,
     },
     /// List previous conversations
@@ -885,10 +895,56 @@ impl Tool<BaseCtx> for MemoryTool {
         _resources: Vec<Resource>,
     ) -> Result<ToolOutput<Self::Output>, BoxError> {
         match args {
+            MemoryToolArgs::GetResource { _id, conversation } => {
+                let conversation = self.memory.get_conversation(conversation).await?;
+                if &conversation.user != ctx.caller() {
+                    return Err("permission denied".into());
+                }
+
+                let mut res = self.memory.get_resource(_id).await?;
+                if res.blob.is_none()
+                    && let Some(uri) = &res.uri
+                {
+                    res.blob = FetchWebResourcesTool::fetch_as_bytes(&ctx, uri).await.ok();
+                }
+
+                Ok(ToolOutput::new(Response::Ok {
+                    result: json!(res),
+                    next_cursor: None,
+                    ignore: None,
+                }))
+            }
             MemoryToolArgs::GetConversation { _id } => {
                 let conversation = self.memory.get_conversation(_id).await?;
                 if &conversation.user != ctx.caller() {
                     return Err("permission denied".into());
+                }
+
+                Ok(ToolOutput::new(Response::Ok {
+                    result: json!(conversation),
+                    next_cursor: None,
+                    ignore: None,
+                }))
+            }
+            MemoryToolArgs::StopConversation { _id } => {
+                let mut conversation = self.memory.get_conversation(_id).await?;
+                if &conversation.user != ctx.caller() {
+                    return Err("permission denied".into());
+                }
+
+                if conversation.status == ConversationStatus::Working
+                    || conversation.status == ConversationStatus::Submitted
+                {
+                    conversation.status = ConversationStatus::Canceled;
+                    conversation.updated_at = unix_ms();
+                    let changes = BTreeMap::from([
+                        (
+                            "status".to_string(),
+                            Fv::Text(conversation.status.to_string()),
+                        ),
+                        ("updated_at".to_string(), Fv::U64(conversation.updated_at)),
+                    ]);
+                    self.memory.update_conversation(_id, changes).await?;
                 }
 
                 Ok(ToolOutput::new(Response::Ok {

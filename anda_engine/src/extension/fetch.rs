@@ -132,7 +132,29 @@ impl FetchWebResourcesTool {
         }
     }
 
-    /// Decodes text content from bytes using the specified encoding
+    /// Fetches content from the specified URL and returns it as a byte buffer.
+    /// If the content is text and character encoding is not UTF-8, it will be converted to UTF-8.
+    ///
+    /// # Arguments
+    /// * `ctx` - HTTP context for making requests
+    /// * `url` - The URL to fetch content from
+    ///
+    /// # Returns
+    /// Base64-url encoded byte buffer or an error
+    pub async fn fetch_as_bytes(
+        ctx: &impl HttpFeatures,
+        url: &str,
+    ) -> Result<ByteBufB64, BoxError> {
+        let (headers, body) = Self::fetch(ctx, url).await?;
+        match Self::decode_text(&headers, &body) {
+            Some(text) => Ok(ByteBufB64(text.into_bytes())),
+            None => Ok(ByteBufB64(body)),
+        }
+    }
+
+    /// Decodes text content from bytes using the specified encoding.
+    /// If the content is text and character encoding is not UTF-8, it will be converted to UTF-8.
+    /// The non-UTF-8 content will be base64-url encoded.
     ///
     /// # Arguments
     /// * `headers` - HTTP headers containing the content type

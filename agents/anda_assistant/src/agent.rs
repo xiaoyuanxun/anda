@@ -278,7 +278,7 @@ impl Agent<AgentCtx> for Assistant {
                 })],
                 created_at,
             ),
-            resources: resources.clone(),
+            resources: rs,
             artifacts: vec![],
             status: ConversationStatus::Submitted,
             period: created_at / 3600 / 1000,
@@ -350,6 +350,14 @@ impl Agent<AgentCtx> for Assistant {
                             conversation.usage = res.usage;
                             conversation.updated_at = now_ms;
 
+                            let old = assistant.memory.get_conversation(conversation._id).await?;
+                            if old.status == ConversationStatus::Canceled
+                                && (conversation.status == ConversationStatus::Submitted
+                                    || conversation.status == ConversationStatus::Working)
+                            {
+                                conversation.status = ConversationStatus::Canceled;
+                            }
+
                             let _ = assistant
                                 .memory
                                 .update_conversation(id, conversation.to_changes()?)
@@ -357,7 +365,9 @@ impl Agent<AgentCtx> for Assistant {
 
                             ctx.base.set_state(ConversationState::from(&conversation));
 
-                            if res.failed_reason.is_some() {
+                            if conversation.status == ConversationStatus::Canceled
+                                || conversation.status == ConversationStatus::Failed
+                            {
                                 break;
                             }
                         }
