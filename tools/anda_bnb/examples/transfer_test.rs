@@ -56,10 +56,9 @@ pub async fn test_bnb_ledger_transfer() {
     let tool = TransferTool::new(ledgers.clone());
     let definition = tool.definition();
     assert_eq!(definition.name, "bnb_ledger_transfer");
-    assert_eq!(
+    assert!(
         tool.description()
-            .contains(ledgers.ledgers.clone().first_key_value().unwrap().0),
-        true
+            .contains(ledgers.ledgers.clone().first_key_value().unwrap().0)
     );
 
     // Create an agent for testing

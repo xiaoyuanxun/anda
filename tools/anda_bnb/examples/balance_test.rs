@@ -103,7 +103,7 @@ pub async fn test_bnb_ledger_balance() {
         // Create arguments for balance query
         let args = BalanceOfArgs {
             account: user_address.to_string(),
-            symbol: symbol.into(),
+            symbol: symbol,
         };
 
         // Call the tool to query balance
