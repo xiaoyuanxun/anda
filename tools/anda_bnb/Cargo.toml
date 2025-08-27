@@ -23,7 +23,8 @@ reqwest = { workspace = true }
 thiserror = { workspace = true }
 k256 = { workspace = true }
 async-trait = { workspace = true }
-alloy = { version = "0.15", features = [
+structured-logger = { workspace = true }
+alloy = { version = "1.0.25", features = [
     "providers",
     "network",
     "sol-types",

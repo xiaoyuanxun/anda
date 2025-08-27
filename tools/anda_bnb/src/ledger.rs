@@ -52,12 +52,6 @@ pub fn bnb_rpc() -> String {
     dotenv::var("BNB_RPC").unwrap_or_else(|_| "https://bsc-testnet.bnbchain.org".to_string())
 }
 
-// public static url of BNB BEP20 contract address
-pub static TOKEN_ADDR: &str = "0xDE3a190D9D26A8271Ae9C27573c03094A8A2c449"; // BNB testnet
-
-// public static chain id of BNB
-pub static CHAIN_ID: u64 = 97; // BNB testnet
-
 // public static derivation path
 pub static DRVT_PATH: &[&[u8]] = &[b"44'", b"60'", b"10'", b"20", b"30"];
 
@@ -68,7 +62,7 @@ pub struct BNBLedgers {
     chain_id: u64,
     derivation_path: Vec<Vec<u8>>,
     /// Map of token symbols to their corresponding canister ID and decimals places
-    ledgers: BTreeMap<String, (Address, u8)>,
+    pub ledgers: BTreeMap<String, (Address, u8)>,
 }
 
 impl BNBLedgers {
@@ -136,7 +130,7 @@ impl BNBLedgers {
         // Get sender EVM address
         let sender_address = NetworkWallet::<AnyNetwork>::default_signer_address(&wallet);
         log::debug!("Sender EVM address: {:?}", sender_address);
-
+        
         // Create a provider with the wallet.
         let provider = ProviderBuilder::new()
             .with_simple_nonce_management()
