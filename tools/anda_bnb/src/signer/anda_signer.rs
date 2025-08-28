@@ -213,7 +213,7 @@ mod tests {
         sync::Arc,
     };
 
-    use crate::ledger::{CHAIN_ID, DRVT_PATH};
+    use crate::ledger::DRVT_PATH;
     use anda_engine::{
         context::Web3SDK,
         engine::{AgentInfo, EngineBuilder},
@@ -225,6 +225,9 @@ mod tests {
     use serde::{Deserialize, Serialize};
 
     use super::*;
+
+    // public static chain id of BNB
+    pub static CHAIN_ID: u64 = 97; // BNB testnet
 
     #[tokio::test]
     async fn test_sign_message() {
