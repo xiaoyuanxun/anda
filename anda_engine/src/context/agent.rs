@@ -952,7 +952,7 @@ impl CompletionRunner {
                         let message = json!(Message {
                             role: "tool".to_string(),
                             content,
-                            name: Some("$system".to_string()),
+                            name: Some(format!("${}", tool.name)),
                             tool_call_id: Some(tool.id.clone()),
                         });
 
@@ -1006,7 +1006,7 @@ impl CompletionRunner {
                         tool_calls_continue.push(json!(Message {
                             role: "tool".to_string(),
                             content: res.content.clone().into(),
-                            name: Some("$system".to_string()),
+                            name: Some(format!("${}", tool.name)),
                             tool_call_id: Some(tool.id.clone()),
                         }));
 

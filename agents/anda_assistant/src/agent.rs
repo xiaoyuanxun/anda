@@ -292,7 +292,6 @@ impl Agent<AgentCtx> for Assistant {
             .add_conversation(ConversationRef::from(&conversation))
             .await?;
         conversation._id = id;
-        conversation.messages.clear(); // clear the first pending message.
         ctx.base.set_state(ConversationState::from(&conversation));
         let res = AgentOutput {
             conversation: Some(id),
@@ -332,6 +331,7 @@ impl Agent<AgentCtx> for Assistant {
                                 let response = res.full_history.pop().ok_or(
                                     "No response message in the first round of completion",
                                 )?;
+                                conversation.messages.clear(); // clear the first pending message.
                                 conversation.append_messages(res.full_history, created_at);
                                 conversation.append_messages(vec![response], now_ms);
                             } else {
@@ -349,6 +349,18 @@ impl Agent<AgentCtx> for Assistant {
                             };
                             conversation.usage = res.usage;
                             conversation.updated_at = now_ms;
+
+                            if let Some(failed_reason) = res.failed_reason {
+                                conversation.append_messages(
+                                    vec![serde_json::json!(Message {
+                                        role: "assistant".into(),
+                                        content: failed_reason.into(),
+                                        name: Some("$system".into()),
+                                        ..Default::default()
+                                    })],
+                                    now_ms,
+                                );
+                            }
 
                             let old = assistant.memory.get_conversation(conversation._id).await?;
                             if old.status == ConversationStatus::Canceled
@@ -374,6 +386,15 @@ impl Agent<AgentCtx> for Assistant {
                         Err(err) => {
                             log::error!("Conversation {id} in CompletionRunner error: {:?}", err);
                             let now_ms = unix_ms();
+                            conversation.append_messages(
+                                vec![serde_json::json!(Message {
+                                    role: "assistant".into(),
+                                    content: err.to_string().into(),
+                                    name: Some("$system".into()),
+                                    ..Default::default()
+                                })],
+                                now_ms,
+                            );
 
                             conversation.status = ConversationStatus::Failed;
                             conversation.updated_at = now_ms;

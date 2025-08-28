@@ -1,7 +1,7 @@
 use anda_db_schema::{FieldType, FieldTyped};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::{collections::BTreeMap, convert::Infallible, str::FromStr};
+use std::collections::BTreeMap;
 
 use crate::{AgentOutput, BoxError, FunctionDefinition, Json, Resource};
 
@@ -39,7 +39,7 @@ pub struct CompletionRequest {
 
     /// The content parts to be sent to the completion model provider.
     /// prompt will be ignored if content_parts is not empty.
-    pub content_parts: Vec<ContentPart>,
+    pub content_parts: Vec<Json>,
 
     /// The tools to be sent to the completion model provider.
     pub tools: Vec<FunctionDefinition>,
@@ -47,7 +47,7 @@ pub struct CompletionRequest {
     /// Whether the tool choice is required.
     pub tool_choice_required: bool,
 
-    /// The temperature to be sent to the completion model provider.
+    /// The temperature to be sent to the completion model provider. [0.0, 2.0]
     pub temperature: Option<f64>,
 
     /// The max tokens to be sent to the completion model provider.
@@ -210,55 +210,6 @@ impl std::fmt::Display for Documents {
     }
 }
 
-/// OpenAI style content part for the completion request.
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
-#[serde(tag = "type", rename_all = "lowercase")]
-pub enum ContentPart {
-    Text { text: String },
-    Image { image_url: ImageDetail },
-    Audio { input_audio: AudioDetail },
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
-pub struct ImageDetail {
-    /// Either a URL of the image or the base64 encoded image data.
-    /// https://platform.openai.com/docs/guides/vision
-    /// PNG (.png), JPEG (.jpeg and .jpg), WEBP (.webp), and non-animated GIF (.gif).
-    pub url: String,
-
-    /// low, high, and auto.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub detail: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
-pub struct AudioDetail {
-    /// Base64 encoded audio data.
-    pub data: String,
-    /// The format of the encoded audio data. Currently supports "wav" and "mp3".
-    pub format: String,
-}
-
-impl From<String> for ContentPart {
-    fn from(text: String) -> Self {
-        ContentPart::Text { text }
-    }
-}
-
-impl From<&str> for ContentPart {
-    fn from(text: &str) -> Self {
-        text.to_owned().into()
-    }
-}
-
-impl FromStr for ContentPart {
-    type Err = Infallible;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(s.into())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -288,53 +239,6 @@ mod tests {
         assert_eq!(
             req.documents.to_string(),
             "<attachments>\n{\"content\":\"Test document 1.\",\"metadata\":{\"_id\":1}}\n{\"content\":\"Test document 2.\",\"metadata\":{\"_id\":2,\"a\":\"b\",\"key\":\"value\"}}\n</attachments>"
-        );
-    }
-
-    #[test]
-    fn test_content_part() {
-        let content = ContentPart::Text {
-            text: "Hello, world!".to_string(),
-        };
-        let json = serde_json::to_string(&content).unwrap();
-        assert_eq!(json, r#"{"type":"text","text":"Hello, world!"}"#);
-
-        let ct: ContentPart = serde_json::from_str(&json).unwrap();
-        assert_eq!(ct, content);
-
-        let ct = ContentPart::from("Hello, world!");
-        assert_eq!(ct, content);
-
-        let content = ContentPart::Image {
-            image_url: ImageDetail {
-                url: "https://example.com/image.jpg".to_string(),
-                detail: Some("high".to_string()),
-            },
-        };
-
-        let json = serde_json::to_string(&content).unwrap();
-        assert_eq!(
-            json,
-            r#"{"type":"image","image_url":{"url":"https://example.com/image.jpg","detail":"high"}}"#
-        );
-
-        let ct: ContentPart = serde_json::from_str(&json).unwrap();
-        assert_eq!(ct, content);
-        let json = serde_json::to_string(&json!(vec![
-            ContentPart::Text {
-                text: "What's in this image?".to_string(),
-            },
-            ContentPart::Image {
-                image_url: ImageDetail {
-                    url: "https://example.com/image.jpg".to_string(),
-                    detail: None,
-                },
-            }
-        ]))
-        .unwrap();
-        assert_eq!(
-            json,
-            r#"[{"text":"What's in this image?","type":"text"},{"image_url":{"url":"https://example.com/image.jpg"},"type":"image"}]"#
         );
     }
 }
