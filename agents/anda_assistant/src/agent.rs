@@ -189,8 +189,21 @@ impl Agent<AgentCtx> for Assistant {
             return Err("anonymous caller not allowed".into());
         }
 
-        let user_name = ctx.meta().user.clone().unwrap_or_default();
-        let caller_name = self.caller_name(caller).await.unwrap_or_default();
+        let user_name = ctx
+            .meta()
+            .user
+            .clone()
+            .unwrap_or_else(|| caller.to_string());
+        let caller_info = self
+            .memory
+            .describe_caller(caller)
+            .await
+            .unwrap_or_else(|_| {
+                serde_json::json!({
+                    "id": caller.to_string(),
+                    "name": user_name
+                })
+            });
 
         let created_at = unix_ms();
         let primer = self.memory.describe_primer().await?;
@@ -217,38 +230,17 @@ impl Agent<AgentCtx> for Assistant {
             history_bytes = history_bytes.saturating_sub(writer.len());
         }
 
-        let mut chat_history: Vec<Json> = vec![];
-        if !conversations.is_empty() {
-            let docs: Vec<Document> = conversations.iter().map(Document::from).collect();
-            let content = format!(
-                "Current Datetime: {}\nPrevious Conversations: \n---\n{}",
-                rfc3339_datetime_now(),
-                Documents::from(docs)
-            );
-            chat_history.push(serde_json::json!(Message {
-                role: "user".into(),
-                content: content.into(),
-                name: Some("$system".into()),
-                ..Default::default()
-            }));
-        }
-
-        let resources = update_resources(caller, resources);
-        let rs = self.memory.try_add_resources(&resources).await?;
-
-        let mut docs: Vec<Document> = Vec::with_capacity(resources.len() + 2);
-        if !user_name.is_empty() && user_name != caller_name {
-            docs.push(Document {
-                content: serde_json::json!({
-                    "id": caller.to_string(),
-                    "name": user_name
-                }),
-                metadata: BTreeMap::from([("_type".to_string(), "User".into())]),
-            });
-        }
-
+        let mut history_docs: Vec<Document> = Vec::with_capacity(conversations.len() + 2);
+        history_docs.push(Document {
+            content: caller_info,
+            metadata: BTreeMap::from([
+                ("_type".to_string(), "User".into()),
+                ("description".to_string(), "User identity".into()),
+            ]),
+        });
+        history_docs.extend(conversations.into_iter().map(Document::from));
         if let Some(cursor) = cursor {
-            docs.push(Document {
+            history_docs.push(Document {
                 content: cursor.into(),
                 metadata: BTreeMap::from([
                     ("_type".to_string(), "Cursor".into()),
@@ -260,11 +252,23 @@ impl Agent<AgentCtx> for Assistant {
             })
         }
 
-        for r in rs.iter() {
-            docs.push(r.into());
-        }
+        let mut chat_history: Vec<Json> = vec![];
+        chat_history.push(serde_json::json!(Message {
+            role: "user".into(),
+            content: format!(
+                "Current Datetime: {}\n---\n{}",
+                rfc3339_datetime_now(),
+                Documents::from(history_docs)
+            )
+            .into(),
+            name: Some("$system".into()),
+            ..Default::default()
+        }));
 
-        let name = format!("{}", caller);
+        let resources = update_resources(caller, resources);
+        let rs = self.memory.try_add_resources(&resources).await?;
+        let resource_docs: Vec<Document> = rs.iter().map(Document::from).collect();
+
         let mut conversation = Conversation {
             _id: 0,
             user: *caller,
@@ -273,7 +277,6 @@ impl Agent<AgentCtx> for Assistant {
                 vec![serde_json::json!(Message {
                     role: "user".into(),
                     content: prompt.clone().into(),
-                    name: Some(name.clone()),
                     ..Default::default()
                 })],
                 created_at,
@@ -303,9 +306,8 @@ impl Agent<AgentCtx> for Assistant {
             CompletionRequest {
                 system,
                 prompt,
-                prompter_name: Some(name),
                 chat_history,
-                documents: docs.into(),
+                documents: resource_docs.into(),
                 tools: ctx.tool_definitions(Some(
                     &self.tools.iter().map(|v| v.as_str()).collect::<Vec<_>>(),
                 )),
@@ -332,11 +334,14 @@ impl Agent<AgentCtx> for Assistant {
                                     "No response message in the first round of completion",
                                 )?;
                                 conversation.messages.clear(); // clear the first pending message.
-                                conversation.append_messages(res.full_history, created_at);
-                                conversation.append_messages(vec![response], now_ms);
+                                conversation
+                                    .append_messages(clear_messages(res.full_history), created_at);
+                                conversation
+                                    .append_messages(clear_messages(vec![response]), now_ms);
                             } else {
                                 res.full_history.drain(0..conversation.messages.len());
-                                conversation.append_messages(res.full_history, now_ms);
+                                conversation
+                                    .append_messages(clear_messages(res.full_history), now_ms);
                             }
 
                             conversation.artifacts = artifacts;
@@ -390,7 +395,7 @@ impl Agent<AgentCtx> for Assistant {
                                 vec![serde_json::json!(Message {
                                     role: "assistant".into(),
                                     content: err.to_string().into(),
-                                    name: Some("$system".into()),
+                                    name: Some("$system_warning".into()),
                                     ..Default::default()
                                 })],
                                 now_ms,
@@ -422,4 +427,21 @@ impl Agent<AgentCtx> for Assistant {
 
         Ok(res)
     }
+}
+
+// clear Gemini's messages
+fn clear_messages(mut messages: Vec<Json>) -> Vec<Json> {
+    for msg in messages.iter_mut() {
+        if let Some(content) = msg.get_mut("content")
+            && let Some(parts) = content.as_array_mut()
+        {
+            for part in parts.iter_mut() {
+                if let Some(part) = part.as_object_mut() {
+                    part.remove("thoughtSignature"); // thoughtSignature is verbose
+                }
+            }
+        }
+    }
+
+    messages
 }

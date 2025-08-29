@@ -55,12 +55,9 @@ pub struct GenerateContentResponse {
 }
 
 impl GenerateContentResponse {
-    pub fn try_into(self, full_history: Vec<Content>) -> Result<AgentOutput, BoxError> {
+    pub fn try_into(self, full_history: Vec<Value>) -> Result<AgentOutput, BoxError> {
         let mut output = AgentOutput {
-            full_history: full_history
-                .iter()
-                .map(|v| json!(Message::from(v)))
-                .collect(),
+            full_history,
             usage: ModelUsage {
                 input_tokens: self.usage_metadata.prompt_token_count as u64,
                 output_tokens: self.usage_metadata.candidates_token_count as u64,
@@ -241,6 +238,16 @@ impl TryFrom<Value> for ContentPart {
     }
 }
 
+fn into_parts(value: Value) -> Result<Vec<ContentPart>, serde_json::Error> {
+    match value {
+        Value::Array(list) => list
+            .into_iter()
+            .map(ContentPart::try_from)
+            .collect::<Result<_, _>>(),
+        v => Ok(vec![ContentPart::try_from(v)?]),
+    }
+}
+
 impl TryFrom<Value> for Content {
     type Error = serde_json::Error;
 
@@ -261,7 +268,7 @@ impl TryFrom<Message> for Content {
         match msg.role.as_str() {
             "user" => Ok(Self {
                 role: Some(Role::User),
-                parts: vec![msg.content.try_into()?],
+                parts: into_parts(msg.content)?,
             }),
             "tool" => Ok(Self {
                 role: Some(Role::User),
@@ -272,7 +279,12 @@ impl TryFrom<Message> for Content {
                             .name
                             .map(|n| n.trim_start_matches("$").to_string())
                             .unwrap(),
-                        response: msg.content,
+                        response: match msg.content {
+                            Value::String(s) => {
+                                serde_json::from_str(&s).unwrap_or_else(|_| s.into())
+                            }
+                            v => v,
+                        },
                         scheduling: None,
                         will_continue: None,
                     },
@@ -281,7 +293,7 @@ impl TryFrom<Message> for Content {
             }),
             _ => Ok(Self {
                 role: Some(Role::Model),
-                parts: vec![msg.content.try_into()?],
+                parts: into_parts(msg.content)?,
             }),
         }
     }
@@ -561,11 +573,8 @@ pub struct UsageMetadata {
 
     pub total_token_count: u32,
 
-    pub cached_content_token_count: u32,
-
+    #[serde(default)]
     pub thoughts_token_count: u32,
-
-    pub tool_use_prompt_token_count: u32,
 }
 
 /// Config for thinking features.
@@ -889,10 +898,13 @@ mod tests {
 
         // Test TryFrom<Value> for ContentPart with string
         let string_value = json!("Simple text");
-        let content_part: ContentPart = ContentPart::try_from(string_value).unwrap();
+        let content_part: ContentPart = ContentPart::try_from(string_value.clone()).unwrap();
         assert_eq!(content_part.data, PartKind::Text("Simple text".to_string()));
         assert_eq!(content_part.thought, None);
         assert_eq!(content_part.thought_signature, None);
+
+        let val = into_parts(string_value.clone()).unwrap();
+        assert_eq!(val, vec![content_part.clone()]);
 
         // Test TryFrom<Value> for ContentPart with complex object
         let complex_value = json!({
@@ -903,14 +915,20 @@ mod tests {
                 "args": {"param": "value"}
             }
         });
-        let content_part: ContentPart = ContentPart::try_from(complex_value).unwrap();
-        assert_eq!(content_part.thought, Some(true));
-        assert_eq!(content_part.thought_signature, Some("abc123".to_string()));
-        if let PartKind::FunctionCall { name, args, id: _ } = content_part.data {
+        let content_part2: ContentPart = ContentPart::try_from(complex_value.clone()).unwrap();
+        assert_eq!(content_part2.thought, Some(true));
+        assert_eq!(content_part2.thought_signature, Some("abc123".to_string()));
+        if let PartKind::FunctionCall { name, args, id: _ } = &content_part2.data {
             assert_eq!(name, "test_function");
-            assert_eq!(args, Some(json!({"param": "value"})));
+            assert_eq!(args, &Some(json!({"param": "value"})));
         } else {
             panic!("Expected FunctionCall variant");
         }
+
+        let val = into_parts(complex_value.clone()).unwrap();
+        assert_eq!(val, vec![content_part2.clone()]);
+
+        let val = into_parts(json!(vec![string_value, complex_value])).unwrap();
+        assert_eq!(val, vec![content_part, content_part2]);
     }
 }

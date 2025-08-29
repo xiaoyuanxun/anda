@@ -103,8 +103,8 @@ impl Conversation {
     }
 }
 
-impl From<&Conversation> for Document {
-    fn from(conversation: &Conversation) -> Self {
+impl From<Conversation> for Document {
+    fn from(conversation: Conversation) -> Self {
         let mut metadata = BTreeMap::from([
             ("_type".to_string(), "Conversation".into()),
             ("_id".to_string(), conversation._id.into()),
@@ -119,11 +119,11 @@ impl From<&Conversation> for Document {
                 rfc3339_datetime(conversation.updated_at).unwrap().into(),
             ),
         ]);
-        if let Some(thread) = &conversation.thread {
+        if let Some(thread) = conversation.thread {
             metadata.insert("thread".to_string(), thread.to_string().into());
         }
         Self {
-            content: json_convert_rfc3339_timestamp(conversation.messages.clone()).into(),
+            content: json_convert_rfc3339_timestamp(conversation.messages).into(),
             metadata,
         }
     }
@@ -344,9 +344,22 @@ impl MemoryManagement {
             .execute_meta(MetaCommand::Describe(DescribeTarget::Domains))
             .await?;
         Ok(json!({
-            "identity": system.to_concept_node(),
+            "identity": system.attributes,
             "domains": domains,
         }))
+    }
+
+    pub async fn describe_caller(&self, id: &Principal) -> Result<Json, KipError> {
+        let mut user = self
+            .nexus
+            .get_concept(&ConceptPK::Object {
+                r#type: PERSON_TYPE.to_string(),
+                name: id.to_string(),
+            })
+            .await?;
+        user.attributes
+            .insert("id".to_string(), id.to_string().into());
+        Ok(user.attributes.into())
     }
 
     pub async fn add_resource(&self, resource: ResourceRef<'_>) -> Result<u64, DBError> {
@@ -721,7 +734,7 @@ impl Tool<BaseCtx> for ListConversationsTool {
             .memory
             .list_conversations_by_user(ctx.caller(), args.cursor, args.limit)
             .await?;
-        let docs: Vec<Document> = conversations.iter().map(Document::from).collect();
+        let docs: Vec<Document> = conversations.into_iter().map(Document::from).collect();
         let result = format!(
             "Current Datetime: {}\n---\n{}",
             rfc3339_datetime_now(),
@@ -793,7 +806,7 @@ impl Tool<BaseCtx> for SearchConversationsTool {
             .search_conversations(ctx.caller(), args.query, args.limit)
             .await?;
 
-        let docs: Vec<Document> = conversations.iter().map(Document::from).collect();
+        let docs: Vec<Document> = conversations.into_iter().map(Document::from).collect();
         let result = format!(
             "Current Datetime: {}\n---\n{}",
             rfc3339_datetime_now(),

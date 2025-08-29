@@ -1003,6 +1003,7 @@ impl CompletionRunner {
                             return Ok(Some(self.final_output(output)));
                         }
 
+                        // TODO: remote agent id
                         tool_calls_continue.push(json!(Message {
                             role: "tool".to_string(),
                             content: res.content.clone().into(),

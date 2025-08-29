@@ -6,9 +6,10 @@
 //! - Response parsing and conversion to Anda's internal formats
 
 use anda_core::{
-    AgentOutput, BoxError, BoxPinFut, CompletionFeatures, CompletionRequest, Resource,
+    AgentOutput, BoxError, BoxPinFut, CompletionFeatures, CompletionRequest, Message, Resource,
 };
 use log::{Level::Debug, log_enabled};
+use serde_json::{Value, json};
 
 use super::{CompletionFeaturesDyn, request_client_builder};
 use crate::rfc3339_datetime_now;
@@ -136,21 +137,29 @@ impl CompletionFeaturesDyn for CompletionModel {
             for msg in req.chat_history {
                 greq.contents.push(msg.try_into()?);
             }
-            let skip_messages = greq.contents.len();
 
             let role = if req.role.as_deref() == Some("assistant") {
-                Some(types::Role::Model)
+                types::Role::Model
             } else {
-                Some(types::Role::User)
+                types::Role::User
             };
 
+            let mut full_history: Vec<Value> = Vec::new();
             if let Some(prompt) = req.documents.to_message(&rfc3339_datetime_now()) {
+                full_history.push(json!(&prompt));
                 greq.contents.push(prompt.try_into()?);
             }
 
             if !req.content_parts.is_empty() {
+                full_history.push(json!(Message {
+                    role: role.to_string(),
+                    content: json!(req.content_parts),
+                    name: req.prompter_name.clone(),
+                    ..Default::default()
+                }));
+
                 greq.contents.push(types::Content {
-                    role: role.clone(),
+                    role: Some(role),
                     parts: req
                         .content_parts
                         .into_iter()
@@ -160,8 +169,15 @@ impl CompletionFeaturesDyn for CompletionModel {
             }
 
             if !req.prompt.is_empty() {
+                full_history.push(json!(Message {
+                    role: role.to_string(),
+                    content: req.prompt.clone().into(),
+                    name: req.prompter_name,
+                    ..Default::default()
+                }));
+
                 greq.contents.push(types::Content {
-                    role: role.clone(),
+                    role: Some(role),
                     parts: vec![types::ContentPart {
                         data: types::PartKind::Text(req.prompt),
                         ..Default::default()
@@ -210,6 +226,7 @@ impl CompletionFeaturesDyn for CompletionModel {
                 .await?;
             if response.status().is_success() {
                 let text = response.text().await?;
+
                 match serde_json::from_str::<types::GenerateContentResponse>(&text) {
                     Ok(res) => {
                         if log_enabled!(Debug) {
@@ -223,10 +240,8 @@ impl CompletionFeaturesDyn for CompletionModel {
                                 response:serde = res;
                                 "completions maybe failed");
                         }
-                        if skip_messages > 0 {
-                            greq.contents.drain(0..skip_messages);
-                        }
-                        res.try_into(greq.contents)
+
+                        res.try_into(full_history)
                     }
                     Err(err) => {
                         Err(format!("Gemini completions error: {}, body: {}", err, text).into())
