@@ -36,7 +36,7 @@ axum = { version = "0.8", features = [
   "query",
 ], default-features = true }
 async-trait = "0.1"
-anda_object_store = "0.1"
+anda_object_store = "0.2"
 anda_db = { version = "0.5", features = ["full"] }
 anda_db_tfs = { version = "0.5", features = ["full"] }
 anda_cognitive_nexus = "0.3"

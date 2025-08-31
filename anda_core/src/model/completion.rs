@@ -67,7 +67,7 @@ pub struct CompletionRequest {
 impl CompletionRequest {
     /// Adds a document to the request.
     pub fn context(mut self, id: String, text: String) -> Self {
-        self.documents.0.push(Document {
+        self.documents.docs.push(Document {
             content: text.into(),
             metadata: BTreeMap::from([("id".to_string(), id.into())]),
         });
@@ -76,7 +76,7 @@ impl CompletionRequest {
 
     /// Adds multiple documents to the request.
     pub fn append_documents(mut self, docs: Documents) -> Self {
-        self.documents.0.extend(docs.0);
+        self.documents.docs.extend(docs.docs);
         self
     }
 
@@ -106,7 +106,7 @@ pub struct Message {
 }
 
 /// A document with metadata and content.
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Document {
     /// The metadata of the document.
     pub metadata: BTreeMap<String, Json>,
@@ -131,12 +131,42 @@ impl From<&Resource> for Document {
 }
 
 /// Collection of knowledge documents.
-#[derive(Clone, Debug, Default)]
-pub struct Documents(pub Vec<Document>);
+#[derive(Clone, Debug)]
+pub struct Documents {
+    /// The tag of the document collection. Defaults to "documents".
+    tag: String,
+    /// The documents in the collection.
+    docs: Vec<Document>,
+}
+
+impl Default for Documents {
+    fn default() -> Self {
+        Self {
+            tag: "documents".to_string(),
+            docs: Vec::new(),
+        }
+    }
+}
 
 impl Documents {
+    /// Creates a new document collection.
+    pub fn new(tag: String, docs: Vec<Document>) -> Self {
+        Self { tag, docs }
+    }
+
+    /// Sets the tag of the document collection.
+    pub fn with_tag(self, tag: String) -> Self {
+        Self { tag, ..self }
+    }
+
+    /// Returns the tag of the document collection.
+    pub fn tag(&self) -> &str {
+        &self.tag
+    }
+
+    /// Converts the document collection to a message.
     pub fn to_message(&self, rfc3339_datetime: &str) -> Option<Message> {
-        if self.0.is_empty() {
+        if self.docs.is_empty() {
             return None;
         }
 
@@ -161,13 +191,19 @@ impl From<Vec<String>> for Documents {
                 ]),
             });
         }
-        Self(docs)
+        Self {
+            docs,
+            ..Default::default()
+        }
     }
 }
 
 impl From<Vec<Document>> for Documents {
     fn from(docs: Vec<Document>) -> Self {
-        Self(docs)
+        Self {
+            docs,
+            ..Default::default()
+        }
     }
 }
 
@@ -175,38 +211,38 @@ impl std::ops::Deref for Documents {
     type Target = Vec<Document>;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.docs
     }
 }
 
 impl std::ops::DerefMut for Documents {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+        &mut self.docs
     }
 }
 
 impl AsRef<Vec<Document>> for Documents {
     fn as_ref(&self) -> &Vec<Document> {
-        &self.0
+        &self.docs
     }
 }
 
 impl std::fmt::Display for Document {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{}", json!(self))
+        json!(self).fmt(f)
     }
 }
 
 impl std::fmt::Display for Documents {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.0.is_empty() {
+        if self.docs.is_empty() {
             return Ok(());
         }
-        writeln!(f, "<attachments>")?;
-        for doc in &self.0 {
-            write!(f, "{}", doc)?;
+        writeln!(f, "<{}>", self.tag)?;
+        for doc in &self.docs {
+            write!(f, "{}\n", doc)?;
         }
-        write!(f, "</attachments>")
+        write!(f, "</{}>", self.tag)
     }
 }
 
@@ -235,10 +271,16 @@ mod tests {
             .into(),
             ..Default::default()
         };
-        println!("{}", req.documents);
+        // println!("{}", req.documents);
+
         assert_eq!(
             req.documents.to_string(),
-            "<attachments>\n{\"content\":\"Test document 1.\",\"metadata\":{\"_id\":1}}\n{\"content\":\"Test document 2.\",\"metadata\":{\"_id\":2,\"a\":\"b\",\"key\":\"value\"}}\n</attachments>"
+            "<documents>\n{\"content\":\"Test document 1.\",\"metadata\":{\"_id\":1}}\n{\"content\":\"Test document 2.\",\"metadata\":{\"_id\":2,\"a\":\"b\",\"key\":\"value\"}}\n</documents>"
+        );
+        let documents = req.documents.with_tag("my_docs".to_string());
+        assert_eq!(
+            documents.to_string(),
+            "<my_docs>\n{\"content\":\"Test document 1.\",\"metadata\":{\"_id\":1}}\n{\"content\":\"Test document 2.\",\"metadata\":{\"_id\":2,\"a\":\"b\",\"key\":\"value\"}}\n</my_docs>"
         );
     }
 }

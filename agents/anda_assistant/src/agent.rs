@@ -258,7 +258,7 @@ impl Agent<AgentCtx> for Assistant {
             content: format!(
                 "Current Datetime: {}\n---\n{}",
                 rfc3339_datetime_now(),
-                Documents::from(history_docs)
+                Documents::new("history".to_string(), history_docs)
             )
             .into(),
             name: Some("$system".into()),
@@ -307,7 +307,7 @@ impl Agent<AgentCtx> for Assistant {
                 system,
                 prompt,
                 chat_history,
-                documents: resource_docs.into(),
+                documents: Documents::new("resources".to_string(), resource_docs),
                 tools: ctx.tool_definitions(Some(
                     &self.tools.iter().map(|v| v.as_str()).collect::<Vec<_>>(),
                 )),
