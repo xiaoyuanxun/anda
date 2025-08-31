@@ -1,4 +1,4 @@
-# `anda_bot` [WIP]
+# `anda_bot` [TODO: refactor]
 
 `anda_bot` is an AI bot developed using the Anda framework, featuring:
 1. Runs in a TEE (Trusted Execution Environment) to ensure security and privacy

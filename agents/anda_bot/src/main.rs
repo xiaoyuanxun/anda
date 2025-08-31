@@ -1,13 +1,10 @@
-use anda_core::{BoxError, Path, derivation_path_with, validate_function_name};
+use anda_core::{BoxError, Path, derivation_path_with};
 use anda_engine::context::Web3ClientFeatures;
 use anda_engine::{
     APP_USER_AGENT,
     context::{TEEClient, TEEClientBuilder, Web3SDK},
     engine::{AgentInfo, EngineBuilder},
-    extension::{
-        attention::Attention, character::Character, google::GoogleSearchTool,
-        segmenter::DocumentSegmenter,
-    },
+    extension::google::GoogleSearchTool,
     management::SYSTEM_PATH,
     model::{Model, cohere, deepseek, openai},
     store::{LocalFileSystem, Store},
@@ -47,6 +44,7 @@ static ENGINE_NAME: &str = "Anda_bot";
 static COSE_SECRET_PERMANENT_KEY: &str = "v1";
 const LOCAL_SERVER_SHUTDOWN_DURATION: Duration = Duration::from_secs(5);
 
+// TODO: refactor
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
@@ -153,17 +151,6 @@ fn main() -> Result<(), BoxError> {
 }
 
 async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
-    let character = std::fs::read_to_string(&cli.character)?;
-    let character = Character::from_toml(&character)?;
-    log::info!("{:?}", character);
-
-    validate_function_name(&character.handle).map_err(|err| {
-        format!(
-            "invalid character username {:?}, error: {}",
-            character.handle, err
-        )
-    })?;
-
     match cli.command {
         Some(Commands::StartTee {
             tee_host,
@@ -180,7 +167,6 @@ async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
                 cose_canister,
                 cose_namespace,
                 object_store_canister,
-                character,
             )
             .await
         }
@@ -203,7 +189,6 @@ async fn bootstrap(cli: Cli) -> Result<(), BoxError> {
                 &id_secret,
                 root_secret,
                 cfg,
-                character,
                 store_path,
                 manager,
             )
@@ -225,14 +210,12 @@ async fn bootstrap_tee(
     cose_canister: String,
     cose_namespace: String,
     object_store_canister: String,
-    character: Character,
 ) -> Result<(), BoxError> {
     let global_cancel_token = CancellationToken::new();
     let root_path = Path::from(SYSTEM_PATH);
 
     let engine_name = ENGINE_NAME.to_string();
-    let default_agent = character.handle.clone();
-    let default_agent_path = default_agent.to_ascii_lowercase();
+    let default_agent = engine_name.to_ascii_lowercase();
 
     log::info!("start to connect TEE service");
     let cose_canister = Principal::from_text(&cose_canister)?;
@@ -249,7 +232,7 @@ async fn bootstrap_tee(
     let id_secret = tee
         .a256gcm_key(derivation_path_with(
             &root_path,
-            vec![default_agent_path.as_bytes().to_vec()],
+            vec![default_agent.as_bytes().to_vec()],
         ))
         .await?;
     let my_id = BasicIdentity::from_raw_key(&id_secret);
@@ -274,7 +257,7 @@ async fn bootstrap_tee(
         ns: cose_namespace.clone(),
         user_owned: false,
         subject: Some(tee_info.id),
-        key: default_agent_path.as_bytes().to_vec().into(),
+        key: default_agent.as_bytes().to_vec().into(),
         version: 0,
     };
     let encrypted_cfg = match tee.setting_get(&encrypted_cfg_path).await {
@@ -306,12 +289,6 @@ async fn bootstrap_tee(
     let object_store = Arc::new(object_store);
     let os_state = object_store.get_state().await?;
     log::info!("object_store state: {:?}", os_state);
-
-    log::info!("start to build engine");
-    let agent = character.build(
-        Arc::new(Attention::default()),
-        Arc::new(DocumentSegmenter::default()),
-    );
 
     let mut engine = EngineBuilder::new()
         .with_info(AgentInfo {
@@ -348,10 +325,7 @@ async fn bootstrap_tee(
         engine = engine.register_tool(BalanceOfTool::new(ledgers.clone()))?;
     }
 
-    engine = engine.register_agent(agent.clone())?;
-
-    let _agent = Arc::new(agent);
-    let _engine = Arc::new(engine.build(default_agent.clone()).await?);
+    let _engine = Arc::new(engine.empty());
     let app_state = handler::AppState {
         info: Arc::new(handler::AppInformation {
             id: my_principal,
@@ -389,7 +363,6 @@ async fn bootstrap_local(
     id_secret: &str,
     root_secret: [u8; 48],
     cfg: config::Conf,
-    character: Character,
     store_path: String,
     _manager: String,
 ) -> Result<(), BoxError> {
@@ -397,8 +370,7 @@ async fn bootstrap_local(
     let root_path = Path::from(SYSTEM_PATH);
 
     let engine_name = ENGINE_NAME.to_string();
-    let default_agent = character.handle.clone();
-    let _default_agent_path = default_agent.to_ascii_lowercase();
+    let default_agent = engine_name.to_ascii_lowercase();
 
     let identity = load_identity(id_secret)?;
     let web3 = Web3Client::builder()
@@ -431,12 +403,6 @@ async fn bootstrap_local(
         .with_conditional_put()
         .build();
     let object_store = Arc::new(object_store);
-
-    log::info!("start to build engine");
-    let agent = character.build(
-        Arc::new(Attention::default()),
-        Arc::new(DocumentSegmenter::default()),
-    );
 
     let mut engine = EngineBuilder::new()
         .with_info(AgentInfo {
@@ -473,10 +439,7 @@ async fn bootstrap_local(
         engine = engine.register_tool(BalanceOfTool::new(ledgers.clone()))?;
     }
 
-    engine = engine.register_agent(agent.clone())?;
-
-    let _agent = Arc::new(agent);
-    let _engine = Arc::new(engine.build(default_agent.clone()).await?);
+    let _engine = Arc::new(engine.empty());
     let app_state = handler::AppState {
         info: Arc::new(handler::AppInformation {
             id: my_principal,

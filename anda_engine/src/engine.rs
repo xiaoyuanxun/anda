@@ -321,7 +321,7 @@ impl Engine {
             .await?;
         let mut output = self.hooks.on_agent_end(&ctx, &input.name, output).await?;
         self.management.update_user(user_state.as_ref()).await?;
-        output.full_history.clear(); // clear full history
+        output.raw_history.clear(); // clear raw history
         Ok(output)
     }
 
@@ -332,7 +332,6 @@ impl Engine {
         caller: Principal,
         input: ToolInput<Json>,
     ) -> Result<ToolOutput<Json>, BoxError> {
-        let args = serde_json::to_string(&input.args)?;
         let meta = input.meta.unwrap_or_default();
         if meta.engine.is_some() && meta.engine != Some(self.id) {
             return Err(format!(
@@ -372,7 +371,7 @@ impl Engine {
         // Save the user state after incrementing requests
         self.management.update_user(user_state.as_ref()).await?;
 
-        let output = tool.call(ctx.clone(), args, input.resources).await?;
+        let output = tool.call(ctx.clone(), input.args, input.resources).await?;
         let res = self.hooks.on_tool_end(&ctx, &input.name, output).await?;
         self.management.update_user(user_state.as_ref()).await?;
         Ok(res)

@@ -3,16 +3,16 @@ name = "anda_bnb"
 description = "Anda agent tools offers integration with the BNB chain."
 repository = "https://github.com/ldclabs/anda/tree/main/tools/anda_bnb"
 publish = true
-version = "0.2.2"
+version = "0.8.0"
 edition.workspace = true
 keywords.workspace = true
 categories.workspace = true
 license.workspace = true
 
 [dependencies]
-anda_core = { path = "../../anda_core", version = "0.7" }
-anda_engine = { path = "../../anda_engine", version = "0.7" }
-anda_web3_client = { path = "../../anda_web3_client", version = "0.7" }
+anda_core = { path = "../../anda_core", version = "0.8" }
+anda_engine = { path = "../../anda_engine", version = "0.8" }
+anda_web3_client = { path = "../../anda_web3_client", version = "0.8" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 schemars = { workspace = true }

@@ -1,9 +1,11 @@
 use anda_core::{
-    AgentOutput, BoxError, FunctionDefinition, Message, ToolCall, Usage as ModelUsage,
+    AgentOutput, BoxError, ContentPart, FunctionDefinition, Message, Usage as ModelUsage,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::fmt;
+
+use crate::unix_ms;
 
 // https://ai.google.dev/api/generate-content
 
@@ -55,9 +57,15 @@ pub struct GenerateContentResponse {
 }
 
 impl GenerateContentResponse {
-    pub fn try_into(self, full_history: Vec<Value>) -> Result<AgentOutput, BoxError> {
+    pub fn try_into(
+        mut self,
+        raw_history: Vec<Value>,
+        chat_history: Vec<Message>,
+    ) -> Result<AgentOutput, BoxError> {
+        let timestamp = unix_ms();
         let mut output = AgentOutput {
-            full_history,
+            raw_history,
+            chat_history,
             usage: ModelUsage {
                 input_tokens: self.usage_metadata.prompt_token_count as u64,
                 output_tokens: self.usage_metadata.candidates_token_count as u64,
@@ -66,26 +74,23 @@ impl GenerateContentResponse {
             ..Default::default()
         };
 
-        for candidate in self.candidates {
-            // candidate.content.role = Some(Role::Model);
-            output
-                .full_history
-                .push(json!(Message::from(&candidate.content)));
-            match candidate.finish_reason {
-                Some(FinishReason::Stop) => {
-                    let (content, tool_calls) = candidate.content.to_output();
-                    output.content = content;
-                    output.tool_calls = tool_calls;
-                    break;
-                }
-                _ => {
-                    output.failed_reason = serde_json::to_string(&candidate).ok();
-                }
-            }
-        }
-
         if let Some(feedback) = self.prompt_feedback {
             output.failed_reason = serde_json::to_string(&feedback).ok();
+        } else {
+            let candidate = self.candidates.pop().ok_or("No completion choice")?;
+            output.raw_history.push(json!(&candidate.content));
+            let mut msg: Message = candidate.content.into();
+            msg.timestamp = Some(timestamp);
+            match candidate.finish_reason {
+                Some(FinishReason::Stop) => {
+                    output.content = msg.text().unwrap_or_default();
+                    output.tool_calls = msg.tool_calls();
+                }
+                v => {
+                    output.failed_reason = serde_json::to_string(&v).ok();
+                }
+            }
+            output.chat_history.push(msg);
         }
 
         Ok(output)
@@ -139,12 +144,12 @@ pub struct Content {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<Role>,
 
-    pub parts: Vec<ContentPart>,
+    pub parts: Vec<Part>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct ContentPart {
+pub struct Part {
     /// whether or not the part is a reasoning/thinking text or not
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thought: Option<bool>,
@@ -154,6 +159,98 @@ pub struct ContentPart {
 
     #[serde(flatten)]
     pub data: PartKind,
+}
+
+impl From<ContentPart> for Part {
+    fn from(value: ContentPart) -> Self {
+        match value {
+            ContentPart::Text { text } => Part {
+                data: PartKind::Text(text),
+                ..Default::default()
+            },
+            ContentPart::Reasoning { text } => Part {
+                thought: Some(true),
+                data: PartKind::Text(text),
+                ..Default::default()
+            },
+            ContentPart::FileData {
+                mime_type,
+                file_uri,
+            } => Part {
+                data: PartKind::FileData {
+                    file_uri,
+                    mime_type,
+                },
+                ..Default::default()
+            },
+            ContentPart::InlineData { mime_type, data } => Part {
+                data: PartKind::InlineData { mime_type, data },
+                ..Default::default()
+            },
+            ContentPart::ToolCall {
+                name,
+                args,
+                call_id,
+            } => Part {
+                data: PartKind::FunctionCall {
+                    name,
+                    args: Some(args),
+                    id: call_id,
+                },
+                ..Default::default()
+            },
+            ContentPart::ToolOutput {
+                name,
+                output,
+                call_id,
+            } => Part {
+                data: PartKind::FunctionResponse {
+                    name,
+                    response: output,
+                    id: call_id,
+                    will_continue: None,
+                    scheduling: None,
+                },
+                ..Default::default()
+            },
+            ContentPart::Other(json) => {
+                serde_json::from_value(json.clone()).unwrap_or_else(|_| Part {
+                    data: PartKind::Text(serde_json::to_string(&json).unwrap_or_default()),
+                    ..Default::default()
+                })
+            }
+        }
+    }
+}
+
+impl From<Part> for ContentPart {
+    fn from(value: Part) -> Self {
+        match value.data {
+            PartKind::Text(text) if value.thought == Some(true) => ContentPart::Reasoning { text },
+            PartKind::Text(text) => ContentPart::Text { text },
+            PartKind::FileData {
+                file_uri,
+                mime_type,
+            } => ContentPart::FileData {
+                file_uri,
+                mime_type,
+            },
+            PartKind::InlineData { mime_type, data } => ContentPart::InlineData { mime_type, data },
+            PartKind::FunctionCall { name, args, id } => ContentPart::ToolCall {
+                name,
+                args: args.unwrap_or_default(),
+                call_id: id,
+            },
+            PartKind::FunctionResponse {
+                name, response, id, ..
+            } => ContentPart::ToolOutput {
+                name,
+                output: response,
+                call_id: id,
+            },
+            _ => ContentPart::Other(json!(value.data)),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
@@ -202,110 +299,21 @@ impl Default for PartKind {
     }
 }
 
-impl Content {
-    pub fn to_output(&self) -> (String, Vec<ToolCall>) {
-        let mut texts: Vec<&str> = Vec::new();
-        let mut tools: Vec<ToolCall> = Vec::new();
-        for part in &self.parts {
-            if let PartKind::Text(text) = &part.data
-                && part.thought != Some(true)
-            {
-                texts.push(text);
-            } else if let PartKind::FunctionCall { name, args, id } = &part.data {
-                tools.push(ToolCall {
-                    id: id.clone().unwrap_or_default(),
-                    name: name.clone(),
-                    args: serde_json::to_string(args).unwrap_or_default(),
-                    result: None,
-                });
-            }
-        }
-        (texts.join("\n"), tools)
-    }
-}
-
-impl TryFrom<Value> for ContentPart {
-    type Error = serde_json::Error;
-
-    fn try_from(value: Value) -> Result<Self, Self::Error> {
-        match value {
-            Value::String(s) => Ok(Self {
-                data: PartKind::Text(s),
-                ..Default::default()
-            }),
-            _ => serde_json::from_value(value),
+impl From<Message> for Content {
+    fn from(msg: Message) -> Self {
+        Self {
+            role: Some(Role::from(msg.role.as_str())),
+            parts: msg.content.into_iter().map(|v| v.into()).collect(),
         }
     }
 }
 
-fn into_parts(value: Value) -> Result<Vec<ContentPart>, serde_json::Error> {
-    match value {
-        Value::Array(list) => list
-            .into_iter()
-            .map(ContentPart::try_from)
-            .collect::<Result<_, _>>(),
-        v => Ok(vec![ContentPart::try_from(v)?]),
-    }
-}
-
-impl TryFrom<Value> for Content {
-    type Error = serde_json::Error;
-
-    fn try_from(msg: Value) -> Result<Self, Self::Error> {
-        if msg.get("parts").is_some() {
-            return serde_json::from_value(msg);
-        }
-
-        let msg: Message = serde_json::from_value(msg)?;
-        Self::try_from(msg)
-    }
-}
-
-impl TryFrom<Message> for Content {
-    type Error = serde_json::Error;
-
-    fn try_from(msg: Message) -> Result<Self, Self::Error> {
-        match msg.role.as_str() {
-            "user" => Ok(Self {
-                role: Some(Role::User),
-                parts: into_parts(msg.content)?,
-            }),
-            "tool" => Ok(Self {
-                role: Some(Role::User),
-                parts: vec![ContentPart {
-                    data: PartKind::FunctionResponse {
-                        id: msg.tool_call_id,
-                        name: msg
-                            .name
-                            .map(|n| n.trim_start_matches("$").to_string())
-                            .unwrap(),
-                        response: match msg.content {
-                            Value::String(s) => {
-                                serde_json::from_str(&s).unwrap_or_else(|_| s.into())
-                            }
-                            v => v,
-                        },
-                        scheduling: None,
-                        will_continue: None,
-                    },
-                    ..Default::default()
-                }],
-            }),
-            _ => Ok(Self {
-                role: Some(Role::Model),
-                parts: into_parts(msg.content)?,
-            }),
-        }
-    }
-}
-
-impl From<&Content> for Message {
-    fn from(content: &Content) -> Self {
+impl From<Content> for Message {
+    fn from(content: Content) -> Self {
         Self {
             role: content.role.unwrap_or_default().to_string(),
-            content: content.parts.iter().map(|v| json!(v)).collect(),
-            tool_call_id: None,
-            name: None,
+            content: content.parts.into_iter().map(|v| v.into()).collect(),
+            ..Default::default()
         }
     }
 }
@@ -316,6 +324,15 @@ pub enum Role {
     #[default]
     User,
     Model,
+}
+
+impl From<&str> for Role {
+    fn from(value: &str) -> Self {
+        match value {
+            "user" | "tool" => Role::User,
+            _ => Role::Model,
+        }
+    }
 }
 
 impl fmt::Display for Role {
@@ -717,7 +734,7 @@ mod tests {
     #[test]
     fn test_content_part() {
         // Test Text variant
-        let text_part = ContentPart {
+        let text_part = Part {
             thought: None,
             thought_signature: None,
             data: PartKind::Text("Hello world".to_string()),
@@ -729,11 +746,11 @@ mod tests {
                 "text": "Hello world"
             })
         );
-        let deserialized: ContentPart = serde_json::from_value(json_value).unwrap();
+        let deserialized: Part = serde_json::from_value(json_value).unwrap();
         assert_eq!(deserialized, text_part);
 
         // Test Text with thought metadata
-        let thought_text_part = ContentPart {
+        let thought_text_part = Part {
             thought: Some(true),
             thought_signature: Some("base64signature".to_string()),
             data: PartKind::Text("This is a thought".to_string()),
@@ -747,11 +764,11 @@ mod tests {
                 "text": "This is a thought"
             })
         );
-        let deserialized: ContentPart = serde_json::from_value(json_value).unwrap();
+        let deserialized: Part = serde_json::from_value(json_value).unwrap();
         assert_eq!(deserialized, thought_text_part);
 
         // Test FunctionCall variant
-        let function_call_part = ContentPart {
+        let function_call_part = Part {
             thought: None,
             thought_signature: None,
             data: PartKind::FunctionCall {
@@ -771,11 +788,11 @@ mod tests {
                 }
             })
         );
-        let deserialized: ContentPart = serde_json::from_value(json_value).unwrap();
+        let deserialized: Part = serde_json::from_value(json_value).unwrap();
         assert_eq!(deserialized, function_call_part);
 
         // Test FunctionResponse variant
-        let function_response_part = ContentPart {
+        let function_response_part = Part {
             thought: None,
             thought_signature: None,
             data: PartKind::FunctionResponse {
@@ -798,11 +815,11 @@ mod tests {
                 }
             })
         );
-        let deserialized: ContentPart = serde_json::from_value(json_value).unwrap();
+        let deserialized: Part = serde_json::from_value(json_value).unwrap();
         assert_eq!(deserialized, function_response_part);
 
         // Test InlineData variant
-        let inline_data_part = ContentPart {
+        let inline_data_part = Part {
             thought: None,
             thought_signature: None,
             data: PartKind::InlineData {
@@ -820,11 +837,11 @@ mod tests {
                 }
             })
         );
-        let deserialized: ContentPart = serde_json::from_value(json_value).unwrap();
+        let deserialized: Part = serde_json::from_value(json_value).unwrap();
         assert_eq!(deserialized, inline_data_part);
 
         // Test FileData variant
-        let file_data_part = ContentPart {
+        let file_data_part = Part {
             thought: None,
             thought_signature: None,
             data: PartKind::FileData {
@@ -842,11 +859,11 @@ mod tests {
                 }
             })
         );
-        let deserialized: ContentPart = serde_json::from_value(json_value).unwrap();
+        let deserialized: Part = serde_json::from_value(json_value).unwrap();
         assert_eq!(deserialized, file_data_part);
 
         // Test ExecutableCode variant
-        let executable_code_part = ContentPart {
+        let executable_code_part = Part {
             thought: None,
             thought_signature: None,
             data: PartKind::ExecutableCode {
@@ -864,11 +881,11 @@ mod tests {
                 }
             })
         );
-        let deserialized: ContentPart = serde_json::from_value(json_value).unwrap();
+        let deserialized: Part = serde_json::from_value(json_value).unwrap();
         assert_eq!(deserialized, executable_code_part);
 
         // Test CodeExecutionResult variant
-        let code_result_part = ContentPart {
+        let code_result_part = Part {
             thought: None,
             thought_signature: None,
             data: PartKind::CodeExecutionResult {
@@ -886,49 +903,49 @@ mod tests {
                 }
             })
         );
-        let deserialized: ContentPart = serde_json::from_value(json_value).unwrap();
+        let deserialized: Part = serde_json::from_value(json_value).unwrap();
         assert_eq!(deserialized, code_result_part);
 
         // Test default ContentPart
-        let default_part = ContentPart::default();
+        let default_part = Part::default();
         let json_value = serde_json::to_value(&default_part).unwrap();
         assert_eq!(json_value, json!({"text": ""}));
-        let deserialized: ContentPart = serde_json::from_value(json_value).unwrap();
+        let deserialized: Part = serde_json::from_value(json_value).unwrap();
         assert_eq!(deserialized, default_part);
 
         // Test TryFrom<Value> for ContentPart with string
-        let string_value = json!("Simple text");
-        let content_part: ContentPart = ContentPart::try_from(string_value.clone()).unwrap();
-        assert_eq!(content_part.data, PartKind::Text("Simple text".to_string()));
-        assert_eq!(content_part.thought, None);
-        assert_eq!(content_part.thought_signature, None);
+        // let string_value = json!("Simple text");
+        // let content_part: Part = Part::try_from(string_value.clone()).unwrap();
+        // assert_eq!(content_part.data, PartKind::Text("Simple text".to_string()));
+        // assert_eq!(content_part.thought, None);
+        // assert_eq!(content_part.thought_signature, None);
 
-        let val = into_parts(string_value.clone()).unwrap();
-        assert_eq!(val, vec![content_part.clone()]);
+        // let val = into_parts(string_value.clone()).unwrap();
+        // assert_eq!(val, vec![content_part.clone()]);
 
-        // Test TryFrom<Value> for ContentPart with complex object
-        let complex_value = json!({
-            "thought": true,
-            "thoughtSignature": "abc123",
-            "functionCall": {
-                "name": "test_function",
-                "args": {"param": "value"}
-            }
-        });
-        let content_part2: ContentPart = ContentPart::try_from(complex_value.clone()).unwrap();
-        assert_eq!(content_part2.thought, Some(true));
-        assert_eq!(content_part2.thought_signature, Some("abc123".to_string()));
-        if let PartKind::FunctionCall { name, args, id: _ } = &content_part2.data {
-            assert_eq!(name, "test_function");
-            assert_eq!(args, &Some(json!({"param": "value"})));
-        } else {
-            panic!("Expected FunctionCall variant");
-        }
+        // // Test TryFrom<Value> for ContentPart with complex object
+        // let complex_value = json!({
+        //     "thought": true,
+        //     "thoughtSignature": "abc123",
+        //     "functionCall": {
+        //         "name": "test_function",
+        //         "args": {"param": "value"}
+        //     }
+        // });
+        // let content_part2: Part = Part::try_from(complex_value.clone()).unwrap();
+        // assert_eq!(content_part2.thought, Some(true));
+        // assert_eq!(content_part2.thought_signature, Some("abc123".to_string()));
+        // if let PartKind::FunctionCall { name, args, id: _ } = &content_part2.data {
+        //     assert_eq!(name, "test_function");
+        //     assert_eq!(args, &Some(json!({"param": "value"})));
+        // } else {
+        //     panic!("Expected FunctionCall variant");
+        // }
 
-        let val = into_parts(complex_value.clone()).unwrap();
-        assert_eq!(val, vec![content_part2.clone()]);
+        // let val = into_parts(complex_value.clone()).unwrap();
+        // assert_eq!(val, vec![content_part2.clone()]);
 
-        let val = into_parts(json!(vec![string_value, complex_value])).unwrap();
-        assert_eq!(val, vec![content_part, content_part2]);
+        // let val = into_parts(json!(vec![string_value, complex_value])).unwrap();
+        // assert_eq!(val, vec![content_part, content_part2]);
     }
 }

@@ -103,8 +103,8 @@ where
     ///
     /// # Returns
     /// Deserialized instance of type `T` or an error if validation fails
-    pub fn submit(&self, args: String) -> Result<T, BoxError> {
-        serde_json::from_str(&args).map_err(|err| format!("invalid args: {}", err).into())
+    pub fn submit(&self, args: Value) -> Result<T, BoxError> {
+        serde_json::from_value(args).map_err(|err| format!("invalid args: {}", err).into())
     }
 }
 
@@ -149,7 +149,7 @@ where
 #[derive(Debug, Clone)]
 pub struct Extractor<T: JsonSchema + DeserializeOwned + Serialize + Send + Sync> {
     tool: SubmitTool<T>,
-    system: String,
+    instructions: String,
     max_tokens: Option<usize>,
 }
 
@@ -175,17 +175,17 @@ impl<T: JsonSchema + DeserializeOwned + Serialize + Send + Sync> Extractor<T> {
     /// # Arguments
     /// * `tool` - Pre-configured SubmitTool instance
     /// * `max_tokens` - Optional maximum number of tokens for the completion
-    /// * `system_prompt` - Optional custom system prompt
+    /// * `instructions` - Optional custom system instructions
     pub fn new_with_tool(
         tool: SubmitTool<T>,
         max_tokens: Option<usize>,
-        system_prompt: Option<String>,
+        instructions: Option<String>,
     ) -> Self {
         let tool_name = tool.name();
         Self {
             tool,
             max_tokens,
-            system: system_prompt.unwrap_or_else(|| format!("\
+            instructions: instructions.unwrap_or_else(|| format!("\
             You are an AI assistant whose purpose is to\
             extract structured data from the provided text.\n\
             You will have access to a `{tool_name}` function that defines the structure of the data to extract from the provided text.\n\
@@ -208,11 +208,11 @@ impl<T: JsonSchema + DeserializeOwned + Serialize + Send + Sync> Extractor<T> {
         prompt: String,
     ) -> Result<(T, AgentOutput), BoxError> {
         let req = CompletionRequest {
-            system: self.system.clone(),
+            instructions: self.instructions.clone(),
             prompt,
             tools: vec![self.tool.definition()],
             tool_choice_required: true,
-            max_tokens: self.max_tokens,
+            max_output_tokens: self.max_tokens,
             ..Default::default()
         };
 

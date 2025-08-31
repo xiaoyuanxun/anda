@@ -28,15 +28,14 @@
 use anda_core::{
     AgentArgs, AgentContext, AgentInput, AgentOutput, AgentSet, BaseContext, BoxError, CacheExpiry,
     CacheFeatures, CacheStoreFeatures, CancellationToken, CanisterCaller, CompletionFeatures,
-    CompletionRequest, Embedding, EmbeddingFeatures, FunctionDefinition, HttpFeatures, Json,
-    KeysFeatures, Message, ObjectMeta, Path, PutMode, PutResult, RequestMeta, Resource,
+    CompletionRequest, ContentPart, Embedding, EmbeddingFeatures, FunctionDefinition, HttpFeatures,
+    Json, KeysFeatures, Message, ObjectMeta, Path, PutMode, PutResult, RequestMeta, Resource,
     StateFeatures, StoreFeatures, ToolCall, ToolInput, ToolOutput, ToolSet, Usage,
 };
 use bytes::Bytes;
 use candid::{CandidType, Principal, utils::ArgumentEncoder};
 use futures_util::Stream;
 use serde::{Serialize, de::DeserializeOwned};
-use serde_json::json;
 use std::{
     future::Future,
     pin::Pin,
@@ -154,8 +153,8 @@ impl AgentCtx {
             ctx: self.clone(),
             req,
             resources,
-            full_history: Vec::new(),
-            tool_calls_result: Vec::new(),
+            chat_history: Vec::new(),
+            tool_calls: Vec::new(),
             usage: Usage::default(),
             artifacts: Vec::new(),
             done: false,
@@ -342,8 +341,7 @@ impl AgentContext for AgentCtx {
         if !input.name.starts_with("RT_") {
             let ctx = self.child_base(&input.name)?;
             let tool = self.tools.get(&input.name).expect("tool not found");
-            let args = serde_json::to_string(&input.args)?;
-            return tool.call(ctx, args, input.resources).await;
+            return tool.call(ctx, input.args, input.resources).await;
         }
 
         // find registered remote tool and call it
@@ -857,8 +855,8 @@ pub struct CompletionRunner {
     ctx: AgentCtx,
     req: CompletionRequest,
     resources: Vec<Resource>,
-    full_history: Vec<Json>,
-    tool_calls_result: Vec<ToolCall>,
+    chat_history: Vec<Message>,
+    tool_calls: Vec<ToolCall>,
     usage: Usage,
     artifacts: Vec<Resource>,
     done: bool,
@@ -904,35 +902,24 @@ impl CompletionRunner {
         self.step += 1;
         let mut output = self.ctx.model.completion(self.req.clone()).await?;
         self.usage.accumulate(&output.usage);
-        // 追加到下一轮请求
-        self.req.chat_history.extend(output.full_history.clone());
+        // 累计所有原始对话历史（包含初始的 req.raw_history 和 req.chat_history）
+        self.req.raw_history.append(&mut output.raw_history);
         // 累计所有对话历史（不包含初始的 req.chat_history）
-        self.full_history.append(&mut output.full_history);
+        self.chat_history.append(&mut output.chat_history);
 
         // 自动执行工具/代理调用
-        let mut tool_calls_continue: Vec<Json> = Vec::new();
+        let mut tool_calls_continue: Vec<ContentPart> = Vec::new();
         for tool in output.tool_calls.iter_mut() {
             if self.ctx.cancellation_token().is_cancelled() {
                 return Err("operation cancelled".into());
             }
 
             if self.ctx.tools.contains(&tool.name) || tool.name.starts_with("RT_") {
-                // 工具调用
-                let args: Json = match serde_json::from_str(&tool.args) {
-                    Ok(args) => args,
-                    Err(err) => {
-                        output.failed_reason = Some(format!(
-                            "failed to parse tool args {:?}: {}",
-                            tool.args, err
-                        ));
-                        return Ok(Some(self.final_output(output)));
-                    }
-                };
                 match self
                     .ctx
                     .tool_call(ToolInput {
                         name: tool.name.clone(),
-                        args,
+                        args: tool.args.clone(),
                         resources: self
                             .ctx
                             .select_tool_resources(&tool.name, &mut self.resources)
@@ -943,25 +930,17 @@ impl CompletionRunner {
                 {
                     Ok(mut res) => {
                         self.usage.accumulate(&res.usage);
-                        let content: Json = if res.output.is_string() {
-                            res.output.clone()
-                        } else {
-                            // content should be string
-                            serde_json::to_string(&res.output)?.into()
-                        };
-                        let message = json!(Message {
-                            role: "tool".to_string(),
-                            content,
-                            name: Some(format!("${}", tool.name)),
-                            tool_call_id: Some(tool.id.clone()),
-                        });
 
                         // We can not ignore some tool calls.
                         // GPT-5: An assistant message with 'tool_calls' must be followed by tool messages responding to each 'tool_call_id'.
-                        tool_calls_continue.push(message);
+                        tool_calls_continue.push(ContentPart::ToolOutput {
+                            name: tool.name.clone(),
+                            output: res.output.clone(),
+                            call_id: Some(tool.id.clone()),
+                        });
 
                         self.artifacts.append(&mut res.artifacts);
-                        tool.result = serde_json::to_value(&res).ok();
+                        tool.result = Some(res);
                     }
                     Err(err) => {
                         output.failed_reason = Some(err.to_string());
@@ -973,7 +952,7 @@ impl CompletionRunner {
                 || tool.name.starts_with("RA_")
             {
                 // 代理调用
-                let args: AgentArgs = match serde_json::from_str(&tool.args) {
+                let args: AgentArgs = match serde_json::from_value(tool.args.clone()) {
                     Ok(args) => args,
                     Err(err) => {
                         output.failed_reason = Some(format!(
@@ -1004,15 +983,18 @@ impl CompletionRunner {
                         }
 
                         // TODO: remote agent id
-                        tool_calls_continue.push(json!(Message {
-                            role: "tool".to_string(),
-                            content: res.content.clone().into(),
-                            name: Some(format!("${}", tool.name)),
-                            tool_call_id: Some(tool.id.clone()),
-                        }));
+                        tool_calls_continue.push(ContentPart::ToolOutput {
+                            name: tool.name.clone(),
+                            output: res.content.clone().into(),
+                            call_id: Some(tool.id.clone()),
+                        });
 
                         self.artifacts.append(&mut res.artifacts);
-                        tool.result = serde_json::to_value(&res).ok();
+                        tool.result = Some(ToolOutput {
+                            output: res.content.clone().into(),
+                            artifacts: vec![],
+                            usage: res.usage,
+                        });
                     }
                     Err(err) => {
                         output.failed_reason = Some(err.to_string());
@@ -1024,7 +1006,7 @@ impl CompletionRunner {
         }
 
         // 累计当前轮的 tool_calls
-        self.tool_calls_result.append(&mut output.tool_calls);
+        self.tool_calls.append(&mut output.tool_calls);
 
         // 若无需继续，返回最终结果并结束
         if tool_calls_continue.is_empty() {
@@ -1032,14 +1014,13 @@ impl CompletionRunner {
         }
 
         // 准备下一轮请求
+        self.req.chat_history.clear();
         self.req.documents.clear();
-        self.req.content_parts.clear();
-        self.req.prompt = "".to_string();
-
+        self.req.content.clear();
+        self.req.prompt.clear();
         // 追加到下一轮请求
-        self.req.chat_history.extend(tool_calls_continue.clone());
-        // 累计所有对话历史（不包含初始的 req.chat_history）
-        self.full_history.append(&mut tool_calls_continue);
+        self.req.role = Some("tool".to_string());
+        self.req.content.append(&mut tool_calls_continue);
 
         // 返回本轮的中间结果（带当前累计 usage；不强制覆盖 artifacts/tool_calls，
         // 让调用方查看模型本轮原始输出；最终轮会附带汇总）
@@ -1047,16 +1028,16 @@ impl CompletionRunner {
         // // output.artifacts = self.artifacts.clone();
         output.usage = self.usage.clone();
         // 本次 output 也包含当前所有对话
-        output.full_history = self.full_history.clone();
+        output.chat_history = self.chat_history.clone();
 
         Ok(Some(output))
     }
 
     fn final_output(&mut self, mut output: AgentOutput) -> AgentOutput {
         self.done = true;
-        self.full_history.append(&mut output.full_history);
-        output.full_history = std::mem::take(&mut self.full_history);
-        output.tool_calls = std::mem::take(&mut self.tool_calls_result);
+        self.chat_history.append(&mut output.chat_history);
+        output.chat_history = std::mem::take(&mut self.chat_history);
+        output.tool_calls = std::mem::take(&mut self.tool_calls);
         output.artifacts = std::mem::take(&mut self.artifacts);
         output.usage = std::mem::take(&mut self.usage);
 

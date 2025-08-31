@@ -92,7 +92,7 @@ impl CompletionFeaturesDyn for MockImplemented {
                     Some(ToolCall {
                         id: tool.name.clone(),
                         name: tool.name.clone(),
-                        args: req.prompt.clone(),
+                        args: serde_json::from_str(&req.prompt).unwrap_or_default(),
                         result: None,
                     })
                 })

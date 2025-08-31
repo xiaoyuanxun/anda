@@ -1,7 +1,7 @@
 use anda_cognitive_nexus::{CognitiveNexus, ConceptPK};
 use anda_core::{
-    BoxError, Document, Documents, FunctionDefinition, Resource, ResourceRef, StateFeatures, Tool,
-    ToolOutput, Usage, Xid, gen_schema_for,
+    BoxError, Document, Documents, FunctionDefinition, Message, Resource, ResourceRef,
+    StateFeatures, Tool, ToolOutput, Usage, Xid, gen_schema_for,
 };
 use anda_db::{
     collection::{Collection, CollectionConfig},
@@ -29,8 +29,7 @@ use std::{
 };
 
 use crate::{
-    context::BaseCtx, extension::fetch::FetchWebResourcesTool, json_convert_rfc3339_timestamp,
-    json_set_unix_ms_timestamp, rfc3339_datetime, rfc3339_datetime_now, unix_ms,
+    context::BaseCtx, extension::fetch::FetchWebResourcesTool, json_convert_rfc3339_timestamp, rfc3339_datetime, rfc3339_datetime_now, unix_ms,
 };
 
 pub static FUNCTION_DEFINITION: LazyLock<FunctionDefinition> =
@@ -59,6 +58,9 @@ pub struct Conversation {
     #[field_type = "Text"]
     pub status: ConversationStatus,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failed_reason: Option<String>,
+
     /// The LLM usage statistics for the conversation.
     #[field_type = "Map<String, U64>"]
     pub usage: Usage,
@@ -75,13 +77,12 @@ pub struct Conversation {
 }
 
 impl Conversation {
-    pub fn append_messages(&mut self, message: Vec<Json>, now_ms: u64) {
-        self.messages
-            .extend(json_set_unix_ms_timestamp(message, now_ms));
+    pub fn append_messages(&mut self, message: Vec<Message>) {
+        self.messages.extend(message.into_iter().map(|v| json!(v)));
     }
 
     pub fn to_changes(&self) -> Result<BTreeMap<String, Fv>, BoxError> {
-        Ok(BTreeMap::from([
+        let mut changes = BTreeMap::from([
             (
                 "messages".to_string(),
                 Fv::array_from(cbor!(self.messages).unwrap(), &[Ft::Json])?,
@@ -99,15 +100,19 @@ impl Conversation {
                 )?,
             ),
             ("updated_at".to_string(), Fv::U64(self.updated_at)),
-        ]))
+        ]);
+        if let Some(reason) = &self.failed_reason {
+            changes.insert("failed_reason".to_string(), Fv::Text(reason.clone()));
+        }
+        Ok(changes)
     }
 }
 
 impl From<Conversation> for Document {
     fn from(conversation: Conversation) -> Self {
         let mut metadata = BTreeMap::from([
-            ("_type".to_string(), "Conversation".into()),
             ("_id".to_string(), conversation._id.into()),
+            ("type".to_string(), "Conversation".into()),
             ("user".to_string(), conversation.user.to_string().into()),
             ("status".to_string(), conversation.status.to_string().into()),
             (
@@ -823,7 +828,7 @@ impl Tool<BaseCtx> for SearchConversationsTool {
 
 /// Arguments for "memory_api" tool
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
-#[serde(tag = "_type")]
+#[serde(tag = "type")]
 pub enum MemoryToolArgs {
     GetResource {
         /// The ID of the resource to get
@@ -1020,6 +1025,7 @@ mod tests {
             resources: Vec::new(),
             artifacts: Vec::new(),
             status: ConversationStatus::Completed,
+            failed_reason: None,
             period: 0,
             created_at: 0,
             updated_at: 0,
@@ -1035,7 +1041,7 @@ mod tests {
 
         let args = MemoryToolArgs::GetConversation { _id: 1 };
         let rt = serde_json::to_string(&args).unwrap();
-        assert_eq!(rt, r#"{"_type":"GetConversation","_id":1}"#);
+        assert_eq!(rt, r#"{"type":"GetConversation","_id":1}"#);
         let args1: MemoryToolArgs = serde_json::from_str(&rt).unwrap();
         assert_eq!(args, args1);
     }

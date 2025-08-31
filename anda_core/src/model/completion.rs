@@ -1,9 +1,8 @@
-use anda_db_schema::{FieldType, FieldTyped};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::BTreeMap;
 
-use crate::{AgentOutput, BoxError, FunctionDefinition, Json, Resource};
+use crate::{AgentOutput, BoxError, ContentPart, FunctionDefinition, Json, Message, Resource};
 
 /// Provides LLM completion capabilities for agents.
 pub trait CompletionFeatures: Sized {
@@ -18,14 +17,18 @@ pub trait CompletionFeatures: Sized {
 /// Represents a general completion request that can be sent to a completion model provider.
 #[derive(Debug, Clone, Default)]
 pub struct CompletionRequest {
-    /// The system message to be sent to the completion model provider, as the "system" role.
-    pub system: String,
+    /// The system instructions to be sent to the completion model provider, as the "system" role.
+    pub instructions: String,
 
     /// The name of role, defaulting to "user".
     pub role: Option<String>,
 
-    /// The chat history (raw message) to be sent to the completion model provider.
-    pub chat_history: Vec<Json>,
+    /// The chat history to be sent to the completion model provider.
+    pub chat_history: Vec<Message>,
+
+    /// raw_history is the model specialized history used by anda_engine.
+    /// It should be empty in most cases.
+    pub raw_history: Vec<Json>,
 
     /// The documents to embed into the prompt.
     pub documents: Documents,
@@ -34,12 +37,9 @@ pub struct CompletionRequest {
     /// It can be empty.
     pub prompt: String,
 
-    /// The name of the prompter.
-    pub prompter_name: Option<String>,
-
     /// The content parts to be sent to the completion model provider.
-    /// prompt will be ignored if content_parts is not empty.
-    pub content_parts: Vec<Json>,
+    /// It can be empty.
+    pub content: Vec<ContentPart>,
 
     /// The tools to be sent to the completion model provider.
     pub tools: Vec<FunctionDefinition>,
@@ -50,15 +50,11 @@ pub struct CompletionRequest {
     /// The temperature to be sent to the completion model provider. [0.0, 2.0]
     pub temperature: Option<f64>,
 
-    /// The max tokens to be sent to the completion model provider.
-    pub max_tokens: Option<usize>,
+    /// An upper bound for the number of tokens that can be generated for a response,
+    pub max_output_tokens: Option<usize>,
 
     /// An object specifying the JSON format that the model must output.
-    /// https://platform.openai.com/docs/guides/structured-outputs
-    /// The format can be one of the following:
-    /// `{ "type": "json_object" }`
-    /// `{ "type": "json_schema", "json_schema": {...} }`
-    pub response_format: Option<Json>,
+    pub output_schema: Option<Json>,
 
     /// The stop sequence to be sent to the completion model provider.
     pub stop: Option<Vec<String>>,
@@ -87,24 +83,6 @@ impl CompletionRequest {
     }
 }
 
-/// Represents a message send to LLM for completion.
-#[derive(Debug, Clone, Default, Deserialize, Serialize, FieldTyped)]
-pub struct Message {
-    /// Message role: "system", "user", "assistant", "tool".
-    pub role: String,
-
-    /// The content of the message, can be text or JSON array.
-    pub content: Json,
-
-    /// An optional name for the participant. Provides the model information to differentiate between participants of the same role.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-
-    /// Tool call that this message is responding to. If this message is a response to a tool call, this field should be set to the tool call ID.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_call_id: Option<String>,
-}
-
 /// A document with metadata and content.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Document {
@@ -117,7 +95,7 @@ pub struct Document {
 
 impl From<&Resource> for Document {
     fn from(res: &Resource) -> Self {
-        let mut metadata = BTreeMap::from([("_type".to_string(), "Resource".into())]);
+        let mut metadata = BTreeMap::from([("type".to_string(), "Resource".into())]);
         if let Json::Object(mut val) = json!(res) {
             val.remove("blob");
             metadata.extend(val);
@@ -172,9 +150,9 @@ impl Documents {
 
         Some(Message {
             role: "user".into(),
-            content: format!("Current Datetime: {}\n---\n{}", rfc3339_datetime, self).into(),
+            content: vec![format!("Current Datetime: {}\n---\n{}", rfc3339_datetime, self).into()],
             name: Some("$system".into()),
-            tool_call_id: None,
+            ..Default::default()
         })
     }
 }
@@ -187,7 +165,7 @@ impl From<Vec<String>> for Documents {
                 content: text.into(),
                 metadata: BTreeMap::from([
                     ("_id".to_string(), i.into()),
-                    ("_type".to_string(), "Text".into()),
+                    ("type".to_string(), "Text".into()),
                 ]),
             });
         }
@@ -240,7 +218,7 @@ impl std::fmt::Display for Documents {
         }
         writeln!(f, "<{}>", self.tag)?;
         for doc in &self.docs {
-            write!(f, "{}\n", doc)?;
+            writeln!(f, "{}", doc)?;
         }
         write!(f, "</{}>", self.tag)
     }

@@ -7,15 +7,15 @@
 //! - Response parsing and conversion to Anda's internal formats
 
 use anda_core::{
-    AgentOutput, BoxError, BoxPinFut, CompletionRequest, Embedding, FunctionDefinition, Message,
-    ToolCall, Usage as ModelUsage,
+    AgentOutput, BoxError, BoxPinFut, CompletionRequest, ContentPart, Embedding,
+    FunctionDefinition, Json, Message, Usage as ModelUsage,
 };
 use log::{Level::Debug, log_enabled};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::json;
 
 use super::{CompletionFeaturesDyn, EmbeddingFeaturesDyn, request_client_builder};
-use crate::rfc3339_datetime_now;
+use crate::{rfc3339_datetime, unix_ms};
 
 // ================================================================
 // Main OpenAI Client
@@ -189,27 +189,14 @@ pub struct CompletionResponse {
 }
 
 impl CompletionResponse {
-    fn try_into(mut self, mut full_history: Vec<Value>) -> Result<AgentOutput, BoxError> {
-        let choice = self.choices.pop().ok_or("No completion choice")?;
-        full_history.push(json!(choice.message));
+    fn try_into(
+        mut self,
+        raw_history: Vec<Json>,
+        chat_history: Vec<Message>,
+    ) -> Result<AgentOutput, BoxError> {
         let mut output = AgentOutput {
-            content: choice.message.content.unwrap_or_default(),
-            tool_calls: choice
-                .message
-                .tool_calls
-                .map(|tools| {
-                    tools
-                        .into_iter()
-                        .map(|tc| ToolCall {
-                            id: tc.id,
-                            name: tc.function.name,
-                            args: tc.function.arguments,
-                            result: None,
-                        })
-                        .collect()
-                })
-                .unwrap_or_default(),
-            full_history,
+            raw_history,
+            chat_history,
             usage: self
                 .usage
                 .as_ref()
@@ -222,24 +209,126 @@ impl CompletionResponse {
             ..Default::default()
         };
 
+        let choice = self.choices.pop().ok_or("No completion choice")?;
         if !matches!(choice.finish_reason.as_str(), "stop" | "tool_calls") {
             output.failed_reason = Some(choice.finish_reason);
-        }
+        } else {
+            if let Some(refusal) = &choice.message.refusal {
+                output.failed_reason = Some(refusal.clone());
+            }
 
-        if let Some(refusal) = choice.message.refusal {
-            output.failed_reason = Some(refusal);
+            output.raw_history.push(json!(&choice.message));
+            let timestamp = unix_ms();
+            let mut msg: Message = choice.message.into();
+            msg.timestamp = Some(timestamp);
+            output.content = msg.text().unwrap_or_default();
+            output.tool_calls = msg.tool_calls();
+            output.chat_history.push(msg);
         }
 
         Ok(output)
     }
 
     fn maybe_failed(&self) -> bool {
-        self.choices.iter().any(|choice| {
-            !matches!(choice.finish_reason.as_str(), "stop" | "tool_calls")
-                || choice.message.refusal.is_some()
-                || (choice.message.content.is_none() && choice.message.tool_calls.is_none())
+        !self.choices.iter().any(|choice| {
+            matches!(choice.finish_reason.as_str(), "stop" | "tool_calls")
+                && choice.message.refusal.is_none()
+                && (choice.message.content.is_some() || choice.message.tool_calls.is_some())
         })
     }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct MessageInput {
+    pub role: String,
+
+    pub content: Json,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+}
+
+fn to_message_input(msg: &Message) -> Vec<MessageInput> {
+    let mut res = Vec::new();
+    for content in msg.content.iter() {
+        match content {
+            ContentPart::Text { text } => res.push(MessageInput {
+                role: msg.role.clone(),
+                content: text.clone().into(),
+                tool_call_id: None,
+            }),
+            ContentPart::ToolOutput {
+                output, call_id, ..
+            } => res.push(MessageInput {
+                role: msg.role.clone(),
+                content: serde_json::to_string(output).unwrap_or_default().into(),
+                tool_call_id: call_id.clone(),
+            }),
+            ContentPart::FileData {
+                file_uri,
+                mime_type,
+            } => res.push(MessageInput {
+                role: msg.role.clone(),
+                content: match mime_type.clone().unwrap_or_default().as_str() {
+                    mt if mt.starts_with("image") => {
+                        json!({
+                            "type": "input_image",
+                            "image_url":  {
+                                "url": file_uri,
+                            },
+                        })
+                    }
+                    _ => serde_json::to_string(content).unwrap_or_default().into(),
+                },
+                tool_call_id: None,
+            }),
+            ContentPart::InlineData { data, mime_type } => res.push(MessageInput {
+                role: msg.role.clone(),
+                content: match mime_type.as_str() {
+                    mt if mt.starts_with("image") => {
+                        json!({
+                            "type": "input_image",
+                            "image_url":  {
+                                "url": data,
+                            },
+                        })
+                    }
+                    "audio/wav" => {
+                        json!({
+                            "type": "input_audio",
+                            "input_audio":  {
+                                "data": data,
+                                "format": "wav",
+                            },
+                        })
+                    }
+                    "audio/mp3" => {
+                        json!({
+                            "type": "input_audio",
+                            "input_audio":  {
+                                "data": data,
+                                "format": "mp3",
+                            },
+                        })
+                    }
+                    _ => json!({
+                        "type": "file",
+                        "file":  {
+                            "file_data": data,
+                        },
+                    }),
+                },
+                tool_call_id: None,
+            }),
+            // TODO: handle other content parts
+            v => res.push(MessageInput {
+                role: msg.role.clone(),
+                content: serde_json::to_string(v).unwrap_or_default().into(),
+                tool_call_id: None,
+            }),
+        }
+    }
+    res
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -252,6 +341,7 @@ pub struct Choice {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct MessageOutput {
     pub role: String,
+
     #[serde(default)]
     pub content: Option<String>,
 
@@ -260,6 +350,29 @@ pub struct MessageOutput {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCallOutput>>,
+}
+
+impl From<MessageOutput> for Message {
+    fn from(msg: MessageOutput) -> Self {
+        let mut content = Vec::new();
+        if let Some(text) = msg.content {
+            content.push(ContentPart::Text { text });
+        }
+        if let Some(tool_calls) = msg.tool_calls {
+            for tc in tool_calls {
+                content.push(ContentPart::ToolCall {
+                    name: tc.function.name,
+                    args: serde_json::from_str(&tc.function.arguments).unwrap_or_default(),
+                    call_id: Some(tc.id),
+                });
+            }
+        }
+        Self {
+            role: msg.role,
+            content,
+            ..Default::default()
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -419,97 +532,90 @@ impl CompletionModel {
             model: model.to_string(),
         }
     }
-
-    /// Checks if the model is one of the newer OpenAI models
-    fn is_new_model(&self) -> bool {
-        self.model.starts_with("o")
-    }
 }
-
-// impl CompletionFeatures for CompletionModel {
-//     async fn completion(
-//         &self,
-//         req: CompletionRequest,
-//         _resources: Vec<Resource>,
-//     ) -> Result<AgentOutput, BoxError> {
-//         CompletionFeaturesDyn::completion(self, req).await
-//     }
-// }
 
 impl CompletionFeaturesDyn for CompletionModel {
     fn completion(&self, mut req: CompletionRequest) -> BoxPinFut<Result<AgentOutput, BoxError>> {
-        let is_new = self.is_new_model();
         let model = self.model.clone();
         let client = self.client.clone();
 
         Box::pin(async move {
-            // Add preamble to chat history (if available)
-            let mut full_history = if !req.system.is_empty() {
-                vec![json!(Message {
-                    role: if is_new {
-                        "developer".into()
-                    } else {
-                        "system".into()
-                    },
-                    content: req.system.clone().into(),
-                    ..Default::default()
-                })]
-            } else {
-                vec![]
+            let timestamp = unix_ms();
+            let mut raw_history: Vec<Json> = Vec::new();
+            let mut chat_history: Vec<Message> = Vec::new();
+
+            if !req.instructions.is_empty() {
+                raw_history.push(json!(MessageInput {
+                    role: "system".into(),
+                    content: req.instructions.clone().into(),
+                    tool_call_id: None,
+                }));
             };
 
-            // Extend existing chat history
-            full_history.append(&mut req.chat_history);
-            let skip_messages = full_history.len();
+            raw_history.append(&mut req.raw_history);
+            let skip_raw = raw_history.len();
 
-            let role = req.role.unwrap_or("user".to_string());
-
-            if let Some(prompt) = req.documents.to_message(&rfc3339_datetime_now()) {
-                full_history.push(json!(prompt));
+            for msg in req.chat_history {
+                let val = to_message_input(&msg);
+                for v in val {
+                    raw_history.push(serde_json::to_value(&v)?);
+                }
             }
 
-            if !req.content_parts.is_empty() {
-                full_history.push(json!(Message {
-                    role: role.clone(),
-                    content: json!(req.content_parts),
-                    name: req.prompter_name.clone(),
-                    ..Default::default()
-                }));
+            if let Some(mut msg) = req
+                .documents
+                .to_message(&rfc3339_datetime(timestamp).unwrap())
+            {
+                msg.timestamp = Some(timestamp);
+                let val = to_message_input(&msg);
+                for v in val {
+                    raw_history.push(serde_json::to_value(&v)?);
+                }
+                chat_history.push(msg);
             }
 
+            let mut content = req.content;
             if !req.prompt.is_empty() {
-                full_history.push(json!(Message {
-                    role: role.clone(),
-                    content: req.prompt.into(),
-                    name: req.prompter_name,
+                content.push(req.prompt.into());
+            }
+            if !content.is_empty() {
+                let msg = Message {
+                    role: req.role.unwrap_or_else(|| "user".to_string()),
+                    content,
+                    timestamp: Some(timestamp),
                     ..Default::default()
-                }));
+                };
+
+                let val = to_message_input(&msg);
+                for v in val {
+                    raw_history.push(serde_json::to_value(&v)?);
+                }
+                chat_history.push(msg);
             }
 
             let mut body = json!({
                 "model": model,
-                "messages": full_history.clone(),
+                "messages": &raw_history,
             });
 
             let body = body.as_object_mut().unwrap();
             if let Some(temperature) = req.temperature {
-                body.insert("temperature".to_string(), Value::from(temperature));
+                body.insert("temperature".to_string(), Json::from(temperature));
             }
 
-            if let Some(max_tokens) = req.max_tokens {
-                if is_new {
-                    body.insert("max_completion_tokens".to_string(), Value::from(max_tokens));
-                } else {
-                    body.insert("max_tokens".to_string(), Value::from(max_tokens));
-                }
+            if let Some(max_tokens) = req.max_output_tokens {
+                body.insert("max_completion_tokens".to_string(), Json::from(max_tokens));
             }
 
-            if let Some(response_format) = req.response_format {
-                body.insert("response_format".to_string(), response_format);
+            if let Some(output_schema) = req.output_schema {
+                body.insert(
+                    "response_format".to_string(),
+                    json!({ "type": "json_schema", "json_schema": output_schema }),
+                );
             }
 
             if let Some(stop) = req.stop {
-                body.insert("stop".to_string(), Value::from(stop));
+                body.insert("stop".to_string(), Json::from(stop));
             }
 
             if !req.tools.is_empty() {
@@ -525,9 +631,9 @@ impl CompletionFeaturesDyn for CompletionModel {
                 body.insert(
                     "tool_choice".to_string(),
                     if req.tool_choice_required {
-                        Value::from("required")
+                        Json::from("required")
                     } else {
-                        Value::from("auto")
+                        Json::from("auto")
                     },
                 );
             };
@@ -547,17 +653,17 @@ impl CompletionFeaturesDyn for CompletionModel {
                             log::debug!(
                                 request:serde = body,
                                 response:serde = res;
-                                "DeepSeek completions response");
+                                "OpenAI completions response");
                         } else if res.maybe_failed() {
                             log::warn!(
                                 request:serde = body,
                                 response:serde = res;
                                 "completions maybe failed");
                         }
-                        if skip_messages > 0 {
-                            full_history.drain(0..skip_messages);
+                        if skip_raw > 0 {
+                            raw_history.drain(0..skip_raw);
                         }
-                        res.try_into(full_history)
+                        res.try_into(raw_history, chat_history)
                     }
                     Err(err) => {
                         Err(format!("OpenAI completions error: {}, body: {}", err, text).into())

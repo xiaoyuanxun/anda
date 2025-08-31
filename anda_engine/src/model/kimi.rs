@@ -6,20 +6,20 @@
 //! - Response parsing and conversion to Anda's internal formats
 
 use anda_core::{
-    AgentOutput, BoxError, BoxPinFut, CompletionFeatures, CompletionRequest, FunctionDefinition,
-    Message, Resource, ToolCall, Usage as ModelUsage,
+    AgentOutput, BoxError, BoxPinFut, CompletionFeatures, CompletionRequest, ContentPart,
+    FunctionDefinition, Json, Message, Resource, Usage as ModelUsage,
 };
 use log::{Level::Debug, log_enabled};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::json;
 
 use super::{CompletionFeaturesDyn, request_client_builder};
-use crate::rfc3339_datetime_now;
+use crate::{rfc3339_datetime, unix_ms};
 
 // ================================================================
 // Main Kimi Client
 // ================================================================
-const API_BASE_URL: &str = "https://api.moonshot.ai/v1";
+const API_BASE_URL: &str = "https://api.moonshot.cn/v1";
 pub static KIMI_K2: &str = "kimi-k2-0711-preview";
 
 /// Kimi API client configuration and HTTP client
@@ -112,27 +112,14 @@ pub struct CompletionResponse {
 }
 
 impl CompletionResponse {
-    fn try_into(mut self, mut full_history: Vec<Value>) -> Result<AgentOutput, BoxError> {
-        let choice = self.choices.pop().ok_or("No completion choice")?;
-        full_history.push(json!(choice.message));
+    fn try_into(
+        mut self,
+        raw_history: Vec<Json>,
+        chat_history: Vec<Message>,
+    ) -> Result<AgentOutput, BoxError> {
         let mut output = AgentOutput {
-            content: choice.message.content.unwrap_or_default(),
-            tool_calls: choice
-                .message
-                .tool_calls
-                .map(|tools| {
-                    tools
-                        .into_iter()
-                        .map(|tc| ToolCall {
-                            id: tc.id,
-                            name: tc.function.name,
-                            args: tc.function.arguments,
-                            result: None,
-                        })
-                        .collect()
-                })
-                .unwrap_or_default(),
-            full_history,
+            raw_history,
+            chat_history,
             usage: self
                 .usage
                 .as_ref()
@@ -145,23 +132,103 @@ impl CompletionResponse {
             ..Default::default()
         };
 
+        let choice = self.choices.pop().ok_or("No completion choice")?;
         if !matches!(choice.finish_reason.as_str(), "stop" | "tool_calls") {
             output.failed_reason = Some(choice.finish_reason);
-        }
-        if let Some(refusal) = choice.message.refusal {
-            output.failed_reason = Some(refusal);
+        } else {
+            output.raw_history.push(json!(&choice.message));
+            let timestamp = unix_ms();
+            let mut msg: Message = choice.message.into();
+            msg.timestamp = Some(timestamp);
+            output.content = msg.text().unwrap_or_default();
+            output.tool_calls = msg.tool_calls();
+            output.chat_history.push(msg);
         }
 
         Ok(output)
     }
 
     fn maybe_failed(&self) -> bool {
-        self.choices.iter().any(|choice| {
-            !matches!(choice.finish_reason.as_str(), "stop" | "tool_calls")
-                || choice.message.refusal.is_some()
-                || (choice.message.content.is_none() && choice.message.tool_calls.is_none())
+        !self.choices.iter().any(|choice| {
+            matches!(choice.finish_reason.as_str(), "stop" | "tool_calls")
+                && (choice.message.content.is_some() || choice.message.tool_calls.is_some())
         })
     }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct MessageInput {
+    pub role: String,
+
+    pub content: Json,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+}
+
+fn to_message_input(msg: &Message) -> Vec<MessageInput> {
+    let mut res = Vec::new();
+    for content in msg.content.iter() {
+        match content {
+            ContentPart::Text { text } => res.push(MessageInput {
+                role: msg.role.clone(),
+                content: text.clone().into(),
+                tool_call_id: None,
+            }),
+            ContentPart::ToolOutput {
+                output, call_id, ..
+            } => res.push(MessageInput {
+                role: msg.role.clone(),
+                content: serde_json::to_string(output).unwrap_or_default().into(),
+                tool_call_id: call_id.clone(),
+            }),
+            ContentPart::FileData {
+                file_uri,
+                mime_type,
+            } => res.push(MessageInput {
+                role: msg.role.clone(),
+                content: match mime_type.clone().unwrap_or_default().as_str() {
+                    mt if mt.starts_with("image") => {
+                        json!({
+                            "type": "input_image",
+                            "image_url":  {
+                                "url": file_uri,
+                            },
+                        })
+                    }
+                    _ => serde_json::to_string(content).unwrap_or_default().into(),
+                },
+                tool_call_id: None,
+            }),
+            ContentPart::InlineData { data, mime_type } => res.push(MessageInput {
+                role: msg.role.clone(),
+                content: match mime_type.as_str() {
+                    mt if mt.starts_with("image") => {
+                        json!({
+                            "type": "input_image",
+                            "image_url":  {
+                                "url": data,
+                            },
+                        })
+                    }
+                    _ => json!({
+                        "type": "file",
+                        "file":  {
+                            "file_data": data,
+                        },
+                    }),
+                },
+                tool_call_id: None,
+            }),
+            // TODO: handle other content parts
+            v => res.push(MessageInput {
+                role: msg.role.clone(),
+                content: serde_json::to_string(v).unwrap_or_default().into(),
+                tool_call_id: None,
+            }),
+        }
+    }
+    res
 }
 
 /// Individual completion choice from Kimi API
@@ -180,10 +247,30 @@ pub struct MessageOutput {
     pub content: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub refusal: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCallOutput>>,
+}
+
+impl From<MessageOutput> for Message {
+    fn from(msg: MessageOutput) -> Self {
+        let mut content = Vec::new();
+        if let Some(text) = msg.content {
+            content.push(ContentPart::Text { text });
+        }
+        if let Some(tool_calls) = msg.tool_calls {
+            for tc in tool_calls {
+                content.push(ContentPart::ToolCall {
+                    name: tc.function.name,
+                    args: serde_json::from_str(&tc.function.arguments).unwrap_or_default(),
+                    call_id: Some(tc.id),
+                });
+            }
+        }
+        Self {
+            role: msg.role,
+            content,
+            ..Default::default()
+        }
+    }
 }
 
 /// Tool call output structure from Kimi API
@@ -254,61 +341,76 @@ impl CompletionFeaturesDyn for CompletionModel {
         let client = self.client.clone();
 
         Box::pin(async move {
-            // Add system to chat history (if available)
-            let mut full_history = if !req.system.is_empty() {
-                vec![json!(Message {
+            let timestamp = unix_ms();
+            let mut raw_history: Vec<Json> = Vec::new();
+            let mut chat_history: Vec<Message> = Vec::new();
+
+            if !req.instructions.is_empty() {
+                raw_history.push(json!(MessageInput {
                     role: "system".into(),
-                    content: req.system.clone().into(),
-                    ..Default::default()
-                })]
-            } else {
-                vec![]
+                    content: req.instructions.clone().into(),
+                    tool_call_id: None,
+                }));
             };
 
-            // Extend existing chat history
-            full_history.append(&mut req.chat_history);
-            let skip_messages = full_history.len();
+            raw_history.append(&mut req.raw_history);
+            let skip_raw = raw_history.len();
 
-            let role = req.role.unwrap_or("user".to_string());
-
-            if let Some(prompt) = req.documents.to_message(&rfc3339_datetime_now()) {
-                full_history.push(json!(prompt));
+            for msg in req.chat_history {
+                let val = to_message_input(&msg);
+                for v in val {
+                    raw_history.push(serde_json::to_value(&v)?);
+                }
             }
 
-            if !req.content_parts.is_empty() {
-                full_history.push(json!(Message {
-                    role: role.clone(),
-                    content: json!(req.content_parts),
-                    name: req.prompter_name.clone(),
-                    ..Default::default()
-                }));
+            if let Some(mut msg) = req
+                .documents
+                .to_message(&rfc3339_datetime(timestamp).unwrap())
+            {
+                msg.timestamp = Some(timestamp);
+                let val = to_message_input(&msg);
+                for v in val {
+                    raw_history.push(serde_json::to_value(&v)?);
+                }
+                chat_history.push(msg);
             }
 
+            let mut content = req.content;
             if !req.prompt.is_empty() {
-                full_history.push(json!(Message {
-                    role: role.clone(),
-                    content: req.prompt.into(),
-                    name: req.prompter_name,
+                content.push(req.prompt.into());
+            }
+            if !content.is_empty() {
+                let msg = Message {
+                    role: req.role.unwrap_or_else(|| "user".to_string()),
+                    content,
+                    timestamp: Some(timestamp),
                     ..Default::default()
-                }));
+                };
+
+                let val = to_message_input(&msg);
+                for v in val {
+                    raw_history.push(serde_json::to_value(&v)?);
+                }
+                chat_history.push(msg);
             }
 
             let mut body = json!({
                 "model": model,
-                "messages": full_history.clone(),
+                "messages": &raw_history,
             });
 
             let body = body.as_object_mut().unwrap();
             if let Some(temperature) = req.temperature {
-                body.insert("temperature".to_string(), Value::from(temperature));
+                // Kimi temperature is in range [0, 1]
+                body.insert("temperature".to_string(), Json::from(temperature / 2.0));
             }
 
-            if let Some(max_tokens) = req.max_tokens {
-                body.insert("max_tokens".to_string(), Value::from(max_tokens));
+            if let Some(max_tokens) = req.max_output_tokens {
+                body.insert("max_tokens".to_string(), Json::from(max_tokens));
             }
 
-            if req.response_format.is_some() {
-                // Kimi only supports `{"type": "json_object"}`
+            if req.output_schema.is_some() {
+                // DeepSeek only supports `{"type": "json_object"}`
                 body.insert(
                     "response_format".to_string(),
                     json!({"type": "json_object"}),
@@ -316,7 +418,7 @@ impl CompletionFeaturesDyn for CompletionModel {
             }
 
             if let Some(stop) = req.stop {
-                body.insert("stop".to_string(), Value::from(stop));
+                body.insert("stop".to_string(), Json::from(stop));
             }
 
             if !req.tools.is_empty() {
@@ -332,9 +434,9 @@ impl CompletionFeaturesDyn for CompletionModel {
                 body.insert(
                     "tool_choice".to_string(),
                     if req.tool_choice_required {
-                        Value::from("required")
+                        Json::from("required")
                     } else {
-                        Value::from("auto")
+                        Json::from("auto")
                     },
                 );
             };
@@ -354,17 +456,17 @@ impl CompletionFeaturesDyn for CompletionModel {
                             log::debug!(
                                 request:serde = body,
                                 response:serde = res;
-                                "DeepSeek completions response");
+                                "Kimi completions response");
                         } else if res.maybe_failed() {
                             log::warn!(
                                 request:serde = body,
                                 response:serde = res;
                                 "completions maybe failed");
                         }
-                        if skip_messages > 0 {
-                            full_history.drain(0..skip_messages);
+                        if skip_raw > 0 {
+                            raw_history.drain(0..skip_raw);
                         }
-                        res.try_into(full_history)
+                        res.try_into(raw_history, chat_history)
                     }
                     Err(err) => {
                         Err(format!("Kimi completions error: {}, body: {}", err, text).into())
@@ -385,28 +487,8 @@ impl CompletionFeaturesDyn for CompletionModel {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::extension::character::Character;
-    use std::time::Instant;
 
     #[tokio::test(flavor = "current_thread")]
     #[ignore]
-    async fn test_kimi() {
-        dotenv::dotenv().ok();
-
-        let api_key = std::env::var("KIMI_API_KEY").expect("KIMI_API_KEY is not set");
-        let character_path = format!("{}/../characters/AndaICP.toml", env!("CARGO_MANIFEST_DIR"));
-        println!("Character path: {}", character_path);
-        let character = std::fs::read_to_string(character_path).expect("Character file not found");
-        let character = Character::from_toml(&character).expect("Character should parse");
-        let client = Client::new(&api_key, None);
-        let now = Instant::now();
-        let model = client.completion_model(KIMI_K2);
-        let req = character.to_request("I am Yan, glad to see you".into(), Some("Yan".into()));
-        let res = CompletionFeatures::completion(&model, req, Vec::new())
-            .await
-            .unwrap();
-        println!("{:#?}", res);
-        println!("Took: {:?}", now.elapsed());
-    }
+    async fn test_kimi() {}
 }

@@ -112,11 +112,11 @@ where
     fn call_raw(
         &self,
         ctx: C,
-        args: String,
+        args: Json,
         resources: Vec<Resource>,
     ) -> impl Future<Output = Result<ToolOutput<Json>, BoxError>> + Send {
         async move {
-            let args: Self::Args = serde_json::from_str(&args)
+            let args: Self::Args = serde_json::from_value(args)
                 .map_err(|err| format!("tool {}, invalid args: {}", self.name(), err))?;
             let mut result = self
                 .call(ctx, args, resources)
@@ -155,7 +155,7 @@ where
     fn call(
         &self,
         ctx: C,
-        args: String,
+        args: Json,
         resources: Vec<Resource>,
     ) -> BoxPinFut<Result<ToolOutput<Json>, BoxError>>;
 }
@@ -191,7 +191,7 @@ where
     fn call(
         &self,
         ctx: C,
-        args: String,
+        args: Json,
         resources: Vec<Resource>,
     ) -> BoxPinFut<Result<ToolOutput<Json>, BoxError>> {
         let tool = self.0.clone();

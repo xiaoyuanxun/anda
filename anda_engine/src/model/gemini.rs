@@ -6,13 +6,13 @@
 //! - Response parsing and conversion to Anda's internal formats
 
 use anda_core::{
-    AgentOutput, BoxError, BoxPinFut, CompletionFeatures, CompletionRequest, Message, Resource,
+    AgentOutput, BoxError, BoxPinFut, CompletionFeatures, CompletionRequest, Json, Message,
+    Resource,
 };
 use log::{Level::Debug, log_enabled};
-use serde_json::{Value, json};
 
 use super::{CompletionFeaturesDyn, request_client_builder};
-use crate::rfc3339_datetime_now;
+use crate::{rfc3339_datetime, unix_ms};
 
 pub mod types;
 
@@ -123,85 +123,71 @@ impl CompletionFeaturesDyn for CompletionModel {
         let client = self.client.clone();
 
         Box::pin(async move {
+            let timestamp = unix_ms();
+            let mut raw_history: Vec<Json> = Vec::new();
+            let mut chat_history: Vec<Message> = Vec::new();
             let mut greq = types::GenerateContentRequest::default();
-            if !req.system.is_empty() {
+
+            if !req.instructions.is_empty() {
                 greq.system_instruction = Some(types::Content {
                     role: Some(types::Role::Model),
-                    parts: vec![types::ContentPart {
-                        data: types::PartKind::Text(req.system),
+                    parts: vec![types::Part {
+                        data: types::PartKind::Text(req.instructions),
                         ..Default::default()
                     }],
                 });
             };
+
+            for msg in req.raw_history {
+                greq.contents.push(serde_json::from_value(msg)?);
+            }
 
             for msg in req.chat_history {
-                greq.contents.push(msg.try_into()?);
+                let val = types::Content::from(msg);
+                raw_history.push(serde_json::to_value(&val)?);
+                greq.contents.push(val);
             }
 
-            let role = if req.role.as_deref() == Some("assistant") {
-                types::Role::Model
-            } else {
-                types::Role::User
-            };
-
-            let mut full_history: Vec<Value> = Vec::new();
-            if let Some(prompt) = req.documents.to_message(&rfc3339_datetime_now()) {
-                full_history.push(json!(&prompt));
-                greq.contents.push(prompt.try_into()?);
+            if let Some(mut msg) = req
+                .documents
+                .to_message(&rfc3339_datetime(timestamp).unwrap())
+            {
+                msg.timestamp = Some(timestamp);
+                chat_history.push(msg.clone());
+                let msg = types::Content::from(msg);
+                raw_history.push(serde_json::to_value(&msg)?);
+                greq.contents.push(msg);
             }
 
-            if !req.content_parts.is_empty() {
-                full_history.push(json!(Message {
-                    role: role.to_string(),
-                    content: json!(req.content_parts),
-                    name: req.prompter_name.clone(),
-                    ..Default::default()
-                }));
-
-                greq.contents.push(types::Content {
-                    role: Some(role),
-                    parts: req
-                        .content_parts
-                        .into_iter()
-                        .map(|v| v.try_into())
-                        .collect::<Result<_, _>>()?,
-                });
-            }
-
+            let mut content = req.content;
             if !req.prompt.is_empty() {
-                full_history.push(json!(Message {
-                    role: role.to_string(),
-                    content: req.prompt.clone().into(),
-                    name: req.prompter_name,
+                content.push(req.prompt.into());
+            }
+            if !content.is_empty() {
+                let msg = Message {
+                    role: req.role.unwrap_or_else(|| "user".to_string()),
+                    content,
+                    timestamp: Some(timestamp),
                     ..Default::default()
-                }));
+                };
 
-                greq.contents.push(types::Content {
-                    role: Some(role),
-                    parts: vec![types::ContentPart {
-                        data: types::PartKind::Text(req.prompt),
-                        ..Default::default()
-                    }],
-                });
+                chat_history.push(msg.clone());
+                let msg = types::Content::from(msg);
+                raw_history.push(serde_json::to_value(&msg)?);
+                greq.contents.push(msg);
             }
 
             if let Some(temperature) = req.temperature {
                 greq.generation_config.temperature = Some(temperature);
             }
 
-            if let Some(max_tokens) = req.max_tokens {
+            if let Some(max_tokens) = req.max_output_tokens {
                 greq.generation_config.max_output_tokens = Some(max_tokens as i32);
             }
 
-            if let Some(response_format) = req.response_format {
+            if let Some(output_schema) = req.output_schema {
                 greq.generation_config.response_mime_type = Some("application/json".to_string());
-                if let Some(val) = response_format.get("json_schema") {
-                    greq.generation_config.response_schema = Some(val.clone());
-                } else if let Some(ty) = response_format.get("type")
-                    && ty.as_str() != Some("json_object")
-                {
-                    greq.generation_config.response_schema = Some(response_format);
-                }
+                greq.generation_config.response_schema = Some(output_schema);
             }
 
             if let Some(stop) = req.stop {
@@ -241,7 +227,7 @@ impl CompletionFeaturesDyn for CompletionModel {
                                 "completions maybe failed");
                         }
 
-                        res.try_into(full_history)
+                        res.try_into(raw_history, chat_history)
                     }
                     Err(err) => {
                         Err(format!("Gemini completions error: {}, body: {}", err, text).into())
