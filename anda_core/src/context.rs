@@ -130,7 +130,7 @@ pub trait AgentContext: BaseContext + CompletionFeatures + EmbeddingFeatures {
     fn tool_call(
         &self,
         args: ToolInput<Json>,
-    ) -> impl Future<Output = Result<ToolOutput<Json>, BoxError>> + Send;
+    ) -> impl Future<Output = Result<(ToolOutput<Json>, Option<Principal>), BoxError>> + Send;
 
     /// Runs a local agent.
     ///
@@ -142,7 +142,7 @@ pub trait AgentContext: BaseContext + CompletionFeatures + EmbeddingFeatures {
     fn agent_run(
         &self,
         args: AgentInput,
-    ) -> impl Future<Output = Result<AgentOutput, BoxError>> + Send;
+    ) -> impl Future<Output = Result<(AgentOutput, Option<Principal>), BoxError>> + Send;
 
     /// Runs a remote agent via HTTP RPC.
     ///

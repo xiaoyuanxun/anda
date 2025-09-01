@@ -1,14 +1,14 @@
 use anda_core::{
-    AgentOutput, BoxError, ContentPart, FunctionDefinition, Message, Usage as ModelUsage,
+    AgentOutput, BoxError, ByteBufB64, ContentPart, FunctionDefinition, Message,
+    Usage as ModelUsage,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::fmt;
+use std::{fmt, str::FromStr};
 
 use crate::unix_ms;
 
 // https://ai.google.dev/api/generate-content
-
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct GenerateContentRequest {
@@ -184,7 +184,10 @@ impl From<ContentPart> for Part {
                 ..Default::default()
             },
             ContentPart::InlineData { mime_type, data } => Part {
-                data: PartKind::InlineData { mime_type, data },
+                data: PartKind::InlineData {
+                    mime_type,
+                    data: data.to_string(),
+                },
                 ..Default::default()
             },
             ContentPart::ToolCall {
@@ -203,6 +206,7 @@ impl From<ContentPart> for Part {
                 name,
                 output,
                 call_id,
+                ..
             } => Part {
                 data: PartKind::FunctionResponse {
                     name,
@@ -213,7 +217,7 @@ impl From<ContentPart> for Part {
                 },
                 ..Default::default()
             },
-            ContentPart::Other(json) => {
+            ContentPart::Any(json) => {
                 serde_json::from_value(json.clone()).unwrap_or_else(|_| Part {
                     data: PartKind::Text(serde_json::to_string(&json).unwrap_or_default()),
                     ..Default::default()
@@ -235,7 +239,14 @@ impl From<Part> for ContentPart {
                 file_uri,
                 mime_type,
             },
-            PartKind::InlineData { mime_type, data } => ContentPart::InlineData { mime_type, data },
+            PartKind::InlineData { mime_type, data } => match ByteBufB64::from_str(data.as_str()) {
+                Ok(data) => ContentPart::InlineData { mime_type, data },
+                Err(_) => ContentPart::Any(json!({
+                    "type": "InlineData",
+                    "mimeType": mime_type,
+                    "data": data,
+                })),
+            },
             PartKind::FunctionCall { name, args, id } => ContentPart::ToolCall {
                 name,
                 args: args.unwrap_or_default(),
@@ -247,8 +258,9 @@ impl From<Part> for ContentPart {
                 name,
                 output: response,
                 call_id: id,
+                remote_id: None,
             },
-            _ => ContentPart::Other(json!(value.data)),
+            _ => ContentPart::Any(json!(value.data)),
         }
     }
 }

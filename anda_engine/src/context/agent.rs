@@ -337,27 +337,43 @@ impl AgentContext for AgentCtx {
     ///
     /// # Returns
     /// Tuple containing the result string and a boolean indicating if further processing is needed
-    async fn tool_call(&self, mut input: ToolInput<Json>) -> Result<ToolOutput<Json>, BoxError> {
+    async fn tool_call(
+        &self,
+        mut input: ToolInput<Json>,
+    ) -> Result<(ToolOutput<Json>, Option<Principal>), BoxError> {
         if !input.name.starts_with("RT_") {
             let ctx = self.child_base(&input.name)?;
             let tool = self.tools.get(&input.name).expect("tool not found");
-            return tool.call(ctx, input.args, input.resources).await;
+            return tool
+                .call(ctx, input.args, input.resources)
+                .await
+                .map(|output| (output, None));
         }
 
         // find registered remote tool and call it
-        if let Some((endpoint, tool_name)) = self.base.remote.get_tool_endpoint(&input.name) {
+        if let Some((id, endpoint, tool_name)) = self.base.remote.get_tool_endpoint(&input.name) {
             input.name = tool_name;
-            return self.base.remote_tool_call(&endpoint, input).await;
+            input.meta = Some(self.base.self_meta(id));
+            return self
+                .base
+                .remote_tool_call(&endpoint, input)
+                .await
+                .map(|output| (output, Some(id)));
         }
 
         // find dynamic remote tool and call it
         if let Ok((engines, _)) = self
             .cache_store_get::<RemoteEngines>(DYNAMIC_REMOTE_ENGINES)
             .await
-            && let Some((endpoint, tool_name)) = engines.get_tool_endpoint(&input.name)
+            && let Some((id, endpoint, tool_name)) = engines.get_tool_endpoint(&input.name)
         {
             input.name = tool_name;
-            return self.base.remote_tool_call(&endpoint, input).await;
+            input.meta = Some(self.base.self_meta(id));
+            return self
+                .base
+                .remote_tool_call(&endpoint, input)
+                .await
+                .map(|output| (output, Some(id)));
         }
 
         Err(format!("tool {} not found", &input.name).into())
@@ -370,29 +386,43 @@ impl AgentContext for AgentCtx {
     ///
     /// # Returns
     /// [`AgentOutput`] containing the result of the agent execution.
-    async fn agent_run(&self, mut input: AgentInput) -> Result<AgentOutput, BoxError> {
+    async fn agent_run(
+        &self,
+        mut input: AgentInput,
+    ) -> Result<(AgentOutput, Option<Principal>), BoxError> {
         if !input.name.starts_with("RA_") {
             let name = input.name.strip_prefix("LA_").unwrap_or(&input.name);
             let name = name.to_ascii_lowercase();
             let ctx = self.child(&name)?;
             let agent = self.agents.get(&name).expect("agent not found");
-            return agent.run(ctx, input.prompt, input.resources).await;
+            return agent
+                .run(ctx, input.prompt, input.resources)
+                .await
+                .map(|output| (output, None));
         }
 
         // find registered remote agent and run it
-        if let Some((endpoint, agent_name)) = self.base.remote.get_agent_endpoint(&input.name) {
+        if let Some((id, endpoint, agent_name)) = self.base.remote.get_agent_endpoint(&input.name) {
             input.name = agent_name;
-            return self.remote_agent_run(&endpoint, input).await;
+            input.meta = Some(self.base.self_meta(id));
+            return self
+                .remote_agent_run(&endpoint, input)
+                .await
+                .map(|output| (output, Some(id)));
         }
 
         // find dynamic remote agent and run it
         if let Ok((engines, _)) = self
             .cache_store_get::<RemoteEngines>(DYNAMIC_REMOTE_ENGINES)
             .await
-            && let Some((endpoint, agent_name)) = engines.get_agent_endpoint(&input.name)
+            && let Some((id, endpoint, agent_name)) = engines.get_agent_endpoint(&input.name)
         {
             input.name = agent_name;
-            return self.remote_agent_run(&endpoint, input).await;
+            input.meta = Some(self.base.self_meta(id));
+            return self
+                .remote_agent_run(&endpoint, input)
+                .await
+                .map(|output| (output, Some(id)));
         }
 
         Err(format!("agent {} not found", input.name).into())
@@ -924,11 +954,11 @@ impl CompletionRunner {
                             .ctx
                             .select_tool_resources(&tool.name, &mut self.resources)
                             .await,
-                        meta: Some(self.ctx.meta().clone()),
+                        meta: None,
                     })
                     .await
                 {
-                    Ok(mut res) => {
+                    Ok((mut res, remote_id)) => {
                         self.usage.accumulate(&res.usage);
 
                         // We can not ignore some tool calls.
@@ -936,10 +966,12 @@ impl CompletionRunner {
                         tool_calls_continue.push(ContentPart::ToolOutput {
                             name: tool.name.clone(),
                             output: res.output.clone(),
-                            call_id: Some(tool.id.clone()),
+                            call_id: tool.call_id.clone(),
+                            remote_id,
                         });
 
                         self.artifacts.append(&mut res.artifacts);
+                        tool.remote_id = remote_id;
                         tool.result = Some(res);
                     }
                     Err(err) => {
@@ -971,11 +1003,11 @@ impl CompletionRunner {
                             .ctx
                             .agents
                             .select_resources(&tool.name, &mut self.resources),
-                        meta: Some(self.ctx.meta().clone()),
+                        meta: None,
                     })
                     .await
                 {
-                    Ok(mut res) => {
+                    Ok((mut res, remote_id)) => {
                         self.usage.accumulate(&res.usage);
                         if res.failed_reason.is_some() {
                             output.failed_reason = res.failed_reason;
@@ -986,7 +1018,8 @@ impl CompletionRunner {
                         tool_calls_continue.push(ContentPart::ToolOutput {
                             name: tool.name.clone(),
                             output: res.content.clone().into(),
-                            call_id: Some(tool.id.clone()),
+                            call_id: tool.call_id.clone(),
+                            remote_id,
                         });
 
                         self.artifacts.append(&mut res.artifacts);

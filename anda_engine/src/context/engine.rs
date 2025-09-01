@@ -107,11 +107,17 @@ impl RemoteEngines {
     }
 
     /// Retrieves a remote tool endpoint and name from a prefixed name.
-    pub fn get_tool_endpoint(&self, prefixed_name: &str) -> Option<(String, String)> {
+    pub fn get_tool_endpoint(&self, prefixed_name: &str) -> Option<(Principal, String, String)> {
         if let Some(name) = prefixed_name.strip_prefix("RT_") {
-            for (prefix, engine) in self.engines.iter() {
-                if let Some(tool_name) = name.strip_prefix(prefix) {
-                    return Some((engine.info.endpoint.clone(), tool_name.to_string()));
+            for (handle, engine) in self.engines.iter() {
+                if let Some(tool_name) = name.strip_prefix(handle)
+                    && let Some(tool_name) = tool_name.strip_prefix("_")
+                {
+                    return Some((
+                        engine.id,
+                        engine.info.endpoint.clone(),
+                        tool_name.to_string(),
+                    ));
                 }
             }
         }
@@ -119,11 +125,17 @@ impl RemoteEngines {
     }
 
     /// Retrieves a remote agent endpoint and name from a prefixed name.
-    pub fn get_agent_endpoint(&self, prefixed_name: &str) -> Option<(String, String)> {
+    pub fn get_agent_endpoint(&self, prefixed_name: &str) -> Option<(Principal, String, String)> {
         if let Some(name) = prefixed_name.strip_prefix("RA_") {
-            for (prefix, engine) in self.engines.iter() {
-                if let Some(agent_name) = name.strip_prefix(prefix) {
-                    return Some((engine.info.endpoint.clone(), agent_name.to_string()));
+            for (handle, engine) in self.engines.iter() {
+                if let Some(agent_name) = name.strip_prefix(handle)
+                    && let Some(agent_name) = agent_name.strip_prefix("_")
+                {
+                    return Some((
+                        engine.id,
+                        engine.info.endpoint.clone(),
+                        agent_name.to_string(),
+                    ));
                 }
             }
         }
@@ -164,9 +176,9 @@ impl RemoteEngines {
         names: Option<&[&str]>,
     ) -> Vec<FunctionDefinition> {
         if let Some(endpoint) = endpoint {
-            for (prefix, engine) in self.engines.iter() {
+            for (handle, engine) in self.engines.iter() {
                 if endpoint == engine.info.endpoint {
-                    let prefix = format!("RT_{prefix}");
+                    let prefix = format!("RT_{handle}_");
                     return engine
                         .tools
                         .iter()
@@ -189,8 +201,8 @@ impl RemoteEngines {
         let mut definitions =
             Vec::with_capacity(self.engines.values().map(|e| e.tools.len()).sum());
 
-        for (prefix, engine) in self.engines.iter() {
-            let prefix = format!("RT_{prefix}");
+        for (handle, engine) in self.engines.iter() {
+            let prefix = format!("RT_{handle}_");
             definitions.extend(engine.tools.iter().filter_map(|d| {
                 if let Some(names) = names {
                     if names.contains(&d.definition.name.as_str()) {
@@ -239,9 +251,9 @@ impl RemoteEngines {
         names: Option<&[&str]>,
     ) -> Vec<FunctionDefinition> {
         if let Some(endpoint) = endpoint {
-            for (prefix, engine) in self.engines.iter() {
+            for (handle, engine) in self.engines.iter() {
                 if endpoint == engine.info.endpoint {
-                    let prefix = format!("RA_{prefix}");
+                    let prefix = format!("RA_{handle}_");
                     return engine
                         .agents
                         .iter()
@@ -263,8 +275,8 @@ impl RemoteEngines {
 
         let mut definitions =
             Vec::with_capacity(self.engines.values().map(|e| e.agents.len()).sum());
-        for (prefix, engine) in self.engines.iter() {
-            let prefix = format!("RA_{prefix}");
+        for (handle, engine) in self.engines.iter() {
+            let prefix = format!("RA_{handle}_");
             definitions.extend(engine.agents.iter().filter_map(|d| {
                 if let Some(names) = names {
                     if names.contains(&d.definition.name.as_str()) {

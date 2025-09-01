@@ -10,6 +10,8 @@
 
 use candid::Principal;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
+use std::collections::BTreeMap;
 
 use crate::Json;
 pub use ic_auth_types::{ByteArrayB64, ByteBufB64, Xid};
@@ -99,14 +101,22 @@ pub struct Message {
     pub content: Vec<ContentPart>,
 
     /// An optional name for the participant. Provides the model information to differentiate between participants of the same role.
+    /// This field is not used by the model.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
 
+    /// The user ID of the message sender.
+    /// This field is not used by the model.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user: Option<Principal>,
 
+    /// The thread ID of the message.
+    /// This field is not used by the model.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub thread: Option<Xid>,
 
+    /// The timestamp of the message.
+    /// This field is not used by the model.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timestamp: Option<u64>,
 }
@@ -135,10 +145,11 @@ impl Message {
             } = part
             {
                 tool_calls.push(ToolCall {
-                    id: call_id.clone().unwrap_or_default(),
                     name: name.clone(),
                     args: args.clone(),
+                    call_id: call_id.clone(),
                     result: None,
+                    remote_id: None,
                 });
             }
         }
@@ -163,7 +174,7 @@ pub enum ContentPart {
     },
     InlineData {
         mime_type: String,
-        data: String,
+        data: ByteBufB64,
     },
     ToolCall {
         name: String,
@@ -178,13 +189,36 @@ pub enum ContentPart {
 
         #[serde(skip_serializing_if = "Option::is_none")]
         call_id: Option<String>,
+
+        #[serde(skip_serializing_if = "Option::is_none")]
+        remote_id: Option<Principal>,
     },
-    Other(Json),
+    Any(Json),
 }
 
 impl From<String> for ContentPart {
     fn from(text: String) -> Self {
         Self::Text { text }
+    }
+}
+
+impl From<Json> for ContentPart {
+    fn from(val: Json) -> Self {
+        if let Json::Object(map) = &val
+            && let Some(t) = map.get("type").and_then(|x| x.as_str())
+        {
+            match t {
+                "Text" | "Reasoning" | "FileData" | "InlineData" | "ToolCall" | "ToolOutput"
+                | "Any" => {
+                    if let Ok(part) = serde_json::from_value::<ContentPart>(val.clone()) {
+                        return part;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        ContentPart::Any(val)
     }
 }
 
@@ -286,9 +320,6 @@ impl Usage {
 /// Represents a tool call response with it's ID, function name, and arguments.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct ToolCall {
-    /// tool call id.
-    pub id: String,
-
     /// tool function name.
     pub name: String,
 
@@ -298,6 +329,14 @@ pub struct ToolCall {
     /// The result of the tool call, auto processed by agents engine, if available.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<ToolOutput<Json>>,
+
+    /// tool call id.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub call_id: Option<String>,
+
+    /// The remote engine id where tool running
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remote_id: Option<Principal>,
 }
 
 /// Represents a function definition with its metadata.
@@ -338,4 +377,342 @@ impl FunctionDefinition {
 /// Returns the number of tokens in the given content in the simplest way.
 pub fn evaluate_tokens(content: &str) -> usize {
     content.len() / 3
+}
+
+/// A document with metadata and content.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct Document {
+    /// The metadata of the document.
+    pub metadata: BTreeMap<String, Json>,
+
+    /// The content of the document.
+    pub content: Json,
+}
+
+impl From<&Resource> for Document {
+    fn from(res: &Resource) -> Self {
+        let mut metadata = BTreeMap::from([("type".to_string(), "Resource".into())]);
+        if let Json::Object(mut val) = json!(res) {
+            val.remove("blob");
+            metadata.extend(val);
+        };
+
+        Self {
+            metadata,
+            content: Json::Null,
+        }
+    }
+}
+
+/// Collection of knowledge documents.
+#[derive(Clone, Debug)]
+pub struct Documents {
+    /// The tag of the document collection. Defaults to "documents".
+    tag: String,
+    /// The documents in the collection.
+    docs: Vec<Document>,
+}
+
+impl Default for Documents {
+    fn default() -> Self {
+        Self {
+            tag: "documents".to_string(),
+            docs: Vec::new(),
+        }
+    }
+}
+
+impl Documents {
+    /// Creates a new document collection.
+    pub fn new(tag: String, docs: Vec<Document>) -> Self {
+        Self { tag, docs }
+    }
+
+    /// Sets the tag of the document collection.
+    pub fn with_tag(self, tag: String) -> Self {
+        Self { tag, ..self }
+    }
+
+    /// Returns the tag of the document collection.
+    pub fn tag(&self) -> &str {
+        &self.tag
+    }
+
+    /// Converts the document collection to a message.
+    pub fn to_message(&self, rfc3339_datetime: &str) -> Option<Message> {
+        if self.docs.is_empty() {
+            return None;
+        }
+
+        Some(Message {
+            role: "user".into(),
+            content: vec![format!("Current Datetime: {}\n---\n{}", rfc3339_datetime, self).into()],
+            name: Some("$system".into()),
+            ..Default::default()
+        })
+    }
+}
+
+impl From<Vec<String>> for Documents {
+    fn from(texts: Vec<String>) -> Self {
+        let mut docs = Vec::new();
+        for (i, text) in texts.into_iter().enumerate() {
+            docs.push(Document {
+                content: text.into(),
+                metadata: BTreeMap::from([
+                    ("_id".to_string(), i.into()),
+                    ("type".to_string(), "Text".into()),
+                ]),
+            });
+        }
+        Self {
+            docs,
+            ..Default::default()
+        }
+    }
+}
+
+impl From<Vec<Document>> for Documents {
+    fn from(docs: Vec<Document>) -> Self {
+        Self {
+            docs,
+            ..Default::default()
+        }
+    }
+}
+
+impl std::ops::Deref for Documents {
+    type Target = Vec<Document>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.docs
+    }
+}
+
+impl std::ops::DerefMut for Documents {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.docs
+    }
+}
+
+impl AsRef<Vec<Document>> for Documents {
+    fn as_ref(&self) -> &Vec<Document> {
+        &self.docs
+    }
+}
+
+impl std::fmt::Display for Document {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        json!(self).fmt(f)
+    }
+}
+
+impl std::fmt::Display for Documents {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.docs.is_empty() {
+            return Ok(());
+        }
+        writeln!(f, "<{}>", self.tag)?;
+        for doc in &self.docs {
+            writeln!(f, "{}", doc)?;
+        }
+        write!(f, "</{}>", self.tag)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_prompt() {
+        let documents: Documents = vec![
+            Document {
+                metadata: BTreeMap::from([("_id".to_string(), 1.into())]),
+                content: "Test document 1.".into(),
+            },
+            Document {
+                metadata: BTreeMap::from([
+                    ("_id".to_string(), 2.into()),
+                    ("key".to_string(), "value".into()),
+                    ("a".to_string(), "b".into()),
+                ]),
+                content: "Test document 2.".into(),
+            },
+        ]
+        .into();
+        // println!("{}", documents);
+
+        assert_eq!(
+            documents.to_string(),
+            "<documents>\n{\"content\":\"Test document 1.\",\"metadata\":{\"_id\":1}}\n{\"content\":\"Test document 2.\",\"metadata\":{\"_id\":2,\"a\":\"b\",\"key\":\"value\"}}\n</documents>"
+        );
+        let documents = documents.with_tag("my_docs".to_string());
+        assert_eq!(
+            documents.to_string(),
+            "<my_docs>\n{\"content\":\"Test document 1.\",\"metadata\":{\"_id\":1}}\n{\"content\":\"Test document 2.\",\"metadata\":{\"_id\":2,\"a\":\"b\",\"key\":\"value\"}}\n</my_docs>"
+        );
+    }
+
+    #[test]
+    fn test_content_part_text_serde_and_from() {
+        let part: ContentPart = "hello".to_string().into();
+        assert_eq!(
+            part,
+            ContentPart::Text {
+                text: "hello".into()
+            }
+        );
+
+        // serde round-trip
+        let v = serde_json::to_value(&part).unwrap();
+        assert_eq!(v.get("type").unwrap(), "Text");
+        assert_eq!(v.get("text").unwrap(), "hello");
+
+        let back: ContentPart = serde_json::from_value(v.clone()).unwrap();
+        assert_eq!(back, part);
+        let back: ContentPart = v.into();
+        assert_eq!(back, part);
+    }
+
+    #[test]
+    fn test_content_part_filedata_serde_optional() {
+        // mime_type = None -> 不序列化
+        let part = ContentPart::FileData {
+            file_uri: "gs://bucket/file".into(),
+            mime_type: None,
+        };
+        let v = serde_json::to_value(&part).unwrap();
+        assert_eq!(v.get("type").unwrap(), "FileData");
+        // 字段采用 camelCase
+        assert_eq!(v.get("fileUri").unwrap(), "gs://bucket/file");
+        assert!(v.get("mimeType").is_none());
+
+        // mime_type = Some -> 出现
+        let part2 = ContentPart::FileData {
+            file_uri: "gs://bucket/file2".into(),
+            mime_type: Some("image/png".into()),
+        };
+        let v2 = serde_json::to_value(&part2).unwrap();
+        assert_eq!(v2.get("type").unwrap(), "FileData");
+        assert_eq!(v2.get("fileUri").unwrap(), "gs://bucket/file2");
+        assert_eq!(v2.get("mimeType").unwrap(), "image/png");
+
+        // 反序列化校验
+        let back: ContentPart = serde_json::from_value(v2.clone()).unwrap();
+        assert_eq!(back, part2);
+        let back: ContentPart = v2.into();
+        assert_eq!(back, part2);
+    }
+
+    #[test]
+    fn test_content_part_inlinedata_serde() {
+        let part = ContentPart::InlineData {
+            mime_type: "text/plain".into(),
+            data: b"hello".to_vec().into(),
+        };
+        let v = serde_json::to_value(&part).unwrap();
+        assert_eq!(v.get("type").unwrap(), "InlineData");
+        assert_eq!(v.get("mimeType").unwrap(), "text/plain");
+        assert_eq!(v.get("data").unwrap(), "aGVsbG8=");
+
+        let back: ContentPart = serde_json::from_value(v.clone()).unwrap();
+        assert_eq!(back, part);
+        let back: ContentPart = v.into();
+        assert_eq!(back, part);
+    }
+
+    #[test]
+    fn test_content_part_any_serde() {
+        let v = json!({
+            "type": "text/plain",
+            "data": "aGVsbG8=",
+        });
+        let part: ContentPart = v.clone().into();
+        assert_eq!(part, ContentPart::Any(v));
+        let v2 = serde_json::to_value(&part).unwrap();
+        assert_eq!(v2.get("type").unwrap(), "text/plain");
+        assert_eq!(v2.get("data").unwrap(), "aGVsbG8=");
+
+        let part = ContentPart::Any(json!({
+            "data": "aGVsbG8=",
+        }));
+        let v2 = serde_json::to_value(&part).unwrap();
+        assert_eq!(v2.get("type").unwrap(), "Any");
+        assert_eq!(v2.get("data").unwrap(), "aGVsbG8=");
+    }
+
+    #[test]
+    fn test_content_part_toolcall_and_tooloutput_serde() {
+        let call = ContentPart::ToolCall {
+            name: "sum".into(),
+            args: serde_json::json!({"x":1, "y":2}),
+            call_id: None,
+        };
+        let v_call = serde_json::to_value(&call).unwrap();
+        assert_eq!(v_call.get("type").unwrap(), "ToolCall");
+        assert_eq!(v_call.get("name").unwrap(), "sum");
+        assert_eq!(
+            v_call.get("args").unwrap(),
+            &serde_json::json!({"x":1, "y":2})
+        );
+        // callId 省略
+        assert!(v_call.get("callId").is_none());
+        let back_call: ContentPart = serde_json::from_value(v_call.clone()).unwrap();
+        assert_eq!(back_call, call);
+        let back: ContentPart = v_call.into();
+        assert_eq!(back, call);
+
+        let out = ContentPart::ToolOutput {
+            name: "sum".into(),
+            output: serde_json::json!({"result":3}),
+            call_id: Some("c1".into()),
+            remote_id: None,
+        };
+        let v_out = serde_json::to_value(&out).unwrap();
+        assert_eq!(v_out.get("type").unwrap(), "ToolOutput");
+        assert_eq!(v_out.get("name").unwrap(), "sum");
+        assert_eq!(
+            v_out.get("output").unwrap(),
+            &serde_json::json!({"result":3})
+        );
+        // callId 存在
+        assert_eq!(v_out.get("callId").unwrap(), "c1");
+        let back_out: ContentPart = serde_json::from_value(v_out.clone()).unwrap();
+        assert_eq!(back_out, out);
+        let back: ContentPart = v_out.into();
+        assert_eq!(back, out);
+    }
+
+    #[test]
+    fn test_message_tool_calls_extract_from_content_parts() {
+        let parts = vec![
+            ContentPart::Text {
+                text: "hello".into(),
+            },
+            ContentPart::ToolCall {
+                name: "sum".into(),
+                args: serde_json::json!({"x":1, "y": 2}),
+                call_id: Some("abc".into()),
+            },
+            ContentPart::ToolCall {
+                name: "echo".into(),
+                args: serde_json::json!({"text":"hi"}),
+                call_id: None,
+            },
+        ];
+        let msg = Message {
+            role: "assistant".into(),
+            content: parts,
+            ..Default::default()
+        };
+        println!("{:#?}", json!(msg));
+
+        let calls = msg.tool_calls();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].name, "sum");
+        assert_eq!(calls[0].args, serde_json::json!({"x":1, "y":2}));
+        assert_eq!(calls[1].name, "echo");
+        assert_eq!(calls[1].args, serde_json::json!({"text":"hi"}));
+    }
 }

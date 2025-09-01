@@ -305,7 +305,7 @@ mod tests {
             .unwrap()
             .mock_ctx();
 
-        let res = ctx
+        let (res, _) = ctx
             .tool_call(ToolInput::new(
                 tool_name.clone(),
                 json!({"name":"Anda","age": 1}),
@@ -314,7 +314,7 @@ mod tests {
             .unwrap();
         assert_eq!(res.output, json!({"name":"Anda","age": 1}));
 
-        let res = ctx
+        let (res, _) = ctx
             .tool_call(ToolInput::new(tool_name.clone(), json!({"name": "Anda"})))
             .await
             .unwrap();
