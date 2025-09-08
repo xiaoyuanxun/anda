@@ -29,7 +29,8 @@ use std::{
 };
 
 use crate::{
-    context::BaseCtx, extension::fetch::FetchWebResourcesTool, json_convert_rfc3339_timestamp, rfc3339_datetime, rfc3339_datetime_now, unix_ms,
+    context::BaseCtx, extension::fetch::FetchWebResourcesTool, json_convert_rfc3339_timestamp,
+    rfc3339_datetime, rfc3339_datetime_now, unix_ms,
 };
 
 pub static FUNCTION_DEFINITION: LazyLock<FunctionDefinition> =
@@ -96,7 +97,7 @@ impl Conversation {
                 "usage".to_string(),
                 Fv::map_from(
                     cbor!(self.usage).unwrap(),
-                    &BTreeMap::from([("*".to_string(), Ft::U64)]),
+                    &BTreeMap::from([("*".into(), Ft::U64)]),
                 )?,
             ),
             ("updated_at".to_string(), Fv::U64(self.updated_at)),
