@@ -193,6 +193,16 @@ pub enum ContentPart {
         #[serde(skip_serializing_if = "Option::is_none")]
         remote_id: Option<Principal>,
     },
+    Action {
+        name: String,
+        payload: Json,
+
+        #[serde(skip_serializing_if = "Option::is_none")]
+        recipients: Option<Vec<Principal>>,
+
+        #[serde(skip_serializing_if = "Option::is_none")]
+        signature: Option<ByteBufB64>,
+    },
     Any(Json),
 }
 

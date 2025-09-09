@@ -12,7 +12,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.8.0"
+version = "0.8.1"
 description = "Anda is an AI agent framework built with Rust, powered by ICP and TEEs."
 repository = "https://github.com/ldclabs/anda"
 homepage = "https://github.com/ldclabs/anda"
@@ -38,10 +38,10 @@ axum = { version = "0.8", features = [
 ], default-features = true }
 async-trait = "0.1"
 anda_object_store = "0.2"
-anda_db = { version = "0.5", features = ["full"] }
+anda_db = { version = "0.7", features = ["full"] }
 anda_db_tfs = { version = "0.5", features = ["full"] }
-anda_cognitive_nexus = "0.3"
-anda_db_schema = "0.3"
+anda_cognitive_nexus = "0.4"
+anda_db_schema = "0.4"
 anda_kip = "0.5"
 bytes = "1"
 base64 = "0.22"
@@ -60,7 +60,7 @@ serde_bytes = "0.11"
 ic_cose_types = "0.9"
 ic_cose = "0.9"
 ic-oss-types = "1.2"
-ic_object_store = "1.2"
+ic_object_store = "1.3"
 ic-agent = "0.44"
 ic_auth_types = "0.6"
 ic_auth_verifier = "0.6"
@@ -96,6 +96,12 @@ clap = { version = "4.5", features = ["derive", "env"] }
 idna = "1.0" # https://github.com/ldclabs/anda/security/dependabot/1
 url = "2.5"
 hex = "0.4"
+isolang = { version = "2.4", features = [
+  "english_names",
+  "lowercase_names",
+  "local_names",
+  "list_languages",
+] }
 
 # [patch.crates-io]
 # candid = { git = "https://github.com/ldclabs/candid.git", rev = "4cf7d02bad9530172cb4cafe733cb1e80689b793" } # remove check_recursion on stack for TEE

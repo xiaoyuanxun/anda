@@ -1,15 +1,13 @@
-use anda_core::{BoxError, Xid};
+use anda_core::BoxError;
 use async_trait::async_trait;
 use candid::Principal;
 use ic_auth_verifier::ANONYMOUS_PRINCIPAL;
 use std::collections::BTreeSet;
 
 mod db;
-mod thread;
 mod user;
 
 pub use db::*;
-pub use thread::*;
 pub use user::*;
 
 pub static SYSTEM_PATH: &str = "_";
@@ -26,10 +24,6 @@ pub trait Management: Send + Sync {
 
     async fn update_user(&self, _user: &UserState) -> Result<(), BoxError> {
         Err("`save_user` is not implemented".into())
-    }
-
-    async fn get_thread(&self, _id: &Xid) -> Result<Thread, BoxError> {
-        Err("`get_thread` is not implemented".into())
     }
 
     // TODO: more management methods

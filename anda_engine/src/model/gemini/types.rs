@@ -223,6 +223,10 @@ impl From<ContentPart> for Part {
                     ..Default::default()
                 })
             }
+            ContentPart::Action { .. } => Part {
+                data: PartKind::Text(serde_json::to_string(&value).unwrap_or_default()),
+                ..Default::default()
+            },
         }
     }
 }
