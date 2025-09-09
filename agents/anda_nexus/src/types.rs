@@ -57,11 +57,6 @@ pub struct Thread {
     #[field_type = "Array<Json>"]
     pub agents: Vec<EngineCard>,
 
-    #[field_type = "Option<Bytes>"]
-    pub latest_message_by: Option<Principal>,
-    pub latest_message_id: u64,
-    pub latest_message_at: u64,
-
     /// The timestamp when the thread was created.
     pub created_at: u64,
 
@@ -110,10 +105,11 @@ impl Thread {
             visibility: self.visibility,
             status: self.status,
             updated_at: self.updated_at,
+            participants: self.participants.len() as u64,
             max_participants: self.max_participants,
-            latest_message_by: self.latest_message_by,
-            latest_message_id: self.latest_message_id,
-            latest_message_at: self.latest_message_at,
+            latest_message_by: None,
+            latest_message_id: 0,
+            latest_message_at: 0,
         }
     }
 }
@@ -185,7 +181,7 @@ pub struct ThreadState {
     /// The status of the thread, -2: banned, -1: suspended, 0: active.
     pub status: ThreadStatus,
     pub updated_at: u64,
-
+    pub participants: u64,
     pub max_participants: u64,
 
     pub latest_message_by: Option<Principal>,
@@ -219,15 +215,15 @@ pub enum ThreadStatus {
     #[default]
     Active,
     Suspended,
-    Banned,
+    Unavailable,
 }
 
 impl fmt::Display for ThreadStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
-            ThreadStatus::Banned => "banned",
-            ThreadStatus::Suspended => "suspended",
             ThreadStatus::Active => "active",
+            ThreadStatus::Suspended => "suspended",
+            ThreadStatus::Unavailable => "unavailable",
         };
         write!(f, "{}", s)
     }
@@ -235,6 +231,7 @@ impl fmt::Display for ThreadStatus {
 
 #[derive(Debug, Clone, Deserialize, Serialize, AndaDBSchema)]
 pub struct Message {
+    #[serde(default)]
     pub _id: u64,
 
     /// Message role: "system", "user", "assistant".
@@ -245,8 +242,9 @@ pub struct Message {
     pub content: Vec<ContentPart>,
 
     /// The user ID of the message sender.
-    #[field_type = "Bytes"]
-    pub user: Principal,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[field_type = "Option<Bytes>"]
+    pub user: Option<Principal>,
 
     /// The thread ID of the message.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -254,8 +252,10 @@ pub struct Message {
     pub thread: Option<Xid>,
 
     /// The timestamp of the message.
+    #[serde(default)]
     pub timestamp: u64,
 
+    #[serde(default)]
     pub reply_to: u64, // 0 means not a reply
 }
 

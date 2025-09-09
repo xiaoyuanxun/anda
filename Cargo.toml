@@ -12,7 +12,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.8.0"
+version = "0.8.1"
 description = "Anda is an AI agent framework built with Rust, powered by ICP and TEEs."
 repository = "https://github.com/ldclabs/anda"
 homepage = "https://github.com/ldclabs/anda"
@@ -38,7 +38,7 @@ axum = { version = "0.8", features = [
 ], default-features = true }
 async-trait = "0.1"
 anda_object_store = "0.2"
-anda_db = { version = "0.6", features = ["full"] }
+anda_db = { version = "0.7", features = ["full"] }
 anda_db_tfs = { version = "0.5", features = ["full"] }
 anda_cognitive_nexus = "0.4"
 anda_db_schema = "0.4"

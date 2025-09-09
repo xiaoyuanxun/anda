@@ -72,20 +72,11 @@ impl NexusNode {
                         Err(DBError::NotFound { .. }) => return None,
                         Err(err) => return Some(Err(err)),
                     };
-                    let state = ThreadState {
-                        visibility: thread.visibility,
-                        status: thread.status,
-                        updated_at: thread.updated_at,
-                        max_participants: thread.max_participants,
-                        latest_message_by: thread.latest_message_by,
-                        latest_message_id: thread.latest_message_id,
-                        latest_message_at: thread.latest_message_at,
-                    };
 
-                    Some(Ok((thread._id, Arc::new(RwLock::new(state)))))
+                    Some(Ok((thread._id, thread.to_state())))
                 }
             })
-            .buffer_unordered(64)
+            .buffer_unordered(16)
             .collect::<Vec<Option<Result<_, DBError>>>>()
             .await;
 
@@ -93,7 +84,7 @@ impl NexusNode {
         for r in rt.into_iter().flatten() {
             match r {
                 Ok((id, state)) => {
-                    thread_states.insert(id, state);
+                    thread_states.insert(id, Arc::new(RwLock::new(state)));
                 }
                 Err(err) => {
                     log::error!("Failed to load thread: {}", err);
@@ -121,6 +112,26 @@ impl NexusNode {
                 },
             )
             .await?;
+
+        let latest_message_id = {
+            if let Some(state) = self.thread_states.read().get(&thread_id) {
+                state.read().latest_message_id
+            } else {
+                0
+            }
+        };
+        if latest_message_id == 0
+            && let Some(id) = collection.latest_document_id()
+            && let Ok(message) = collection.get_as::<Message>(id).await
+            && let Some(state) = self.thread_states.write().get_mut(&thread_id)
+        {
+            let mut s = state.write();
+            if message._id > s.latest_message_id {
+                s.latest_message_by = message.user;
+                s.latest_message_id = message._id;
+                s.latest_message_at = message.timestamp;
+            }
+        }
 
         Ok(collection)
     }
@@ -205,18 +216,8 @@ impl NexusNode {
         Ok(thread)
     }
 
-    pub async fn fetch_my_threads_state(&self, user: Principal) -> Vec<ThreadState> {
-        let ids: Vec<u64> = self
-            .threads
-            .search_ids(Query {
-                filter: Some(Filter::Field((
-                    "participants".to_string(),
-                    RangeQuery::Eq(Fv::Bytes(user.as_slice().to_vec())),
-                ))),
-                ..Default::default()
-            })
-            .await
-            .unwrap_or_default();
+    pub async fn fetch_my_threads_state(&self, user: &Principal) -> Vec<ThreadState> {
+        let ids: Vec<u64> = self.my_thread_ids(user).await;
         let mut rt = Vec::with_capacity(ids.len());
         let states = self.thread_states.read();
         for id in ids {
@@ -244,9 +245,11 @@ impl NexusNode {
         rt
     }
 
-    pub async fn get_thread(&self, user: Principal, _id: u64) -> Result<Thread, BoxError> {
+    pub async fn get_thread(&self, user: &Principal, _id: u64) -> Result<Thread, BoxError> {
+        self.check_thread_state(_id)?;
+
         let thread: Thread = self.threads.get_as(_id).await?;
-        if thread.has_permission(&user, ThreadPermission::Read) {
+        if thread.has_permission(user, ThreadPermission::Read) {
             Ok(thread)
         } else {
             Err(format!(
@@ -259,26 +262,13 @@ impl NexusNode {
 
     pub async fn list_my_threads(
         &self,
-        user: Principal,
+        user: &Principal,
         cursor: Option<String>,
         limit: Option<usize>,
     ) -> Result<(Vec<ThreadInfo>, Option<String>), BoxError> {
         let limit = limit.unwrap_or(100).min(1000);
-        let cursor = match BTree::from_cursor::<u64>(&cursor)? {
-            Some(cursor) => cursor,
-            None => 0,
-        };
-        let mut ids: Vec<u64> = self
-            .threads
-            .search_ids(Query {
-                filter: Some(Filter::Field((
-                    "participants".to_string(),
-                    RangeQuery::Eq(Fv::Bytes(user.as_slice().to_vec())),
-                ))),
-                ..Default::default()
-            })
-            .await
-            .unwrap_or_default();
+        let cursor = (BTree::from_cursor::<u64>(&cursor)?).unwrap_or_default();
+        let mut ids: Vec<u64> = self.my_thread_ids(user).await;
         if cursor > 0 {
             ids.sort();
             ids.retain(|&id| id > cursor);
@@ -332,14 +322,15 @@ impl NexusNode {
 
     pub async fn update_thread(
         &self,
-        user: Principal,
+        user: &Principal,
         _id: u64,
         mut input: UpdateThreadInfo,
     ) -> Result<(), BoxError> {
         input.validate_and_normalize()?;
+        self.check_thread_state(_id)?;
 
         let thread: Thread = self.threads.get_as(_id).await?;
-        if !thread.has_permission(&user, ThreadPermission::Manage) {
+        if !thread.has_permission(user, ThreadPermission::Manage) {
             return Err(format!(
                 "User {} does not have permission to manage thread {}",
                 user, _id
@@ -371,7 +362,7 @@ impl NexusNode {
             changes.insert("visibility".to_string(), Fv::Text(visibility.to_string()));
         }
 
-        let _ = self.threads.update(_id, changes).await?;
+        self.threads.update(_id, changes).await?;
         if let Some(state) = self.thread_states.write().get_mut(&_id) {
             let mut s = state.write();
             s.updated_at = updated_at;
@@ -384,26 +375,29 @@ impl NexusNode {
 
     pub async fn update_thread_controllers(
         &self,
-        user: Principal,
+        user: &Principal,
         _id: u64,
         controllers: BTreeSet<Principal>,
     ) -> Result<(), BoxError> {
-        let mut thread: Thread = self.threads.get_as(_id).await?;
-        if !thread.has_permission(&user, ThreadPermission::Control) {
-            return Err(format!(
-                "User {} does not have permission to control thread {}",
-                user, _id
-            )
-            .into());
-        }
         if controllers.is_empty() {
             return Err("Controllers cannot be empty".to_string().into());
         }
         if controllers.len() > 5 {
             return Err("Controllers cannot be more than 5".to_string().into());
         }
+        self.check_thread_state(_id)?;
+
+        let mut thread: Thread = self.threads.get_as(_id).await?;
+        if !thread.has_permission(user, ThreadPermission::Control) {
+            return Err(format!(
+                "User {} does not have permission to control thread {}",
+                user, _id
+            )
+            .into());
+        }
+
         for p in &controllers {
-            thread.participants.entry(p.clone()).or_insert(0);
+            thread.participants.entry(*p).or_insert(0);
         }
         let controllers_fv = Fv::Array(
             controllers
@@ -412,8 +406,8 @@ impl NexusNode {
                 .collect(),
         );
         let updated_at = unix_ms();
-        let _ = self
-            .threads
+        let participants = thread.participants.len() as u64;
+        self.threads
             .update(
                 _id,
                 BTreeMap::from([
@@ -434,6 +428,7 @@ impl NexusNode {
             .await?;
         if let Some(state) = self.thread_states.write().get_mut(&_id) {
             let mut s = state.write();
+            s.participants = participants;
             s.updated_at = updated_at;
         }
         Ok(())
@@ -441,27 +436,29 @@ impl NexusNode {
 
     pub async fn update_thread_managers(
         &self,
-        user: Principal,
+        user: &Principal,
         _id: u64,
         managers: BTreeSet<Principal>,
     ) -> Result<(), BoxError> {
-        let mut thread: Thread = self.threads.get_as(_id).await?;
-        if !thread.has_permission(&user, ThreadPermission::Control) {
-            return Err(format!(
-                "User {} does not have permission to control thread {}",
-                user, _id
-            )
-            .into());
-        }
         if managers.is_empty() {
             return Err("Managers cannot be empty".to_string().into());
         }
         if managers.len() > 5 {
             return Err("Managers cannot be more than 5".to_string().into());
         }
+        self.check_thread_state(_id)?;
+
+        let mut thread: Thread = self.threads.get_as(_id).await?;
+        if !thread.has_permission(user, ThreadPermission::Control) {
+            return Err(format!(
+                "User {} does not have permission to control thread {}",
+                user, _id
+            )
+            .into());
+        }
 
         for p in &managers {
-            thread.participants.entry(p.clone()).or_insert(0);
+            thread.participants.entry(*p).or_insert(0);
         }
         let managers_fv = Fv::Array(
             managers
@@ -470,8 +467,8 @@ impl NexusNode {
                 .collect(),
         );
         let updated_at = unix_ms();
-        let _ = self
-            .threads
+        let participants = thread.participants.len() as u64;
+        self.threads
             .update(
                 _id,
                 BTreeMap::from([
@@ -492,6 +489,7 @@ impl NexusNode {
             .await?;
         if let Some(state) = self.thread_states.write().get_mut(&_id) {
             let mut s = state.write();
+            s.participants = participants;
             s.updated_at = updated_at;
         }
         Ok(())
@@ -499,34 +497,46 @@ impl NexusNode {
 
     pub async fn add_thread_participants(
         &self,
-        user: Principal,
+        user: &Principal,
         _id: u64,
         participants: BTreeSet<Principal>,
     ) -> Result<(), BoxError> {
+        if participants.is_empty() {
+            return Err("Participants cannot be empty".to_string().into());
+        }
+
+        let (num_participants, max_participants) = {
+            match self.thread_states.read().get(&_id) {
+                Some(state) => {
+                    let s = state.read();
+                    if s.status != ThreadStatus::Active {
+                        return Err(format!("Thread {} is not active", _id).into());
+                    }
+                    (s.participants, s.max_participants)
+                }
+                None => return Err(format!("Thread {} not found", _id).into()),
+            }
+        };
+
+        if num_participants + participants.len() as u64 > max_participants {
+            return Err(format!("Exceed max participants limit: {}", max_participants).into());
+        }
+
         let mut thread: Thread = self.threads.get_as(_id).await?;
-        if !thread.has_permission(&user, ThreadPermission::Manage) {
+        if !thread.has_permission(user, ThreadPermission::Manage) {
             return Err(format!(
                 "User {} does not have permission to manage thread {}",
                 user, _id
             )
             .into());
         }
-        if participants.is_empty() {
-            return Err("Participants cannot be empty".to_string().into());
-        }
-
-        if thread.participants.len() + participants.len() > thread.max_participants as usize {
-            return Err(
-                format!("Exceed max participants limit: {}", thread.max_participants).into(),
-            );
-        }
 
         for p in participants {
             thread.participants.entry(p).or_insert(0);
         }
         let updated_at = unix_ms();
-        let _ = self
-            .threads
+        let participants = thread.participants.len() as u64;
+        self.threads
             .update(
                 _id,
                 BTreeMap::from([
@@ -546,6 +556,7 @@ impl NexusNode {
             .await?;
         if let Some(state) = self.thread_states.write().get_mut(&_id) {
             let mut s = state.write();
+            s.participants = participants;
             s.updated_at = updated_at;
         }
         Ok(())
@@ -553,21 +564,24 @@ impl NexusNode {
 
     pub async fn remove_thread_participants(
         &self,
-        user: Principal,
+        user: &Principal,
         _id: u64,
         participants: BTreeSet<Principal>,
     ) -> Result<(), BoxError> {
+        if participants.is_empty() {
+            return Err("Participants cannot be empty".to_string().into());
+        }
+
+        self.check_thread_state(_id)?;
         let mut thread: Thread = self.threads.get_as(_id).await?;
-        if !thread.has_permission(&user, ThreadPermission::Manage) {
+        if !thread.has_permission(user, ThreadPermission::Manage) {
             return Err(format!(
                 "User {} does not have permission to manage thread {}",
                 user, _id
             )
             .into());
         }
-        if participants.is_empty() {
-            return Err("Participants cannot be empty".to_string().into());
-        }
+
         if thread.controllers.intersection(&participants).count() > 0 {
             return Err("Cannot remove controllers from participants"
                 .to_string()
@@ -583,8 +597,8 @@ impl NexusNode {
             thread.participants.remove(&p);
         }
         let updated_at = unix_ms();
-        let _ = self
-            .threads
+        let participants = thread.participants.len() as u64;
+        self.threads
             .update(
                 _id,
                 BTreeMap::from([
@@ -604,22 +618,34 @@ impl NexusNode {
             .await?;
         if let Some(state) = self.thread_states.write().get_mut(&_id) {
             let mut s = state.write();
+            s.participants = participants;
             s.updated_at = updated_at;
         }
         Ok(())
     }
 
-    pub async fn quit_thread(&self, user: Principal, _id: u64) -> Result<(), BoxError> {
+    pub async fn quit_thread(&self, user: &Principal, _id: u64) -> Result<(), BoxError> {
+        {
+            match self.thread_states.read().get(&_id) {
+                Some(state) => {
+                    if state.read().status == ThreadStatus::Unavailable {
+                        return Err(format!("Thread {} is unavailable", _id).into());
+                    }
+                }
+                None => return Err(format!("Thread {} not found", _id).into()),
+            }
+        }
+
         let mut thread: Thread = self.threads.get_as(_id).await?;
-        if !thread.participants.contains_key(&user) {
+        if !thread.participants.contains_key(user) {
             return Err(format!("User {} is not a participant of thread {}", user, _id).into());
         }
 
         let updated_at = unix_ms();
         let mut changes: BTreeMap<String, Fv> =
             BTreeMap::from([("updated_at".to_string(), Fv::U64(updated_at))]);
-        if thread.controllers.contains(&user) {
-            thread.controllers.remove(&user);
+        if thread.controllers.contains(user) {
+            thread.controllers.remove(user);
             if thread.controllers.is_empty() {
                 return Err("Cannot quit thread as the last controller"
                     .to_string()
@@ -637,8 +663,8 @@ impl NexusNode {
             );
         }
 
-        if thread.managers.contains(&user) {
-            thread.managers.remove(&user);
+        if thread.managers.contains(user) {
+            thread.managers.remove(user);
             changes.insert(
                 "managers".to_string(),
                 Fv::Array(
@@ -651,7 +677,8 @@ impl NexusNode {
             );
         }
 
-        thread.participants.remove(&user);
+        thread.participants.remove(user);
+        let participants = thread.participants.len() as u64;
         changes.insert(
             "participants".to_string(),
             Fv::Map(
@@ -662,18 +689,29 @@ impl NexusNode {
                     .collect(),
             ),
         );
-
-        let _ = self.threads.update(_id, changes).await?;
+        self.threads.update(_id, changes).await?;
         if let Some(state) = self.thread_states.write().get_mut(&_id) {
             let mut s = state.write();
+            s.participants = participants;
             s.updated_at = updated_at;
         }
         Ok(())
     }
 
-    pub async fn delete_thread(&self, user: Principal, _id: u64) -> Result<(), BoxError> {
+    pub async fn delete_thread(&self, user: &Principal, _id: u64) -> Result<(), BoxError> {
+        {
+            match self.thread_states.read().get(&_id) {
+                Some(state) => {
+                    if state.read().status == ThreadStatus::Unavailable {
+                        return Err(format!("Thread {} is unavailable", _id).into());
+                    }
+                }
+                None => return Err(format!("Thread {} not found", _id).into()),
+            }
+        }
+
         let thread: Thread = self.threads.get_as(_id).await?;
-        if !thread.has_permission(&user, ThreadPermission::Control) {
+        if !thread.has_permission(user, ThreadPermission::Control) {
             return Err(format!(
                 "User {} does not have permission to control thread {}",
                 user, _id
@@ -681,7 +719,19 @@ impl NexusNode {
             .into());
         }
 
-        Err("Not implemented".to_string().into())
+        {
+            self.thread_states.write().remove(&_id);
+        }
+
+        self.threads.remove(_id).await?;
+        self.db
+            .delete_collection(Self::thread_resource_collection_name(_id).as_str())
+            .await?;
+        self.db
+            .delete_collection(Self::thread_message_collection_name(_id).as_str())
+            .await?;
+
+        Ok(())
     }
 
     pub async fn sys_set_thread_status(
@@ -690,8 +740,7 @@ impl NexusNode {
         status: ThreadStatus,
     ) -> Result<(), BoxError> {
         let updated_at = unix_ms();
-        let _ = self
-            .threads
+        self.threads
             .update(
                 _id,
                 BTreeMap::from([
@@ -702,6 +751,7 @@ impl NexusNode {
             .await?;
         if let Some(state) = self.thread_states.write().get_mut(&_id) {
             let mut s = state.write();
+            s.status = status;
             s.updated_at = updated_at;
         }
         Ok(())
@@ -713,8 +763,7 @@ impl NexusNode {
         max_participants: u64,
     ) -> Result<(), BoxError> {
         let updated_at = unix_ms();
-        let _ = self
-            .threads
+        self.threads
             .update(
                 _id,
                 BTreeMap::from([
@@ -725,9 +774,133 @@ impl NexusNode {
             .await?;
         if let Some(state) = self.thread_states.write().get_mut(&_id) {
             let mut s = state.write();
-            s.updated_at = updated_at;
             s.max_participants = max_participants;
+            s.updated_at = updated_at;
         }
         Ok(())
+    }
+
+    fn check_thread_state(&self, thread_id: u64) -> Result<ThreadVisibility, BoxError> {
+        match self.thread_states.read().get(&thread_id) {
+            Some(state) => {
+                let s = state.read();
+                if s.status != ThreadStatus::Active {
+                    return Err(format!("Thread {} is not active", thread_id).into());
+                }
+                Ok(s.visibility)
+            }
+            None => Err(format!("Thread {} not found", thread_id).into()),
+        }
+    }
+
+    async fn my_thread_ids(&self, user: &Principal) -> Vec<u64> {
+        self.threads
+            .search_ids(Query {
+                filter: Some(Filter::Field((
+                    "participants".to_string(),
+                    RangeQuery::Eq(Fv::Bytes(user.as_slice().to_vec())),
+                ))),
+                ..Default::default()
+            })
+            .await
+            .unwrap_or_default()
+    }
+}
+
+impl NexusNode {
+    pub async fn add_message(
+        &self,
+        user: &Principal,
+        thread_id: u64,
+        mut message: Message,
+    ) -> Result<Message, BoxError> {
+        self.check_thread_state(thread_id)?;
+        let ids = self.my_thread_ids(user).await;
+        if !ids.contains(&thread_id) {
+            return Err(
+                format!("User {} is not a participant of thread {}", user, thread_id).into(),
+            );
+        }
+
+        let timestamp = unix_ms();
+        message._id = 0;
+        message.user = Some(*user);
+        message.timestamp = timestamp;
+
+        let collection = self.get_message_collection(thread_id).await?;
+        let _id = collection.add_from(&message).await?;
+        message._id = _id;
+
+        if let Some(state) = self.thread_states.write().get_mut(&thread_id) {
+            let mut s = state.write();
+            s.latest_message_by = message.user;
+            s.latest_message_id = message._id;
+            s.latest_message_at = timestamp;
+        }
+
+        Ok(message)
+    }
+
+    pub async fn get_message(
+        &self,
+        user: &Principal,
+        thread_id: u64,
+        message_id: u64,
+    ) -> Result<Message, BoxError> {
+        let v = self.check_thread_state(thread_id)?;
+        let ids = self.my_thread_ids(user).await;
+        if !ids.contains(&thread_id) && v != ThreadVisibility::Public {
+            return Err(
+                format!("User {} is not a participant of thread {}", user, thread_id).into(),
+            );
+        }
+
+        let collection = self.get_message_collection(thread_id).await?;
+        let message: Message = collection.get_as(message_id).await?;
+
+        Ok(message)
+    }
+
+    pub async fn list_messages(
+        &self,
+        user: &Principal,
+        thread_id: u64,
+        cursor: Option<String>,
+        limit: Option<usize>,
+    ) -> Result<(Vec<Message>, Option<String>), BoxError> {
+        let v = self.check_thread_state(thread_id)?;
+        let ids = self.my_thread_ids(user).await;
+        if !ids.contains(&thread_id) && v != ThreadVisibility::Public {
+            return Err(
+                format!("User {} is not a participant of thread {}", user, thread_id).into(),
+            );
+        }
+
+        let limit = limit.unwrap_or(100).min(1000);
+        let cursor = (BTree::from_cursor::<u64>(&cursor)?).unwrap_or_default();
+
+        let collection = self.get_message_collection(thread_id).await?;
+        let mut message_ids = collection.ids();
+        if cursor > 0 {
+            message_ids.retain(|id| *id < cursor);
+        }
+
+        if message_ids.len() > limit {
+            message_ids.drain(0..message_ids.len() - limit);
+        }
+
+        let mut messages = Vec::with_capacity(message_ids.len());
+        for id in message_ids {
+            if let Ok(message) = collection.get_as::<Message>(id).await {
+                messages.push(message);
+            }
+        }
+        let cursor = if messages.len() >= limit {
+            BTree::to_cursor(&messages.first().unwrap()._id)
+        } else {
+            None
+        };
+
+        Ok((messages, cursor))
     }
 }
