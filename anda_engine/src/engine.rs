@@ -47,7 +47,7 @@ use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
 
 use crate::{
     context::{AgentCtx, BaseCtx, Web3Client, Web3SDK},
-    management::{BaseManagement, Management, SYSTEM_PATH, Thread, UserState, Visibility},
+    management::{BaseManagement, Management, SYSTEM_PATH, UserState, Visibility},
     model::Model,
     store::Store,
 };
@@ -78,7 +78,6 @@ pub trait Hook: Send + Sync {
         _ctx: &AgentCtx,
         _agent: &str,
         _state: &UserState,
-        _thread: Option<&Thread>,
     ) -> Result<(), BoxError> {
         Ok(())
     }
@@ -143,10 +142,9 @@ impl Hook for Hooks {
         ctx: &AgentCtx,
         agent: &str,
         state: &UserState,
-        thread: Option<&Thread>,
     ) -> Result<(), BoxError> {
         for hook in &self.hooks {
-            hook.on_agent_start(ctx, agent, state, thread).await?;
+            hook.on_agent_start(ctx, agent, state).await?;
         }
         Ok(())
     }
@@ -296,19 +294,9 @@ impl Engine {
             return Err("caller does not have permission".into());
         }
 
-        let thread = if let Some(id) = &meta.thread {
-            let th = self.management.get_thread(id).await?;
-            if !th.has_permission(&caller) {
-                return Err("caller does not have permission to access the thread".into());
-            }
-            Some(th)
-        } else {
-            None
-        };
-
         let ctx = self.ctx_with(caller, &input.name, meta)?;
         self.hooks
-            .on_agent_start(&ctx, &input.name, user_state.as_ref(), thread.as_ref())
+            .on_agent_start(&ctx, &input.name, user_state.as_ref())
             .await?;
 
         // Increment agent requests for the user
