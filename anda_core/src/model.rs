@@ -110,11 +110,6 @@ pub struct Message {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user: Option<Principal>,
 
-    /// The thread ID of the message.
-    /// This field is not used by the model.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub thread: Option<Xid>,
-
     /// The timestamp of the message.
     /// This field is not used by the model.
     #[serde(skip_serializing_if = "Option::is_none")]

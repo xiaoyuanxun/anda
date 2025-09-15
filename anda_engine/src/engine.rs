@@ -31,8 +31,8 @@
 
 use anda_cloud_cdk::{ChallengeEnvelope, ChallengeRequest, TEEInfo, TEEKind};
 use anda_core::{
-    Agent, AgentInput, AgentOutput, AgentSet, BoxError, Function, Json, Path, RequestMeta, Tool,
-    ToolInput, ToolOutput, ToolSet, validate_function_name,
+    Agent, AgentInput, AgentOutput, AgentSet, BoxError, Function, Json, Path, RequestMeta,
+    Resource, Tool, ToolInput, ToolOutput, ToolSet, validate_function_name,
 };
 use async_trait::async_trait;
 use candid::Principal;
@@ -760,5 +760,42 @@ impl EngineBuilder {
         );
 
         AgentCtx::new(ctx, self.model, Arc::new(self.tools), Arc::new(self.agents))
+    }
+}
+
+/// A simple echo agent that returns its own information as JSON.
+pub struct EchoEngineInfo {
+    info: AgentInfo,
+    content: String,
+}
+
+impl EchoEngineInfo {
+    pub fn new(info: AgentInfo) -> Self {
+        let content = serde_json::to_string(&info).unwrap_or_default();
+        Self { info, content }
+    }
+}
+
+impl Agent<AgentCtx> for EchoEngineInfo {
+    /// Returns the agent's name identifier
+    fn name(&self) -> String {
+        self.info.handle.clone()
+    }
+
+    /// Returns a description of the agent's purpose and capabilities.
+    fn description(&self) -> String {
+        self.info.description.clone()
+    }
+
+    async fn run(
+        &self,
+        _ctx: AgentCtx,
+        _prompt: String,
+        _resources: Vec<Resource>,
+    ) -> Result<AgentOutput, BoxError> {
+        Ok(AgentOutput {
+            content: self.content.clone(),
+            ..Default::default()
+        })
     }
 }

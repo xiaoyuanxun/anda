@@ -224,6 +224,11 @@ where
         self.set.contains_key(name)
     }
 
+    /// Returns the names of all tools in the set
+    pub fn names(&self) -> Vec<String> {
+        self.set.keys().cloned().collect()
+    }
+
     /// Retrieves definition for a specific agent.
     pub fn definition(&self, name: &str) -> Option<FunctionDefinition> {
         self.set.get(name).map(|tool| tool.definition())

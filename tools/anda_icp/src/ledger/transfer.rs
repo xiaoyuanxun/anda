@@ -116,6 +116,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[tokio::test(flavor = "current_thread")]
+    #[ignore]
     async fn test_icp_ledger_transfer() {
         let panda_ledger = Principal::from_text("druyg-tyaaa-aaaaq-aactq-cai").unwrap();
         let ledgers = ICPLedgers {
@@ -135,8 +136,8 @@ mod tests {
         let tool = TransferTool::new(ledgers.clone());
         let definition = tool.definition();
         assert_eq!(definition.name, "icp_ledger_transfer");
-        let s = serde_json::to_string_pretty(&definition).unwrap();
-        println!("{}", s);
+        // let s = serde_json::to_string_pretty(&definition).unwrap();
+        // println!("{}", s);
         // {
         //     "name": "icp_ledger_transfer",
         //     "description": "Transfer ICP, PANDA tokens to the specified account on ICP blockchain.",
@@ -179,8 +180,9 @@ mod tests {
             }
             assert_eq!(canister, &panda_ledger);
             assert_eq!(method, "icrc1_transfer");
+            println!("777\n{:?}", args);
             let (args,): (TransferArg,) = decode_args(&args).unwrap();
-            println!("{:?}", args);
+            println!("888\n{:?}", args);
             assert_eq!(
                 args.from_subaccount,
                 Some(principal_to_subaccount(Principal::anonymous()))

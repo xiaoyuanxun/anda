@@ -1,9 +1,10 @@
-use anda_core::ContentPart;
+use anda_core::{ContentPart, Resource};
 use anda_db_schema::{AndaDBSchema, FieldEntry, FieldType, Schema, SchemaError};
 use anda_engine::context::EngineCard;
 use candid::Principal;
 use ic_auth_types::Xid;
 use isolang::Language;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -122,7 +123,7 @@ pub enum ThreadPermission {
     Control,
 }
 
-#[derive(Debug, Default, Clone, Deserialize, Serialize)]
+#[derive(Debug, Default, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 pub struct UpdateThreadInfo {
     /// The name of the thread.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -175,21 +176,19 @@ impl UpdateThreadInfo {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct ThreadState {
-    pub visibility: ThreadVisibility, // 0: private, 1: protected, 2: public
-    /// The status of the thread, -2: banned, -1: suspended, 0: active.
+    pub visibility: ThreadVisibility,
     pub status: ThreadStatus,
     pub updated_at: u64,
     pub participants: u64,
     pub max_participants: u64,
-
     pub latest_message_by: Option<Principal>,
     pub latest_message_id: u64,
     pub latest_message_at: u64,
 }
 
-#[derive(Copy, Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ThreadVisibility {
     #[default]
@@ -229,7 +228,7 @@ impl fmt::Display for ThreadStatus {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, AndaDBSchema)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, AndaDBSchema)]
 pub struct Message {
     #[serde(default)]
     pub _id: u64,
@@ -241,15 +240,14 @@ pub struct Message {
     #[field_type = "Array<Json>"]
     pub content: Vec<ContentPart>,
 
+    /// The resources associated with the message.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub resources: Vec<Resource>,
+
     /// The user ID of the message sender.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[field_type = "Option<Bytes>"]
     pub user: Option<Principal>,
-
-    /// The thread ID of the message.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[field_type = "Option<Bytes>"]
-    pub thread: Option<Xid>,
 
     /// The timestamp of the message.
     #[serde(default)]

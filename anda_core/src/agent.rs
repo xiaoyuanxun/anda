@@ -230,6 +230,11 @@ where
         self.set.contains_key(&name.to_ascii_lowercase())
     }
 
+    /// Returns the names of all agents in the set.
+    pub fn names(&self) -> Vec<String> {
+        self.set.keys().cloned().collect()
+    }
+
     /// Retrieves definition for a specific agent.
     pub fn definition(&self, name: &str) -> Option<FunctionDefinition> {
         self.set
