@@ -57,7 +57,6 @@ anda/
 ├── anda_core/        # Core library containing base types and interfaces
 ├── anda_engine/      # Engine implementation for agent runtime and management
 ├── anda_engine_server/ # A http server to serve multiple Anda engines
-├── anda_lancedb/     # LanceDB integration for vector storage and retrieval
 ├── anda_web3_client/ # The Rust SDK for Web3 integration in non-TEE environments
 ├── agents/           # Various AI agent implementations
 │ ├── anda_bot/       # Example agent: Anda ICP

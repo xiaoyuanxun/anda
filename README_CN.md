@@ -57,7 +57,6 @@ anda/
 ├── anda_core/          # 核心库，包含基础类型与接口
 ├── anda_engine/        # 智能体运行时与管理引擎实现
 ├── anda_engine_server/ # 支持多个 Anda 引擎的 HTTP 服务
-├── anda_lancedb/       # LanceDB集成模块，支持向量存储与检索
 ├── anda_web3_client/   # 用于在非 TEE 环境的 Rust 语言 Web3 SDK。
 ├── agents/             # 各类AI智能体实现
 │   ├── anda_bot/       # 示例智能体：Anda ICP

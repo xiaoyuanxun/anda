@@ -169,6 +169,7 @@ async fn main() -> Result<(), BoxError> {
             endpoint: "https://localhost:8443/default".to_string(),
             protocols: BTreeMap::new(),
             payments: BTreeSet::new(),
+            provider: None,
         })
         .with_cancellation_token(global_cancel_token.clone())
         .with_web3_client(Arc::new(Web3SDK::from_web3(Arc::new(web3.clone()))))

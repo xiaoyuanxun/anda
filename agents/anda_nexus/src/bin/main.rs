@@ -123,6 +123,7 @@ async fn main() -> Result<(), BoxError> {
         endpoint: "https://localhost:8443/default".to_string(),
         protocols: BTreeMap::new(),
         payments: BTreeSet::new(),
+        provider: None,
     };
     let agent = EchoEngineInfo::new(info.clone());
     let agent_name = agent.name();

@@ -57,7 +57,6 @@ anda/
 ├── anda_core/        # 基本的な型とインターフェースを含むコアライブラリ
 ├── anda_engine/      # エージェントのランタイムと管理エンジンの実装
 ├── anda_engine_server/ # 複数の Anda エンジンを提供する HTTP サーバー
-├── anda_lancedb/     # ベクトルストレージと検索のための LanceDB 統合
 ├── anda_web3_client/ # 非 TEE 環境での Web3 統合のための Rust SDK
 ├── agents/           # さまざまな AI エージェントの実装
 │ ├── anda_bot/       # 例: Anda ICP

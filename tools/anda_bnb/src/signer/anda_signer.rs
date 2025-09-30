@@ -265,6 +265,7 @@ mod tests {
                 endpoint: "https://localhost:8443/default".to_string(),
                 protocols: BTreeMap::new(),
                 payments: BTreeSet::new(),
+                provider: None,
             })
             .with_web3_client(Arc::new(Web3SDK::from_web3(Arc::new(web3))))
             .register_agent(agent)

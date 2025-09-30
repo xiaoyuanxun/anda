@@ -18,7 +18,6 @@ anda_core = { path = "../../anda_core", version = "0.8" }
 anda_engine = { path = "../../anda_engine", version = "0.8" }
 anda_engine_server = { path = "../../anda_engine_server", version = "0.8" }
 anda_web3_client = { path = "../../anda_web3_client", version = "0.8" }
-axum = { workspace = true }
 anda_db = { workspace = true }
 anda_db_schema = { workspace = true }
 anda_db_tfs = { workspace = true }

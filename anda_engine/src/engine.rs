@@ -480,6 +480,7 @@ impl EngineBuilder {
                 endpoint: "https://localhost:8443/default".to_string(),
                 protocols: BTreeMap::new(),
                 payments: BTreeSet::new(),
+                provider: None,
             },
             tools: ToolSet::new(),
             agents: AgentSet::new(),
