@@ -62,6 +62,7 @@ anda/
 │ ├── anda_bot/       # Example agent: Anda ICP
 │ └── .../            # More agents in future releases
 ├── tools/            # Tool libraries
+│ ├── anda_bnb/       # Anda agent tools offers integration with the BNB Chain (BNB).
 │ ├── anda_icp/       # Anda agent tools offers integration with the Internet Computer (ICP).
 │ └── .../            # More tools in future releases
 ├── characters/       # characters examples
