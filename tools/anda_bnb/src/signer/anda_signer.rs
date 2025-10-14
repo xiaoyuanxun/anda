@@ -188,14 +188,12 @@ fn y_parity(prehash: &[u8], sig: &[u8], pubkey: &[u8]) -> Result<bool> {
     let signature = Signature::try_from(sig)?;
     for parity in [0u8, 1] {
         let recid = RecoveryId::try_from(parity)?;
-        let recovered_key = VerifyingKey::recover_from_prehash(prehash, &signature, recid)
-            .expect("failed to recover key");
+        let recovered_key = match VerifyingKey::recover_from_prehash(prehash, &signature, recid) {
+            Ok(k) => k,
+            Err(_) => continue, // 尝试另一 parity
+        };
         if recovered_key == orig_key {
-            match parity {
-                0 => return Ok(false),
-                1 => return Ok(true),
-                _ => unreachable!(),
-            }
+            return Ok(parity == 1);
         }
     }
 
